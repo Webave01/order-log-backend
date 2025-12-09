@@ -49,7 +49,7 @@ async function initDB() {
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
-        role VARCHAR(20) NOT NULL DEFAULT 'attendant',
+        role VARCHAR(20) NOT NULL DEFAULT 'webstaff',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
       
@@ -94,10 +94,10 @@ async function initDB() {
     const userCheck = await client.query('SELECT COUNT(*) FROM users');
     if (parseInt(userCheck.rows[0].count) === 0) {
       const adminHash = await bcrypt.hash('admin123', 10);
-      const attendantHash = await bcrypt.hash('attend123', 10);
+      const attendantHash = await bcrypt.hash('webster123', 10);
       await client.query(
         'INSERT INTO users (username, password, role) VALUES ($1, $2, $3), ($4, $5, $6)',
-        ['admin', adminHash, 'admin', 'attendant', attendantHash, 'attendant']
+        ['admin', adminHash, 'admin', 'webstaff', attendantHash, 'webstaff']
       );
       console.log('Default users created');
     }
@@ -488,7 +488,7 @@ app.post('/api/users', authenticate, adminOnly, async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
       'INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, role',
-      [username.toLowerCase(), hash, role || 'attendant']
+      [username.toLowerCase(), hash, role || 'webstaff']
     );
     res.json(result.rows[0]);
   } catch (err) {
