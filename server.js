@@ -49,7 +49,7 @@ async function initDB() {
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
-        role VARCHAR(20) NOT NULL DEFAULT 'webstaff',
+        role VARCHAR(20) NOT NULL DEFAULT 'attendant',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
       
@@ -97,7 +97,7 @@ async function initDB() {
       const attendantHash = await bcrypt.hash('webster123', 10);
       await client.query(
         'INSERT INTO users (username, password, role) VALUES ($1, $2, $3), ($4, $5, $6)',
-        ['admin', adminHash, 'admin', 'webstaff', attendantHash, 'webstaff']
+        ['admin', adminHash, 'admin', 'webstaff', attendantHash, 'attendant']
       );
       console.log('Default users created');
     }
