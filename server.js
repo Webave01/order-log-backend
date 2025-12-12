@@ -17,7 +17,7 @@ const pool = new Pool({
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Auth middleware
 const authenticate = (req, res, next) => {
@@ -201,6 +201,26 @@ app.get('/api/orders', authenticate, async (req, res) => {
   }
 });
 
+// Check for duplicate order (Feature #5)
+app.get('/api/orders/check-duplicate', authenticate, async (req, res) => {
+  const { order_num, cleaner_id, exclude_id } = req.query;
+  try {
+    let query = 'SELECT id, order_num, pickup_date FROM orders WHERE order_num = $1 AND cleaner_id = $2';
+    const params = [order_num, cleaner_id];
+    
+    if (exclude_id) {
+      query += ' AND id != $3';
+      params.push(exclude_id);
+    }
+    
+    const result = await pool.query(query, params);
+    res.json({ isDuplicate: result.rows.length > 0, existingOrder: result.rows[0] || null });
+  } catch (err) {
+    console.error('Check duplicate error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/orders', authenticate, async (req, res) => {
   const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes } = req.body;
   try {
@@ -213,6 +233,63 @@ app.post('/api/orders', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Create order error:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Bulk import orders (Feature #3)
+app.post('/api/orders/import', authenticate, adminOnly, async (req, res) => {
+  const { orders } = req.body;
+  
+  if (!Array.isArray(orders) || orders.length === 0) {
+    return res.status(400).json({ error: 'No orders provided' });
+  }
+  
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    let imported = 0;
+    let skipped = 0;
+    const errors = [];
+    
+    for (const order of orders) {
+      try {
+        // Validate required fields
+        if (!order.order_num || !order.cleaner_id || !order.weight || !order.pickup_date) {
+          errors.push(`Row missing required fields: ${JSON.stringify(order)}`);
+          skipped++;
+          continue;
+        }
+        
+        await client.query(
+          `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            order.order_num,
+            order.cleaner_id,
+            order.weight,
+            order.service_type || '24-hour',
+            order.pickup_date,
+            order.bag_color || 'White',
+            order.extras || [],
+            order.notes || ''
+          ]
+        );
+        imported++;
+      } catch (err) {
+        errors.push(`Error importing order ${order.order_num}: ${err.message}`);
+        skipped++;
+      }
+    }
+    
+    await client.query('COMMIT');
+    res.json({ imported, skipped, errors: errors.slice(0, 10) }); // Return first 10 errors
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Import error:', err);
+    res.status(500).json({ error: 'Import failed' });
+  } finally {
+    client.release();
   }
 });
 
@@ -245,6 +322,96 @@ app.delete('/api/orders/:id', authenticate, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error('Delete order error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Export all orders to CSV/Excel format (Feature #2)
+app.get('/api/orders/export', authenticate, adminOnly, async (req, res) => {
+  const { start_date, end_date } = req.query;
+  
+  try {
+    let query = `
+      SELECT 
+        o.id,
+        o.order_num,
+        c.name as cleaner_name,
+        c.route,
+        c.rate as cleaner_rate,
+        o.weight,
+        o.service_type,
+        o.pickup_date,
+        o.bag_color,
+        o.extras,
+        o.notes,
+        o.created_at
+      FROM orders o
+      JOIN cleaners c ON o.cleaner_id = c.id
+    `;
+    const params = [];
+    const conditions = [];
+    
+    if (start_date) {
+      params.push(start_date);
+      conditions.push(`o.pickup_date >= $${params.length}`);
+    }
+    if (end_date) {
+      params.push(end_date);
+      conditions.push(`o.pickup_date <= $${params.length}`);
+    }
+    
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    
+    query += ' ORDER BY o.pickup_date DESC, o.created_at DESC';
+    
+    const ordersResult = await pool.query(query, params);
+    
+    // Get extras for price calculation
+    const extrasResult = await pool.query('SELECT * FROM extras');
+    const extrasMap = {};
+    extrasResult.rows.forEach(e => { extrasMap[e.id] = e; });
+    
+    // Get settings
+    const settingsResult = await pool.query('SELECT * FROM settings');
+    const settings = {};
+    settingsResult.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
+    
+    // Calculate totals using correct formula: (lbs × rate) + extras surcharges (Feature #1)
+    const orders = ordersResult.rows.map(o => {
+      const rate = parseFloat(o.cleaner_rate);
+      const weight = parseFloat(o.weight);
+      const mult = o.service_type === 'same-day' ? settings.sameDayMult : 1;
+      const baseTotal = weight * rate * mult;
+      const extrasTotal = (o.extras || []).reduce((sum, id) => sum + parseFloat(extrasMap[id]?.price || 0), 0);
+      const total = baseTotal + extrasTotal;
+      
+      // Get extras names
+      const extrasNames = (o.extras || []).map(id => extrasMap[id]?.name || '').filter(n => n).join(', ');
+      
+      return {
+        id: o.id,
+        order_num: o.order_num,
+        cleaner_name: o.cleaner_name,
+        route: o.route,
+        weight: weight,
+        rate_per_lb: rate,
+        service_type: o.service_type,
+        pickup_date: o.pickup_date,
+        bag_color: o.bag_color,
+        extras: extrasNames,
+        extras_total: extrasTotal,
+        base_total: baseTotal,
+        total: total,
+        notes: o.notes || '',
+        created_at: o.created_at
+      };
+    });
+    
+    res.json({ orders, extrasMap, settings });
+  } catch (err) {
+    console.error('Export error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -426,12 +593,14 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
     const settings = {};
     settingsResult.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
     
+    // Fixed calculation: (lbs × rate) + extras surcharges (Feature #1)
     const orders = ordersResult.rows.map(o => {
       const rate = parseFloat(o.cleaner_rate);
+      const weight = parseFloat(o.weight);
       const mult = o.service_type === 'same-day' ? settings.sameDayMult : 1;
-      const base = parseFloat(o.weight) * rate * mult;
-      const extrasTotal = (o.extras || []).reduce((sum, id) => sum + (extrasMap[id]?.price || 0), 0);
-      return { ...o, total: base + extrasTotal };
+      const baseTotal = weight * rate * mult;
+      const extrasTotal = (o.extras || []).reduce((sum, id) => sum + parseFloat(extrasMap[id]?.price || 0), 0);
+      return { ...o, total: baseTotal + extrasTotal };
     });
     
     const grandTotal = orders.reduce((sum, o) => sum + o.total, 0);
@@ -439,6 +608,71 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
     res.json({ orders, grandTotal });
   } catch (err) {
     console.error('Invoice report error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Daily stats report (Feature #4)
+app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) => {
+  const { start_date, end_date } = req.query;
+  
+  if (!start_date || !end_date) {
+    return res.status(400).json({ error: 'start_date and end_date are required' });
+  }
+  
+  try {
+    // Get daily breakdown by route (east vs west)
+    const routeStats = await pool.query(`
+      SELECT 
+        o.pickup_date,
+        c.route,
+        COUNT(o.id) as order_count,
+        SUM(o.weight) as total_weight
+      FROM orders o
+      JOIN cleaners c ON o.cleaner_id = c.id
+      WHERE o.pickup_date >= $1 AND o.pickup_date <= $2
+      GROUP BY o.pickup_date, c.route
+      ORDER BY o.pickup_date, c.route
+    `, [start_date, end_date]);
+    
+    // Get daily breakdown by service type (same-day vs 24-hour)
+    const serviceStats = await pool.query(`
+      SELECT 
+        pickup_date,
+        service_type,
+        COUNT(id) as order_count,
+        SUM(weight) as total_weight
+      FROM orders
+      WHERE pickup_date >= $1 AND pickup_date <= $2
+      GROUP BY pickup_date, service_type
+      ORDER BY pickup_date, service_type
+    `, [start_date, end_date]);
+    
+    // Get totals for the period
+    const totals = await pool.query(`
+      SELECT 
+        COUNT(o.id) as total_orders,
+        SUM(o.weight) as total_weight,
+        COUNT(CASE WHEN c.route = 'east' THEN 1 END) as east_orders,
+        COUNT(CASE WHEN c.route = 'west' THEN 1 END) as west_orders,
+        SUM(CASE WHEN c.route = 'east' THEN o.weight ELSE 0 END) as east_weight,
+        SUM(CASE WHEN c.route = 'west' THEN o.weight ELSE 0 END) as west_weight,
+        COUNT(CASE WHEN o.service_type = 'same-day' THEN 1 END) as same_day_orders,
+        COUNT(CASE WHEN o.service_type = '24-hour' THEN 1 END) as twenty_four_hour_orders,
+        SUM(CASE WHEN o.service_type = 'same-day' THEN o.weight ELSE 0 END) as same_day_weight,
+        SUM(CASE WHEN o.service_type = '24-hour' THEN o.weight ELSE 0 END) as twenty_four_hour_weight
+      FROM orders o
+      JOIN cleaners c ON o.cleaner_id = c.id
+      WHERE o.pickup_date >= $1 AND o.pickup_date <= $2
+    `, [start_date, end_date]);
+    
+    res.json({
+      routeStats: routeStats.rows,
+      serviceStats: serviceStats.rows,
+      totals: totals.rows[0]
+    });
+  } catch (err) {
+    console.error('Daily stats error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -488,7 +722,7 @@ app.post('/api/users', authenticate, adminOnly, async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
       'INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, role',
-      [username.toLowerCase(), hash, role || 'webstaff']
+      [username.toLowerCase(), hash, role || 'attendant']
     );
     res.json(result.rows[0]);
   } catch (err) {
