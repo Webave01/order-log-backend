@@ -79,6 +79,7 @@ async function initDB() {
         bag_color VARCHAR(50) DEFAULT 'White',
         extras INTEGER[] DEFAULT '{}',
         notes TEXT,
+        staff_name VARCHAR(50),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -105,31 +106,37 @@ async function initDB() {
     // Check if settings exist
     const settingsCheck = await client.query('SELECT COUNT(*) FROM settings');
     if (parseInt(settingsCheck.rows[0].count) === 0) {
-      await client.query(
-        'INSERT INTO settings (key, value) VALUES ($1, $2), ($3, $4)',
-        ['sameDayMult', '1.0', 'defaultRate', '2.00']
-      );
+      await client.query(`
+        INSERT INTO settings (key, value) VALUES 
+        ('sameDayMult', '1.0'),
+        ('defaultRate', '2.00')
+      `);
       console.log('Default settings created');
     }
     
-    // Check if extras exist
+    // Check if extras exist, if not create default extras (including new rug/carpet items)
     const extrasCheck = await client.query('SELECT COUNT(*) FROM extras');
     if (parseInt(extrasCheck.rows[0].count) === 0) {
-      const defaultExtras = [
-        ['LG Comforter', 25], ['MED Comforter', 20], ['SM Comforter', 15],
-        ['LG Mat', 18], ['MED Mat', 14], ['SM Mat', 10],
-        ['Pillow', 8], ['Extra Wash', 5],
-        ['LG Blanket', 20], ['MED Blanket', 15], ['SM Blanket', 10]
-      ];
-      for (const [name, price] of defaultExtras) {
-        await client.query('INSERT INTO extras (name, price) VALUES ($1, $2)', [name, price]);
-      }
+      await client.query(`
+        INSERT INTO extras (name, price) VALUES 
+        ('Blanket - SM', 8.00),
+        ('Blanket - MED', 12.00),
+        ('Blanket - LG', 15.00),
+        ('Comforter - SM', 15.00),
+        ('Comforter - MED', 20.00),
+        ('Comforter - LG', 25.00),
+        ('Rug - SM', 15.00),
+        ('Rug - MED', 25.00),
+        ('Rug - LG', 40.00),
+        ('Carpet - MED', 35.00),
+        ('Carpet - LG', 50.00)
+      `);
       console.log('Default extras created');
     }
     
-    console.log('Database initialized');
+    console.log('Database initialized successfully');
   } catch (err) {
-    console.error('DB init error:', err);
+    console.error('Database initialization error:', err);
   } finally {
     client.release();
   }
@@ -139,61 +146,48 @@ async function initDB() {
 
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
+  
   try {
-    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username.toLowerCase()]);
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
     const user = result.rows[0];
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) {
+    const validPassword = await bcrypt.compare(password, user.password);
+    
+    if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    
+    res.json({ 
+      token, 
+      user: { id: user.id, username: user.username, role: user.role } 
+    });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-app.get('/api/me', authenticate, (req, res) => {
-  res.json({ user: req.user });
+app.get('/api/me', authenticate, async (req, res) => {
+  res.json({ user: { id: req.user.id, username: req.user.username, role: req.user.role } });
 });
 
 // ============ ORDERS ROUTES ============
 
 app.get('/api/orders', authenticate, async (req, res) => {
   try {
-    const { cleaner_id, start_date, end_date, limit = 500 } = req.query;
-    let query = 'SELECT * FROM orders';
-    const params = [];
-    const conditions = [];
-    
-    if (cleaner_id) {
-      params.push(cleaner_id);
-      conditions.push(`cleaner_id = $${params.length}`);
-    }
-    if (start_date) {
-      params.push(start_date);
-      conditions.push(`pickup_date >= $${params.length}`);
-    }
-    if (end_date) {
-      params.push(end_date);
-      conditions.push(`pickup_date <= $${params.length}`);
-    }
-    
-    if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
-    }
-    
-    query += ' ORDER BY pickup_date DESC, created_at DESC';
-    params.push(limit);
-    query += ` LIMIT $${params.length}`;
-    
-    const result = await pool.query(query, params);
+    const result = await pool.query(
+      'SELECT * FROM orders ORDER BY created_at DESC LIMIT 500'
+    );
     res.json(result.rows);
   } catch (err) {
     console.error('Get orders error:', err);
@@ -201,33 +195,14 @@ app.get('/api/orders', authenticate, async (req, res) => {
   }
 });
 
-// Check for duplicate order (Feature #5)
-app.get('/api/orders/check-duplicate', authenticate, async (req, res) => {
-  const { order_num, cleaner_id, exclude_id } = req.query;
-  try {
-    let query = 'SELECT id, order_num, pickup_date FROM orders WHERE order_num = $1 AND cleaner_id = $2';
-    const params = [order_num, cleaner_id];
-    
-    if (exclude_id) {
-      query += ' AND id != $3';
-      params.push(exclude_id);
-    }
-    
-    const result = await pool.query(query, params);
-    res.json({ isDuplicate: result.rows.length > 0, existingOrder: result.rows[0] || null });
-  } catch (err) {
-    console.error('Check duplicate error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 app.post('/api/orders', authenticate, async (req, res) => {
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name } = req.body;
+  
   try {
     const result = await pool.query(
-      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [order_num, cleaner_id, weight, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes]
+      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [order_num, cleaner_id, weight, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes || '', staff_name || '']
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -236,72 +211,19 @@ app.post('/api/orders', authenticate, async (req, res) => {
   }
 });
 
-// Bulk import orders (Feature #3)
-app.post('/api/orders/import', authenticate, adminOnly, async (req, res) => {
-  const { orders } = req.body;
-  
-  if (!Array.isArray(orders) || orders.length === 0) {
-    return res.status(400).json({ error: 'No orders provided' });
-  }
-  
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    
-    let imported = 0;
-    let skipped = 0;
-    const errors = [];
-    
-    for (const order of orders) {
-      try {
-        // Validate required fields
-        if (!order.order_num || !order.cleaner_id || !order.weight || !order.pickup_date) {
-          errors.push(`Row missing required fields: ${JSON.stringify(order)}`);
-          skipped++;
-          continue;
-        }
-        
-        await client.query(
-          `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes) 
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            order.order_num,
-            order.cleaner_id,
-            order.weight,
-            order.service_type || '24-hour',
-            order.pickup_date,
-            order.bag_color || 'White',
-            order.extras || [],
-            order.notes || ''
-          ]
-        );
-        imported++;
-      } catch (err) {
-        errors.push(`Error importing order ${order.order_num}: ${err.message}`);
-        skipped++;
-      }
-    }
-    
-    await client.query('COMMIT');
-    res.json({ imported, skipped, errors: errors.slice(0, 10) }); // Return first 10 errors
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Import error:', err);
-    res.status(500).json({ error: 'Import failed' });
-  } finally {
-    client.release();
-  }
-});
-
 app.put('/api/orders/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name } = req.body;
+  
   try {
     const result = await pool.query(
-      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, updated_at=CURRENT_TIMESTAMP 
-       WHERE id=$9 RETURNING *`,
-      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, id]
+      `UPDATE orders SET 
+        order_num = $1, cleaner_id = $2, weight = $3, service_type = $4, 
+        pickup_date = $5, bag_color = $6, extras = $7, notes = $8, staff_name = $9, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $10 RETURNING *`,
+      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes || '', staff_name || '', id]
     );
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -314,6 +236,7 @@ app.put('/api/orders/:id', authenticate, async (req, res) => {
 
 app.delete('/api/orders/:id', authenticate, async (req, res) => {
   const { id } = req.params;
+  
   try {
     const result = await pool.query('DELETE FROM orders WHERE id = $1 RETURNING *', [id]);
     if (result.rows.length === 0) {
@@ -326,76 +249,160 @@ app.delete('/api/orders/:id', authenticate, async (req, res) => {
   }
 });
 
-// Export all orders to CSV/Excel format (Feature #2)
-app.get('/api/orders/export', authenticate, adminOnly, async (req, res) => {
-  const { start_date, end_date } = req.query;
+// Check for duplicate orders
+app.get('/api/orders/check-duplicate', authenticate, async (req, res) => {
+  const { order_num, cleaner_id, exclude_id } = req.query;
   
   try {
-    let query = `
-      SELECT 
-        o.id,
-        o.order_num,
-        c.name as cleaner_name,
-        c.route,
-        c.rate as cleaner_rate,
-        o.weight,
-        o.service_type,
-        o.pickup_date,
-        o.bag_color,
-        o.extras,
-        o.notes,
-        o.created_at
+    let query = 'SELECT id, order_num, pickup_date FROM orders WHERE order_num = $1 AND cleaner_id = $2';
+    let params = [order_num, cleaner_id];
+    
+    if (exclude_id) {
+      query += ' AND id != $3';
+      params.push(exclude_id);
+    }
+    
+    const result = await pool.query(query, params);
+    
+    if (result.rows.length > 0) {
+      res.json({ isDuplicate: true, existingOrder: result.rows[0] });
+    } else {
+      res.json({ isDuplicate: false });
+    }
+  } catch (err) {
+    console.error('Check duplicate error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Check order sequence - NEW
+app.get('/api/orders/check-sequence', authenticate, async (req, res) => {
+  const { order_num, cleaner_id } = req.query;
+  
+  try {
+    // Get the last order for this cleaner from today
+    const today = new Date().toISOString().split('T')[0];
+    const result = await pool.query(
+      `SELECT order_num FROM orders 
+       WHERE cleaner_id = $1 AND pickup_date = $2 
+       ORDER BY created_at DESC LIMIT 1`,
+      [cleaner_id, today]
+    );
+    
+    if (result.rows.length === 0) {
+      res.json({ isOutOfSequence: false });
+    } else {
+      const lastOrderNum = parseInt(result.rows[0].order_num) || 0;
+      const currentOrderNum = parseInt(order_num) || 0;
+      const diff = Math.abs(currentOrderNum - lastOrderNum);
+      
+      if (diff >= 50) {
+        res.json({ 
+          isOutOfSequence: true, 
+          lastOrderNum: result.rows[0].order_num,
+          difference: diff
+        });
+      } else {
+        res.json({ isOutOfSequence: false });
+      }
+    }
+  } catch (err) {
+    console.error('Check sequence error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Import orders
+app.post('/api/orders/import', authenticate, adminOnly, async (req, res) => {
+  const { orders } = req.body;
+  
+  if (!orders || !Array.isArray(orders)) {
+    return res.status(400).json({ error: 'orders array is required' });
+  }
+  
+  const client = await pool.connect();
+  let imported = 0;
+  let skipped = 0;
+  const errors = [];
+  
+  try {
+    await client.query('BEGIN');
+    
+    for (const order of orders) {
+      try {
+        if (!order.order_num || !order.cleaner_id || !order.weight) {
+          skipped++;
+          errors.push(`Missing required fields for order ${order.order_num || 'unknown'}`);
+          continue;
+        }
+        
+        await client.query(
+          `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            order.order_num,
+            order.cleaner_id,
+            order.weight,
+            order.service_type || '24-hour',
+            order.pickup_date || new Date().toISOString().split('T')[0],
+            order.bag_color || 'White',
+            order.extras || [],
+            order.notes || '',
+            order.staff_name || ''
+          ]
+        );
+        imported++;
+      } catch (orderErr) {
+        skipped++;
+        errors.push(`Error importing order ${order.order_num}: ${orderErr.message}`);
+      }
+    }
+    
+    await client.query('COMMIT');
+    res.json({ imported, skipped, errors: errors.slice(0, 10) });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Import error:', err);
+    res.status(500).json({ error: 'Import failed' });
+  } finally {
+    client.release();
+  }
+});
+
+// Export orders
+app.get('/api/orders/export', authenticate, adminOnly, async (req, res) => {
+  try {
+    const ordersResult = await pool.query(`
+      SELECT o.*, c.name as cleaner_name, c.rate as cleaner_rate, c.route
       FROM orders o
       JOIN cleaners c ON o.cleaner_id = c.id
-    `;
-    const params = [];
-    const conditions = [];
+      ORDER BY o.pickup_date DESC, o.created_at DESC
+    `);
     
-    if (start_date) {
-      params.push(start_date);
-      conditions.push(`o.pickup_date >= $${params.length}`);
-    }
-    if (end_date) {
-      params.push(end_date);
-      conditions.push(`o.pickup_date <= $${params.length}`);
-    }
-    
-    if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
-    }
-    
-    query += ' ORDER BY o.pickup_date DESC, o.created_at DESC';
-    
-    const ordersResult = await pool.query(query, params);
-    
-    // Get extras for price calculation
     const extrasResult = await pool.query('SELECT * FROM extras');
     const extrasMap = {};
     extrasResult.rows.forEach(e => { extrasMap[e.id] = e; });
     
-    // Get settings
     const settingsResult = await pool.query('SELECT * FROM settings');
     const settings = {};
     settingsResult.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
     
-    // Calculate totals using correct formula: (lbs × rate) + extras surcharges (Feature #1)
     const orders = ordersResult.rows.map(o => {
       const rate = parseFloat(o.cleaner_rate);
       const weight = parseFloat(o.weight);
       const mult = o.service_type === 'same-day' ? settings.sameDayMult : 1;
       const baseTotal = weight * rate * mult;
+      
+      const extrasNames = (o.extras || []).map(id => extrasMap[id]?.name || '').filter(n => n).join(', ');
       const extrasTotal = (o.extras || []).reduce((sum, id) => sum + parseFloat(extrasMap[id]?.price || 0), 0);
       const total = baseTotal + extrasTotal;
-      
-      // Get extras names
-      const extrasNames = (o.extras || []).map(id => extrasMap[id]?.name || '').filter(n => n).join(', ');
       
       return {
         id: o.id,
         order_num: o.order_num,
         cleaner_name: o.cleaner_name,
         route: o.route,
-        weight: weight,
+        weight: o.weight,
         rate_per_lb: rate,
         service_type: o.service_type,
         pickup_date: o.pickup_date,
@@ -405,6 +412,7 @@ app.get('/api/orders/export', authenticate, adminOnly, async (req, res) => {
         base_total: baseTotal,
         total: total,
         notes: o.notes || '',
+        staff_name: o.staff_name || '',
         created_at: o.created_at
       };
     });
@@ -412,6 +420,17 @@ app.get('/api/orders/export', authenticate, adminOnly, async (req, res) => {
     res.json({ orders, extrasMap, settings });
   } catch (err) {
     console.error('Export error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Clear all orders - NEW (Admin only)
+app.delete('/api/orders/clear-all', authenticate, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM orders');
+    res.json({ success: true, deleted: result.rowCount });
+  } catch (err) {
+    console.error('Clear orders error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -463,7 +482,6 @@ app.put('/api/cleaners/:id', authenticate, adminOnly, async (req, res) => {
 app.delete('/api/cleaners/:id', authenticate, adminOnly, async (req, res) => {
   const { id } = req.params;
   try {
-    // Check if cleaner has orders
     const orderCheck = await pool.query('SELECT COUNT(*) FROM orders WHERE cleaner_id = $1', [id]);
     if (parseInt(orderCheck.rows[0].count) > 0) {
       return res.status(400).json({ error: 'Cannot delete cleaner with existing orders' });
@@ -593,26 +611,42 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
     const settings = {};
     settingsResult.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
     
-    // Fixed calculation: (lbs × rate) + extras surcharges (Feature #1)
     const orders = ordersResult.rows.map(o => {
       const rate = parseFloat(o.cleaner_rate);
       const weight = parseFloat(o.weight);
       const mult = o.service_type === 'same-day' ? settings.sameDayMult : 1;
       const baseTotal = weight * rate * mult;
       const extrasTotal = (o.extras || []).reduce((sum, id) => sum + parseFloat(extrasMap[id]?.price || 0), 0);
-      return { ...o, total: baseTotal + extrasTotal };
+      
+      // Build formatted extras string (e.g., "1 LG Blanket + 1 MED Rug")
+      const extrasCounts = {};
+      (o.extras || []).forEach(id => {
+        const name = extrasMap[id]?.name || '';
+        if (name) {
+          extrasCounts[name] = (extrasCounts[name] || 0) + 1;
+        }
+      });
+      const extrasFormatted = Object.entries(extrasCounts)
+        .map(([name, count]) => `${count} ${name}`)
+        .join(' + ');
+      
+      return { 
+        ...o, 
+        total: baseTotal + extrasTotal,
+        extras_formatted: extrasFormatted,
+        extras_total: extrasTotal
+      };
     });
     
     const grandTotal = orders.reduce((sum, o) => sum + o.total, 0);
     
-    res.json({ orders, grandTotal });
+    res.json({ orders, grandTotal, extrasMap });
   } catch (err) {
     console.error('Invoice report error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Daily stats report (Feature #4)
 app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) => {
   const { start_date, end_date } = req.query;
   
@@ -621,7 +655,6 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
   }
   
   try {
-    // Get daily breakdown by route (east vs west)
     const routeStats = await pool.query(`
       SELECT 
         o.pickup_date,
@@ -635,7 +668,6 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
       ORDER BY o.pickup_date, c.route
     `, [start_date, end_date]);
     
-    // Get daily breakdown by service type (same-day vs 24-hour)
     const serviceStats = await pool.query(`
       SELECT 
         pickup_date,
@@ -648,18 +680,17 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
       ORDER BY pickup_date, service_type
     `, [start_date, end_date]);
     
-    // Get totals for the period
-    const totals = await pool.query(`
+    const totalsResult = await pool.query(`
       SELECT 
         COUNT(o.id) as total_orders,
         SUM(o.weight) as total_weight,
-        COUNT(CASE WHEN c.route = 'east' THEN 1 END) as east_orders,
-        COUNT(CASE WHEN c.route = 'west' THEN 1 END) as west_orders,
+        SUM(CASE WHEN c.route = 'east' THEN 1 ELSE 0 END) as east_orders,
         SUM(CASE WHEN c.route = 'east' THEN o.weight ELSE 0 END) as east_weight,
+        SUM(CASE WHEN c.route = 'west' THEN 1 ELSE 0 END) as west_orders,
         SUM(CASE WHEN c.route = 'west' THEN o.weight ELSE 0 END) as west_weight,
-        COUNT(CASE WHEN o.service_type = 'same-day' THEN 1 END) as same_day_orders,
-        COUNT(CASE WHEN o.service_type = '24-hour' THEN 1 END) as twenty_four_hour_orders,
+        SUM(CASE WHEN o.service_type = 'same-day' THEN 1 ELSE 0 END) as same_day_orders,
         SUM(CASE WHEN o.service_type = 'same-day' THEN o.weight ELSE 0 END) as same_day_weight,
+        SUM(CASE WHEN o.service_type = '24-hour' THEN 1 ELSE 0 END) as twenty_four_hour_orders,
         SUM(CASE WHEN o.service_type = '24-hour' THEN o.weight ELSE 0 END) as twenty_four_hour_weight
       FROM orders o
       JOIN cleaners c ON o.cleaner_id = c.id
@@ -669,7 +700,7 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
     res.json({
       routeStats: routeStats.rows,
       serviceStats: serviceStats.rows,
-      totals: totals.rows[0]
+      totals: totalsResult.rows[0]
     });
   } catch (err) {
     console.error('Daily stats error:', err);
@@ -677,103 +708,12 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
   }
 });
 
-app.get('/api/reports/weekly', authenticate, adminOnly, async (req, res) => {
-  const { start_date, end_date } = req.query;
-  
-  try {
-    const result = await pool.query(`
-      SELECT 
-        c.id as cleaner_id,
-        c.name as cleaner_name,
-        c.route,
-        c.rate,
-        COUNT(o.id) as order_count,
-        SUM(o.weight) as total_weight,
-        o.pickup_date
-      FROM cleaners c
-      LEFT JOIN orders o ON c.id = o.cleaner_id 
-        AND o.pickup_date >= $1 AND o.pickup_date <= $2
-      GROUP BY c.id, c.name, c.route, c.rate, o.pickup_date
-      ORDER BY c.name, o.pickup_date
-    `, [start_date, end_date]);
-    
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Weekly report error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// ============ USERS ROUTES (Admin only) ============
-
-app.get('/api/users', authenticate, adminOnly, async (req, res) => {
-  try {
-    const result = await pool.query('SELECT id, username, role, created_at FROM users ORDER BY username');
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Get users error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-app.post('/api/users', authenticate, adminOnly, async (req, res) => {
-  const { username, password, role } = req.body;
-  try {
-    const hash = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      'INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, role',
-      [username.toLowerCase(), hash, role || 'attendant']
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    if (err.code === '23505') {
-      return res.status(400).json({ error: 'Username already exists' });
-    }
-    console.error('Create user error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-app.put('/api/users/:id', authenticate, adminOnly, async (req, res) => {
-  const { id } = req.params;
-  const { password, role } = req.body;
-  try {
-    if (password) {
-      const hash = await bcrypt.hash(password, 10);
-      await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hash, id]);
-    }
-    if (role) {
-      await pool.query('UPDATE users SET role = $1 WHERE id = $2', [role, id]);
-    }
-    const result = await pool.query('SELECT id, username, role FROM users WHERE id = $1', [id]);
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Update user error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-app.delete('/api/users/:id', authenticate, adminOnly, async (req, res) => {
-  const { id } = req.params;
-  try {
-    // Prevent deleting yourself
-    if (parseInt(id) === req.user.id) {
-      return res.status(400).json({ error: 'Cannot delete yourself' });
-    }
-    await pool.query('DELETE FROM users WHERE id = $1', [id]);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Delete user error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Start server
+// Initialize and start server
 initDB().then(() => {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
