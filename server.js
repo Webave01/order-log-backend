@@ -134,6 +134,15 @@ async function initDB() {
       console.log('Default extras created');
     }
     
+    // Add staff_name column if it doesn't exist (migration for existing databases)
+    try {
+      await client.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS staff_name VARCHAR(50)`);
+      console.log('staff_name column ensured');
+    } catch (err) {
+      // Column might already exist, that's ok
+      console.log('staff_name column check:', err.message);
+    }
+
     console.log('Database initialized successfully');
   } catch (err) {
     console.error('Database initialization error:', err);
