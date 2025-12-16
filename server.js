@@ -274,7 +274,23 @@ app.get('/api/orders/export', authenticate, adminOnly, async (req, res) => {
 // ============ ORDERS - GENERIC ROUTES ============
 app.get('/api/orders', authenticate, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM orders ORDER BY created_at DESC LIMIT 500');
+    const { search, limit } = req.query;
+    let query = 'SELECT * FROM orders';
+    let params = [];
+    
+    if (search) {
+      query += ' WHERE order_num ILIKE $1';
+      params.push('%' + search + '%');
+    }
+    
+    query += ' ORDER BY created_at DESC';
+    
+    if (limit) {
+      query += ' LIMIT $' + (params.length + 1);
+      params.push(parseInt(limit));
+    }
+    
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -585,7 +601,7 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
     const settings = {}; settingsResult.rows.forEach(r => { settings[r.key] = parseFloat(r.value); });
     
     const ordersResult = await pool.query(`
-      SELECT o.*, c.route, c.rate, c.min_weight FROM orders o JOIN cleaners c ON o.cleaner_id = c.id
+      SELECT o.*, c.route, c.rate, c.min_weight, c.name as cleaner_name FROM orders o JOIN cleaners c ON o.cleaner_id = c.id
       WHERE o.pickup_date >= $1 AND o.pickup_date <= $2 ORDER BY o.pickup_date
     `, [start_date, end_date]);
     
@@ -594,6 +610,7 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
     let westOrders = 0, westWeight = 0, westAmount = 0;
     let sameDayOrders = 0, sameDayWeight = 0, hour24Orders = 0, hour24Weight = 0;
     const dailyBreakdown = {};
+    const cleanerBreakdown = {};
     
     ordersResult.rows.forEach(o => {
       const rate = parseFloat(o.rate);
@@ -615,11 +632,19 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
       dailyBreakdown[dateKey].orders++; dailyBreakdown[dateKey].weight += weight; dailyBreakdown[dateKey].amount += total;
       if (o.route === 'east') { dailyBreakdown[dateKey].eastOrders++; dailyBreakdown[dateKey].eastAmount += total; }
       else { dailyBreakdown[dateKey].westOrders++; dailyBreakdown[dateKey].westAmount += total; }
+      
+      // Cleaner breakdown
+      const cleanerKey = o.cleaner_id;
+      if (!cleanerBreakdown[cleanerKey]) cleanerBreakdown[cleanerKey] = { name: o.cleaner_name, route: o.route, orders: 0, weight: 0, amount: 0 };
+      cleanerBreakdown[cleanerKey].orders++;
+      cleanerBreakdown[cleanerKey].weight += weight;
+      cleanerBreakdown[cleanerKey].amount += total;
     });
     
     res.json({
       totals: { total_orders: totalOrders, total_weight: totalWeight, total_amount: totalAmount, east_orders: eastOrders, east_weight: eastWeight, east_amount: eastAmount, west_orders: westOrders, west_weight: westWeight, west_amount: westAmount, same_day_orders: sameDayOrders, same_day_weight: sameDayWeight, twenty_four_hour_orders: hour24Orders, twenty_four_hour_weight: hour24Weight },
-      dailyBreakdown: Object.values(dailyBreakdown).sort((a, b) => a.date.localeCompare(b.date))
+      dailyBreakdown: Object.values(dailyBreakdown).sort((a, b) => a.date.localeCompare(b.date)),
+      cleanerBreakdown: Object.values(cleanerBreakdown).sort((a, b) => b.amount - a.amount)
     });
   } catch (err) {
     console.error(err);
