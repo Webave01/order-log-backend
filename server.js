@@ -342,11 +342,19 @@ app.get('/api/orders/export', authenticate, adminOnly, async (req, res) => {
 });
 
 app.delete('/api/orders/clear-all', authenticate, adminOnly, async (req, res) => {
+  console.log('Clear all orders requested by:', req.user.username);
   try {
-    const result = await pool.query('DELETE FROM orders');
-    res.json({ success: true, deleted: result.rowCount });
+    const countResult = await pool.query('SELECT COUNT(*) FROM orders');
+    const count = parseInt(countResult.rows[0].count);
+    console.log('Orders to delete:', count);
+    
+    await pool.query('DELETE FROM orders');
+    console.log('Orders deleted successfully');
+    
+    res.json({ success: true, deleted: count });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    console.error('Clear orders error:', err.message, err.stack);
+    res.status(500).json({ error: 'Server error: ' + err.message });
   }
 });
 
