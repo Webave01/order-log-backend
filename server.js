@@ -98,7 +98,7 @@ async function initDB() {
     
     const settingsCheck = await client.query('SELECT COUNT(*) FROM settings');
     if (parseInt(settingsCheck.rows[0].count) === 0) {
-      await client.query(`INSERT INTO settings (key, value) VALUES ('sameDayMult', '1.0'), ('defaultRate', '0.85'), ('autoClearDays', '30')`);
+      await client.query(`INSERT INTO settings (key, value) VALUES ('sameDayMult', '1.0'), ('defaultRate', '0.85'), ('autoClearDays', '90')`);
     }
     
     const extrasCheck = await client.query('SELECT COUNT(*) FROM extras');
@@ -128,7 +128,7 @@ async function initDB() {
 async function autoClearOldOrders() {
   try {
     const settingsResult = await pool.query("SELECT value FROM settings WHERE key = 'autoClearDays'");
-    const days = settingsResult.rows.length > 0 ? parseInt(settingsResult.rows[0].value) : 30;
+    const days = settingsResult.rows.length > 0 ? parseInt(settingsResult.rows[0].value) : 90;
     if (days > 0) {
       const result = await pool.query(`DELETE FROM orders WHERE pickup_date < CURRENT_DATE - INTERVAL '1 day' * $1`, [days]);
       console.log(`Auto-cleared ${result.rowCount} orders older than ${days} days`);
