@@ -127,21 +127,21 @@ async function initDB() {
     }
 
     // Migrations for existing databases
-    try { await client.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS staff_name VARCHAR(50)`); } catch(e) {}
-    try { await client.query(`ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS min_weight DECIMAL(10,2) DEFAULT 10`); } catch(e) {}
-    try { await client.query(`ALTER TABLE extras ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'Other'`); } catch(e) {}
-    try { 
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS cleaner_extras (
-          id SERIAL PRIMARY KEY,
-          cleaner_id INTEGER REFERENCES cleaners(id) ON DELETE CASCADE,
-          extra_id INTEGER REFERENCES extras(id) ON DELETE CASCADE,
-          custom_price DECIMAL(10,2) NOT NULL,
-          UNIQUE(cleaner_id, extra_id)
-        )
-      `); 
-    } catch(e) {}
-
+    try { await client.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS staff_name VARCHAR(50)`); } catch(e) { console.log('staff_name migration:', e.message); }
+    try { await client.query(`ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS min_weight DECIMAL(10,2) DEFAULT 10`); } catch(e) { console.log('min_weight migration:', e.message); }
+    try { await client.query(`ALTER TABLE extras ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'Other'`); } catch(e) { console.log('category migration:', e.message); }
+    
+    // Create cleaner_extras table if not exists
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS cleaner_extras (
+        id SERIAL PRIMARY KEY,
+        cleaner_id INTEGER REFERENCES cleaners(id) ON DELETE CASCADE,
+        extra_id INTEGER REFERENCES extras(id) ON DELETE CASCADE,
+        custom_price DECIMAL(10,2) NOT NULL,
+        UNIQUE(cleaner_id, extra_id)
+      )
+    `);
+    console.log('cleaner_extras table ensured');
     console.log('Database initialized');
   } catch (err) {
     console.error('DB init error:', err);
