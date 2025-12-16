@@ -108,7 +108,8 @@ async function initDB() {
         ('Blanket - SM', 8.00, 'Blanket'), ('Blanket - MED', 12.00, 'Blanket'), ('Blanket - LG', 15.00, 'Blanket'),
         ('Comforter - SM', 15.00, 'Comforter'), ('Comforter - MED', 20.00, 'Comforter'), ('Comforter - LG', 25.00, 'Comforter'),
         ('Rug - SM', 15.00, 'Rug'), ('Rug - MED', 25.00, 'Rug'), ('Rug - LG', 40.00, 'Rug'),
-        ('Carpet - MED', 35.00, 'Carpet'), ('Carpet - LG', 50.00, 'Carpet')
+        ('Carpet - MED', 35.00, 'Carpet'), ('Carpet - LG', 50.00, 'Carpet'),
+        ('Mat - SM', 10.00, 'Mat'), ('Mat - MED', 15.00, 'Mat'), ('Mat - LG', 20.00, 'Mat')
       `);
     }
 
@@ -255,7 +256,7 @@ app.get('/api/orders/export', authenticate, adminOnly, async (req, res) => {
       const weight = parseFloat(o.weight);
       const minWeight = parseFloat(o.min_weight) || 10;
       const mult = o.service_type === 'same-day' ? (settings.sameDayMult || 1) : 1;
-      const billableWeight = Math.max(weight, minWeight);
+      const billableWeight = weight === 0 ? 0 : Math.max(weight, minWeight);
       const baseTotal = billableWeight * rate * mult;
       const extrasTotal = (o.extras || []).reduce((sum, id) => sum + parseFloat(extrasMap[id]?.price || 0), 0);
       const extrasNames = (o.extras || []).map(id => extrasMap[id]?.name || '').filter(n => n).join(', ');
@@ -511,7 +512,7 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
       const weight = parseFloat(o.weight);
       const minWeight = parseFloat(o.min_weight) || 10;
       const mult = o.service_type === 'same-day' ? (settings.sameDayMult || 1) : 1;
-      const billableWeight = Math.max(weight, minWeight);
+      const billableWeight = weight === 0 ? 0 : Math.max(weight, minWeight);
       const baseTotal = billableWeight * rate * mult;
       
       const extrasCounts = {};
@@ -567,7 +568,7 @@ app.get('/api/reports/invoices-all', authenticate, adminOnly, async (req, res) =
         const rate = parseFloat(o.cleaner_rate);
         const weight = parseFloat(o.weight);
         const minWeight = parseFloat(o.min_weight) || 10;
-        const billableWeight = Math.max(weight, minWeight);
+        const billableWeight = weight === 0 ? 0 : Math.max(weight, minWeight);
         const baseTotal = billableWeight * rate * (o.service_type === 'same-day' ? (settings.sameDayMult || 1) : 1);
         
         let extrasTotal = 0;
@@ -616,7 +617,7 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
       const rate = parseFloat(o.rate);
       const weight = parseFloat(o.weight);
       const minWeight = parseFloat(o.min_weight) || 10;
-      const billableWeight = Math.max(weight, minWeight);
+      const billableWeight = weight === 0 ? 0 : Math.max(weight, minWeight);
       const baseTotal = billableWeight * rate * (o.service_type === 'same-day' ? (settings.sameDayMult || 1) : 1);
       const extrasTotal = (o.extras || []).reduce((sum, id) => sum + parseFloat(extrasMap[id]?.price || 0), 0);
       const total = baseTotal + extrasTotal;
