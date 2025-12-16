@@ -86,6 +86,19 @@ async function initDB() {
         key VARCHAR(50) UNIQUE NOT NULL,
         value VARCHAR(255) NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS invoice_tracking (
+        id SERIAL PRIMARY KEY,
+        cleaner_id INTEGER REFERENCES cleaners(id) ON DELETE CASCADE,
+        week_start DATE NOT NULL,
+        week_end DATE NOT NULL,
+        invoice_amount DECIMAL(10,2) NOT NULL,
+        amount_paid DECIMAL(10,2) DEFAULT 0,
+        paid_date DATE,
+        status VARCHAR(20) DEFAULT 'unpaid',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(cleaner_id, week_start)
+      );
     `);
     
     const userCheck = await client.query('SELECT COUNT(*) FROM users');
@@ -655,6 +668,143 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ============ INVOICE TRACKING ============
+app.get('/api/invoice-tracking', authenticate, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT it.*, c.name as cleaner_name, c.route 
+      FROM invoice_tracking it 
+      JOIN cleaners c ON it.cleaner_id = c.id 
+      ORDER BY it.week_start DESC, c.name
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/invoice-tracking', authenticate, adminOnly, async (req, res) => {
+  const { cleaner_id, week_start, week_end, invoice_amount } = req.body;
+  try {
+    const result = await pool.query(
+      `INSERT INTO invoice_tracking (cleaner_id, week_start, week_end, invoice_amount) 
+       VALUES ($1, $2, $3, $4) 
+       ON CONFLICT (cleaner_id, week_start) DO UPDATE SET invoice_amount = $4
+       RETURNING *`,
+      [cleaner_id, week_start, week_end, invoice_amount]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/invoice-tracking/generate-week', authenticate, adminOnly, async (req, res) => {
+  const { week_start, week_end } = req.body;
+  try {
+    // Get invoice totals for all cleaners for this week
+    const invoicesResult = await pool.query(`
+      SELECT o.cleaner_id, c.name, c.rate, c.min_weight,
+             SUM(CASE WHEN o.weight = 0 THEN 0 ELSE GREATEST(o.weight, c.min_weight) END * c.rate) as base_total,
+             o.extras
+      FROM orders o
+      JOIN cleaners c ON o.cleaner_id = c.id
+      WHERE o.pickup_date >= $1 AND o.pickup_date <= $2
+      GROUP BY o.cleaner_id, c.name, c.rate, c.min_weight, o.extras
+    `, [week_start, week_end]);
+    
+    // Calculate totals per cleaner including extras
+    const extrasResult = await pool.query('SELECT * FROM extras');
+    const extrasMap = {}; extrasResult.rows.forEach(e => { extrasMap[e.id] = parseFloat(e.price); });
+    
+    const cleanerTotals = {};
+    const ordersResult = await pool.query(`
+      SELECT o.cleaner_id, o.weight, o.extras, o.service_type, c.rate, c.min_weight
+      FROM orders o JOIN cleaners c ON o.cleaner_id = c.id
+      WHERE o.pickup_date >= $1 AND o.pickup_date <= $2
+    `, [week_start, week_end]);
+    
+    const settingsResult = await pool.query('SELECT * FROM settings');
+    const settings = {}; settingsResult.rows.forEach(r => { settings[r.key] = parseFloat(r.value); });
+    
+    ordersResult.rows.forEach(o => {
+      if (!cleanerTotals[o.cleaner_id]) cleanerTotals[o.cleaner_id] = 0;
+      const weight = parseFloat(o.weight);
+      const minWeight = parseFloat(o.min_weight) || 10;
+      const billableWeight = weight === 0 ? 0 : Math.max(weight, minWeight);
+      const mult = o.service_type === 'same-day' ? (settings.sameDayMult || 1) : 1;
+      const baseTotal = billableWeight * parseFloat(o.rate) * mult;
+      const extrasTotal = (o.extras || []).reduce((sum, id) => sum + (extrasMap[id] || 0), 0);
+      cleanerTotals[o.cleaner_id] += baseTotal + extrasTotal;
+    });
+    
+    // Insert or update invoice tracking records
+    let created = 0;
+    for (const [cleaner_id, amount] of Object.entries(cleanerTotals)) {
+      if (amount > 0) {
+        await pool.query(
+          `INSERT INTO invoice_tracking (cleaner_id, week_start, week_end, invoice_amount) 
+           VALUES ($1, $2, $3, $4) 
+           ON CONFLICT (cleaner_id, week_start) DO UPDATE SET invoice_amount = $4`,
+          [cleaner_id, week_start, week_end, amount]
+        );
+        created++;
+      }
+    }
+    
+    res.json({ success: true, created });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/invoice-tracking/:id', authenticate, adminOnly, async (req, res) => {
+  const { amount_paid, paid_date, status, notes } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE invoice_tracking SET amount_paid = $1, paid_date = $2, status = $3, notes = $4 WHERE id = $5 RETURNING *`,
+      [amount_paid || 0, paid_date || null, status || 'unpaid', notes || '', req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/invoice-tracking/:id', authenticate, adminOnly, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM invoice_tracking WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/invoice-tracking/summary', authenticate, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT c.id as cleaner_id, c.name as cleaner_name, c.route,
+             COALESCE(SUM(it.invoice_amount), 0) as total_invoiced,
+             COALESCE(SUM(it.amount_paid), 0) as total_paid,
+             COALESCE(SUM(it.invoice_amount - it.amount_paid), 0) as total_due
+      FROM cleaners c
+      LEFT JOIN invoice_tracking it ON c.id = it.cleaner_id
+      GROUP BY c.id, c.name, c.route
+      ORDER BY total_due DESC
+    `);
+    const overall = result.rows.reduce((acc, r) => ({
+      total_invoiced: acc.total_invoiced + parseFloat(r.total_invoiced),
+      total_paid: acc.total_paid + parseFloat(r.total_paid),
+      total_due: acc.total_due + parseFloat(r.total_due)
+    }), { total_invoiced: 0, total_paid: 0, total_due: 0 });
+    res.json({ cleaners: result.rows, overall });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 initDB().then(() => {
