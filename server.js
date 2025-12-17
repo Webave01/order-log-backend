@@ -696,6 +696,32 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Database export endpoint
+app.get('/api/export-database', authenticate, adminOnly, async (req, res) => {
+  try {
+    const [orders, cleaners, extras, cleanerExtras, invoiceTracking, settings] = await Promise.all([
+      pool.query('SELECT o.*, c.name as cleaner_name FROM orders o LEFT JOIN cleaners c ON o.cleaner_id = c.id ORDER BY o.created_at DESC'),
+      pool.query('SELECT * FROM cleaners ORDER BY name'),
+      pool.query('SELECT * FROM extras ORDER BY category, name'),
+      pool.query('SELECT ce.*, c.name as cleaner_name, e.name as extra_name FROM cleaner_extras ce LEFT JOIN cleaners c ON ce.cleaner_id = c.id LEFT JOIN extras e ON ce.extra_id = e.id'),
+      pool.query('SELECT it.*, c.name as cleaner_name FROM invoice_tracking it LEFT JOIN cleaners c ON it.cleaner_id = c.id ORDER BY it.week_start DESC'),
+      pool.query('SELECT * FROM settings')
+    ]);
+    res.json({
+      orders: orders.rows,
+      cleaners: cleaners.rows,
+      extras: extras.rows,
+      cleaner_extras: cleanerExtras.rows,
+      invoice_tracking: invoiceTracking.rows,
+      settings: settings.rows,
+      exported_at: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Export failed' });
+  }
+});
+
 // ============ INVOICE TRACKING ============
 app.get('/api/invoice-tracking', authenticate, adminOnly, async (req, res) => {
   try {
