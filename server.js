@@ -534,6 +534,18 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
     const settingsResult = await pool.query('SELECT * FROM settings');
     const settings = {}; settingsResult.rows.forEach(r => { settings[r.key] = parseFloat(r.value); });
 
+    // Check for sequence gaps
+    const sequenceWarnings = [];
+    const sortedByNum = [...ordersResult.rows].sort((a, b) => (parseInt(a.order_num) || 0) - (parseInt(b.order_num) || 0));
+    for (let i = 1; i < sortedByNum.length; i++) {
+      const prevNum = parseInt(sortedByNum[i-1].order_num) || 0;
+      const currNum = parseInt(sortedByNum[i].order_num) || 0;
+      const diff = currNum - prevNum;
+      if (diff >= 50 || diff <= -50) {
+        sequenceWarnings.push({ from: sortedByNum[i-1].order_num, to: sortedByNum[i].order_num, gap: diff });
+      }
+    }
+
     const orders = ordersResult.rows.map(o => {
       const rate = parseFloat(o.cleaner_rate);
       const weight = parseFloat(o.weight);
@@ -557,7 +569,7 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
       return { ...o, total: baseTotal + extrasTotal, extras_formatted: extrasFormatted, extras_total: extrasTotal };
     });
 
-    res.json({ orders, grandTotal: orders.reduce((sum, o) => sum + o.total, 0), cleaner, extrasMap });
+    res.json({ orders, grandTotal: orders.reduce((sum, o) => sum + o.total, 0), cleaner, extrasMap, sequenceWarnings });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
