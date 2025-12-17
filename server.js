@@ -207,16 +207,30 @@ app.get('/api/orders/check-duplicate', authenticate, async (req, res) => {
 app.get('/api/orders/check-sequence', authenticate, async (req, res) => {
   const { order_num, cleaner_id } = req.query;
   try {
-    const today = new Date().toISOString().split('T')[0];
+    // Get the last few orders for this cleaner to find the highest order number
     const result = await pool.query(
-      `SELECT order_num FROM orders WHERE cleaner_id = $1 AND pickup_date = $2 ORDER BY created_at DESC LIMIT 1`,
-      [cleaner_id, today]
+      `SELECT order_num FROM orders WHERE cleaner_id = $1 ORDER BY created_at DESC LIMIT 10`,
+      [cleaner_id]
     );
     if (result.rows.length === 0) return res.json({ isOutOfSequence: false });
-    const lastNum = parseInt(result.rows[0].order_num) || 0;
+    
+    // Find the highest numeric order number from recent orders
+    let lastNum = 0;
+    let lastOrderNum = '';
+    for (const row of result.rows) {
+      const num = parseInt(row.order_num) || 0;
+      if (num > lastNum) {
+        lastNum = num;
+        lastOrderNum = row.order_num;
+      }
+    }
+    
     const currNum = parseInt(order_num) || 0;
     const diff = Math.abs(currNum - lastNum);
-    res.json(diff >= 50 ? { isOutOfSequence: true, lastOrderNum: result.rows[0].order_num, difference: diff } : { isOutOfSequence: false });
+    
+    // Flag if difference is 50 or more (either direction)
+    const isOutOfSequence = diff >= 50;
+    res.json(isOutOfSequence ? { isOutOfSequence: true, lastOrderNum, difference: diff } : { isOutOfSequence: false });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
