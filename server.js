@@ -374,12 +374,9 @@ app.get('/api/cleaners', authenticate, async (req, res) => {
   }
 });
 
-app.post('/api/cleaners', authenticate, adminOnly, async (req, res) => {
-  const { name, address, rate, route, min_weight } = req.body;
-  try {
-    const result = await pool.query(
-      'INSERT INTO cleaners (name, address, rate, route, min_weight) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [name, address, rate, route || 'east', min_weight || 10]
+app.post('/api/cleaners', async (req, res) => {
+  const { name, rate, route, min_weight, congestion_zone, congestion_rate } = req.body;
+  const result = await pool.query('INSERT INTO cleaners (name, rate, route, min_weight, congestion_zone, congestion_rate) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *', [name, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5]);
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -387,12 +384,9 @@ app.post('/api/cleaners', authenticate, adminOnly, async (req, res) => {
   }
 });
 
-app.put('/api/cleaners/:id', authenticate, adminOnly, async (req, res) => {
-  const { name, address, rate, route, min_weight } = req.body;
-  try {
-    const result = await pool.query(
-      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5 WHERE id=$6 RETURNING *',
-      [name, address, rate, route, min_weight || 10, req.params.id]
+app.put('/api/cleaners/:id', async (req, res) => {
+  const { name, rate, route, min_weight, congestion_zone, congestion_rate } = req.body;
+  const result = await pool.query('UPDATE cleaners SET name=$1, rate=$2, route=$3, min_weight=$4, congestion_zone=$5, congestion_rate=$6 WHERE id=$7 RETURNING *', [name, rate, route, min_weight || 10, congestion_zone || false, congestion_rate || 5, req.params.id]);
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Cleaner not found' });
     res.json(result.rows[0]);
