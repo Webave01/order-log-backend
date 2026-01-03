@@ -640,6 +640,94 @@ app.get('/api/reports/daily', authenticate, adminOnly, async (req, res) => {
   }
 });
 
+app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) => {
+  const { start_date, end_date } = req.query;
+  try {
+    const cleaners = await pool.query('SELECT * FROM cleaners');
+    const cleanerMap = {};
+    cleaners.rows.forEach(c => { cleanerMap[c.id] = c; });
+
+    const extrasResult = await pool.query('SELECT * FROM extras');
+    const extrasMap = {};
+    extrasResult.rows.forEach(e => { extrasMap[e.id] = e; });
+
+    const cleanerExtrasResult = await pool.query('SELECT * FROM cleaner_extras');
+    const cleanerExtrasMap = {};
+    cleanerExtrasResult.rows.forEach(ce => {
+      if (!cleanerExtrasMap[ce.cleaner_id]) cleanerExtrasMap[ce.cleaner_id] = {};
+      cleanerExtrasMap[ce.cleaner_id][ce.extra_id] = parseFloat(ce.custom_price);
+    });
+
+    const settingsResult = await pool.query('SELECT * FROM settings');
+    const settings = {};
+    settingsResult.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
+
+    const ordersResult = await pool.query(
+      'SELECT * FROM orders WHERE pickup_date >= $1 AND pickup_date <= $2',
+      [start_date, end_date]
+    );
+
+    let totalOrders = 0, totalWeight = 0, totalAmount = 0;
+    let eastOrders = 0, eastAmount = 0, westOrders = 0, westAmount = 0;
+    let sameDayOrders = 0, sameDayWeight = 0, twentyFourOrders = 0, twentyFourWeight = 0;
+    const cleanerStats = {};
+    const dailyStats = {};
+
+    for (const o of ordersResult.rows) {
+      const cleaner = cleanerMap[o.cleaner_id];
+      if (!cleaner) continue;
+
+      const cleanerPrices = cleanerExtrasMap[o.cleaner_id] || {};
+      const minWeight = parseFloat(cleaner.min_weight) || 10;
+      const billedWeight = Math.max(parseFloat(o.weight), parseFloat(o.weight) > 0 ? minWeight : 0);
+      const mult = o.service_type === 'same-day' ? settings.sameDayMult : 1;
+      const base = billedWeight * parseFloat(cleaner.rate) * mult;
+      const extrasTotal = (o.extras || []).reduce((sum, id) => {
+        const customPrice = cleanerPrices[id];
+        return sum + (customPrice !== undefined ? customPrice : parseFloat(extrasMap[id]?.price || 0));
+      }, 0);
+      const orderTotal = base + extrasTotal;
+
+      totalOrders++;
+      totalWeight += parseFloat(o.weight);
+      totalAmount += orderTotal;
+
+      if (cleaner.route === 'east') { eastOrders++; eastAmount += orderTotal; }
+      else { westOrders++; westAmount += orderTotal; }
+
+      if (o.service_type === 'same-day') { sameDayOrders++; sameDayWeight += parseFloat(o.weight); }
+      else { twentyFourOrders++; twentyFourWeight += parseFloat(o.weight); }
+
+      if (!cleanerStats[cleaner.id]) cleanerStats[cleaner.id] = { name: cleaner.name, route: cleaner.route, orders: 0, weight: 0, amount: 0 };
+      cleanerStats[cleaner.id].orders++;
+      cleanerStats[cleaner.id].weight += parseFloat(o.weight);
+      cleanerStats[cleaner.id].amount += orderTotal;
+
+      const dateKey = o.pickup_date.toISOString().split('T')[0];
+      if (!dailyStats[dateKey]) dailyStats[dateKey] = { date: dateKey, orders: 0, weight: 0, amount: 0, eastOrders: 0, eastAmount: 0, westOrders: 0, westAmount: 0 };
+      dailyStats[dateKey].orders++;
+      dailyStats[dateKey].weight += parseFloat(o.weight);
+      dailyStats[dateKey].amount += orderTotal;
+      if (cleaner.route === 'east') { dailyStats[dateKey].eastOrders++; dailyStats[dateKey].eastAmount += orderTotal; }
+      else { dailyStats[dateKey].westOrders++; dailyStats[dateKey].westAmount += orderTotal; }
+    }
+
+    res.json({
+      totals: {
+        total_orders: totalOrders, total_weight: totalWeight, total_amount: totalAmount,
+        east_orders: eastOrders, east_amount: eastAmount, west_orders: westOrders, west_amount: westAmount,
+        same_day_orders: sameDayOrders, same_day_weight: sameDayWeight,
+        twenty_four_hour_orders: twentyFourOrders, twenty_four_hour_weight: twentyFourWeight
+      },
+      cleanerBreakdown: Object.values(cleanerStats).sort((a, b) => b.amount - a.amount),
+      dailyBreakdown: Object.values(dailyStats).sort((a, b) => a.date.localeCompare(b.date))
+    });
+  } catch (err) {
+    console.error('Daily stats error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Invoice tracking routes
 app.get('/api/invoice-tracking', authenticate, adminOnly, async (req, res) => {
   try {
