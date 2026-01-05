@@ -494,7 +494,7 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
         const ex = extrasMap[id];
         const customPrice = cleanerExtrasMap[id];
         const price = customPrice !== undefined ? customPrice : parseFloat(ex?.price || 0);
-        return ex ? `${ex.name} ($${price.toFixed(2)})` : null;
+        return ex ? ex.name : null;
       }).filter(Boolean).join(', ');
 
       // Track pickup date for congestion calculation
@@ -584,7 +584,7 @@ app.get('/api/reports/invoices-all', authenticate, adminOnly, async (req, res) =
           const ex = extrasMap[id];
           const customPrice = cleanerPrices[id];
           const price = customPrice !== undefined ? customPrice : parseFloat(ex?.price || 0);
-          return ex ? `${ex.name} ($${price.toFixed(2)})` : null;
+          return ex ? ex.name : null;
         }).filter(Boolean).join(', ');
 
         if (o.pickup_date) {
