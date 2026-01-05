@@ -672,6 +672,7 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
     let sameDayOrders = 0, sameDayWeight = 0, twentyFourOrders = 0, twentyFourWeight = 0;
     const cleanerStats = {};
     const dailyStats = {};
+    const cleanerPickupDates = {};
 
     for (const o of ordersResult.rows) {
       const cleaner = cleanerMap[o.cleaner_id];
@@ -698,10 +699,16 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
       if (o.service_type === 'same-day') { sameDayOrders++; sameDayWeight += parseFloat(o.weight); }
       else { twentyFourOrders++; twentyFourWeight += parseFloat(o.weight); }
 
-      if (!cleanerStats[cleaner.id]) cleanerStats[cleaner.id] = { name: cleaner.name, route: cleaner.route, orders: 0, weight: 0, amount: 0 };
+      if (!cleanerStats[cleaner.id]) cleanerStats[cleaner.id] = { name: cleaner.name, route: cleaner.route, orders: 0, weight: 0, amount: 0, congestion_zone: cleaner.congestion_zone, congestion_rate: parseFloat(cleaner.congestion_rate || 5) };
       cleanerStats[cleaner.id].orders++;
       cleanerStats[cleaner.id].weight += parseFloat(o.weight);
       cleanerStats[cleaner.id].amount += orderTotal;
+
+      // Track unique pickup dates per cleaner for congestion calculation
+      if (cleaner.congestion_zone && o.pickup_date) {
+        if (!cleanerPickupDates[cleaner.id]) cleanerPickupDates[cleaner.id] = new Set();
+        cleanerPickupDates[cleaner.id].add(o.pickup_date.toISOString().split('T')[0]);
+      }
 
       const dateKey = o.pickup_date.toISOString().split('T')[0];
       if (!dailyStats[dateKey]) dailyStats[dateKey] = { date: dateKey, orders: 0, weight: 0, amount: 0, eastOrders: 0, eastAmount: 0, westOrders: 0, westAmount: 0 };
@@ -712,9 +719,23 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
       else { dailyStats[dateKey].westOrders++; dailyStats[dateKey].westAmount += orderTotal; }
     }
 
+    // Calculate total congestion charges
+    let totalCongestion = 0;
+    for (const cleanerId in cleanerPickupDates) {
+      const cleaner = cleanerMap[cleanerId];
+      const days = cleanerPickupDates[cleanerId].size;
+      const charge = days * parseFloat(cleaner.congestion_rate || 5);
+      totalCongestion += charge;
+      if (cleanerStats[cleanerId]) {
+        cleanerStats[cleanerId].congestion_days = days;
+        cleanerStats[cleanerId].congestion_charge = charge;
+      }
+    }
+
     res.json({
       totals: {
         total_orders: totalOrders, total_weight: totalWeight, total_amount: totalAmount,
+        total_congestion: totalCongestion, grand_total: totalAmount + totalCongestion,
         east_orders: eastOrders, east_amount: eastAmount, west_orders: westOrders, west_amount: westAmount,
         same_day_orders: sameDayOrders, same_day_weight: sameDayWeight,
         twenty_four_hour_orders: twentyFourOrders, twenty_four_hour_weight: twentyFourWeight
