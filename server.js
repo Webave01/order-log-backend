@@ -155,7 +155,7 @@ app.get('/api/me', authenticate, (req, res) => {
 // Orders routes
 app.get('/api/orders', authenticate, async (req, res) => {
   try {
-    const { cleaner_id, start_date, end_date, limit = 500, search } = req.query;
+    const { cleaner_id, start_date, end_date, limit = 1500, search } = req.query;
     let query = 'SELECT o.* FROM orders o';
     const params = [];
     const conditions = [];
