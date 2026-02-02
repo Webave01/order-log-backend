@@ -80,6 +80,7 @@ async function initDB() {
         extras INTEGER[] DEFAULT '{}',
         notes TEXT,
         staff_name VARCHAR(50),
+        price_adjustment DECIMAL(10,2) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -107,6 +108,7 @@ async function initDB() {
     await client.query(`
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS congestion_zone BOOLEAN DEFAULT false;
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS congestion_rate DECIMAL(10,2) DEFAULT 5.00;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS price_adjustment DECIMAL(10,2) DEFAULT 0;
     `);
 
     const userCheck = await client.query('SELECT COUNT(*) FROM users');
@@ -193,12 +195,12 @@ app.get('/api/orders', authenticate, async (req, res) => {
 });
 
 app.post('/api/orders', authenticate, async (req, res) => {
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [order_num, cleaner_id, weight || 0, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes, staff_name]
+      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [order_num, cleaner_id, weight || 0, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes, staff_name, price_adjustment || 0]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -224,11 +226,11 @@ app.post('/api/orders/import', authenticate, async (req, res) => {
 
 app.put('/api/orders/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, updated_at=CURRENT_TIMESTAMP WHERE id=$10 RETURNING *`,
-      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, id]
+      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, updated_at=CURRENT_TIMESTAMP WHERE id=$11 RETURNING *`,
+      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     res.json(result.rows[0]);
@@ -270,7 +272,7 @@ app.get('/api/orders/export', authenticate, adminOnly, async (req, res) => {
     const orders = result.rows.map(o => {
       const extrasTotal = (o.extras || []).reduce((sum, id) => sum + parseFloat(extrasMap[id]?.price || 0), 0);
       const base = parseFloat(o.weight) * parseFloat(o.rate_per_lb || 0);
-      return { ...o, extras: (o.extras || []).map(id => extrasMap[id]?.name).join(', '), extras_total: extrasTotal, total: base + extrasTotal };
+      return { ...o, extras: (o.extras || []).map(id => extrasMap[id]?.name).join(', '), extras_total: extrasTotal, total: base + extrasTotal + parseFloat(o.price_adjustment || 0) };
     });
     res.json({ orders });
   } catch (err) {
@@ -502,7 +504,7 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
         uniquePickupDates.add(o.pickup_date.toISOString().split('T')[0]);
       }
 
-      return { ...o, total: base + extrasTotal, extras_formatted: extrasFormatted, billed_weight: billedWeight };
+      return { ...o, total: base + extrasTotal + parseFloat(o.price_adjustment || 0), extras_formatted: extrasFormatted, billed_weight: billedWeight };
     });
 
     const ordersTotal = orders.reduce((sum, o) => sum + o.total, 0);
@@ -591,7 +593,7 @@ app.get('/api/reports/invoices-all', authenticate, adminOnly, async (req, res) =
           uniquePickupDates.add(o.pickup_date.toISOString().split('T')[0]);
         }
 
-        return { ...o, total: base + extrasTotal, extras_formatted: extrasFormatted };
+        return { ...o, total: base + extrasTotal + parseFloat(o.price_adjustment || 0), extras_formatted: extrasFormatted };
       });
 
       const ordersTotal = orders.reduce((sum, o) => sum + o.total, 0);
@@ -687,7 +689,7 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
         const customPrice = cleanerPrices[id];
         return sum + (customPrice !== undefined ? customPrice : parseFloat(extrasMap[id]?.price || 0));
       }, 0);
-      const orderTotal = base + extrasTotal;
+      const orderTotal = base + extrasTotal + parseFloat(o.price_adjustment || 0);
 
       totalOrders++;
       totalWeight += parseFloat(o.weight);
@@ -822,7 +824,7 @@ app.post('/api/invoice-tracking/generate-week', authenticate, adminOnly, async (
           const customPrice = cleanerPrices[id];
           return sum + (customPrice !== undefined ? customPrice : parseFloat(extrasMap[id]?.price || 0));
         }, 0);
-        total += base + extrasTotal;
+        total += base + extrasTotal + parseFloat(o.price_adjustment || 0);
         
         if (o.pickup_date) {
           uniquePickupDates.add(o.pickup_date.toISOString().split('T')[0]);
