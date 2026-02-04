@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Log</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,-apple-system,sans-serif}</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const{useState,useEffect}=React;
+const API=location.hostname==='localhost'?'http://localhost:3001/api':'https://order-log-backend.onrender.com/api';
+const STAFF=['TG','NG','Roma','Soco','Anna','Mario','Boris'];
+const COLORS=['Army','Beige','Black','Blue','Brown','Cream','Flowers','Fresh Direct','Green','Grey','Ikea','Indigo','Maroon','Marshalls','Orange','Other','Pink','Plastic','Purple','Rainbow','Red','Shopping bag','Tan','Teal','Violet','White','Yellow'];
+const COLOR_ES={'Army':'Militar','Beige':'Beige','Black':'Negro','Blue':'Azul','Brown':'Marrón','Cream':'Cream','Flowers':'Flores','Fresh Direct':'Fresh Direct','Green':'Verde','Grey':'Gris','Ikea':'Ikea','Indigo':'Índigo','Maroon':'Maroon','Marshalls':'Marshalls','Orange':'Naranja','Other':'Otro','Pink':'Rosa','Plastic':'Plástico','Purple':'Morado','Rainbow':'Arcoíris','Red':'Rojo','Shopping bag':'Bolsa Compras','Tan':'Canela','Teal':'Verde Azulado','Violet':'Violeta','White':'Blanco','Yellow':'Amarillo'};
+
+const T={
+  en:{appName:'Order Log',orders:'Orders',cleaners:'Cleaners',extras:'Extras',invoices:'Invoices',payments:'Payments',reports:'Reports',errors:'Errors',settings:'Settings',logout:'Logout',admin:'Admin',staff:'Staff',username:'Username',password:'Password',signIn:'Sign In',newOrder:'+ New Order',import:'Import',export:'Export',searchPlaceholder:'Search...',searchCleaner:'Search cleaner...',extrasOnlyHint:'0 for extras only',noCleaners:'No cleaners',noOrders:'No orders',edit:'Edit',delete:'Delete',orderNum:'Order #',cleaner:'Cleaner',weight:'Weight (lbs)',service:'Service',pickupDate:'Pickup Date',bagColor:'Bag Color',extrasLabel:'Extras',notes:'Notes',cancel:'Cancel',add:'Add',update:'Update',saving:'Saving...',select:'Select...',sameDay:'Same Day',hour24:'Next Day',loading:'Loading...',totalOrders:'Total Orders',totalPounds:'Total Pounds',totalAmount:'Total Amount',dailyReports:'Daily Reports',start:'Start',end:'End',today:'Today',thisWeek:'This Week',lastWeek:'Last Week',generate:'Generate',cleanerLocations:'Cleaner Locations',addCleaner:'+ Add',name:'Name',rateLb:'Rate/lb',minWeight:'Min Weight',route:'Route',eastSide:'East',westSide:'West',extraItems:'Extra Items',addExtra:'+ Add',price:'Price',category:'Category',generateInvoice:'Generate Invoice',invoice:'INVOICE',to:'To:',period:'Period:',date:'Date',total:'Total',grandTotal:'Grand Total',settingsTitle:'Settings',sameDayMult:'Same-Day Mult',defaultRate:'Default Rate/lb',saveSettings:'Save',clearAllOrders:'Clear All',clearWarning:'DELETE ALL orders!',clearConfirm:'Type DELETE:',staffName:'Entered By',other:'Other',selectStaff:'Select name',customPrices:'Custom Prices',exportPDF:'PDF',exportExcel:'Excel',exportAllPDF:'All PDF',duplicates:'Duplicates Found',dailyBreakdown:'Daily Breakdown',eastVsWest:'East vs West',amount:'Amount',white:'White',blue:'Blue',red:'Red',green:'Green',yellow:'Yellow',black:'Black',orange:'Orange',purple:'Purple',pink:'Pink',brown:'Brown',grey:'Grey',beige:'Beige',tan:'Tan',teal:'Teal',violet:'Violet',indigo:'Indigo'},
+  es:{appName:'Registro',orders:'Órdenes',cleaners:'Tintorerías',extras:'Extras',invoices:'Facturas',payments:'Pagos',reports:'Reportes',errors:'Errores',settings:'Ajustes',logout:'Salir',admin:'Admin',staff:'Personal',username:'Usuario',password:'Contraseña',signIn:'Entrar',newOrder:'+ Nueva',import:'Importar',export:'Exportar',searchPlaceholder:'Buscar...',searchCleaner:'Buscar limpiadores...',extrasOnlyHint:'0 solo para extras',noCleaners:'Sin tintorerías',noOrders:'Sin órdenes',edit:'Editar',delete:'Borrar',orderNum:'Número Orden',cleaner:'Tintorería',weight:'Libras',service:'Servicio',pickupDate:'Fecha Recogida',bagColor:'Color Bolsa',extrasLabel:'Extras',notes:'Notas',cancel:'Cancelar',add:'Agregar',update:'Actualizar',saving:'Guardando...',select:'Seleccionar...',sameDay:'Mismo Día',hour24:'Día Siguiente',loading:'Cargando...',totalOrders:'Total Órdenes',totalPounds:'Total Libras',totalAmount:'Monto Total',dailyReports:'Reportes Diarios',start:'Inicio',end:'Fin',today:'Hoy',thisWeek:'Esta Semana',lastWeek:'Sem Pasada',generate:'Generar',cleanerLocations:'Tintorerías',addCleaner:'+ Agregar',name:'Nombre',rateLb:'Tarifa/lb',minWeight:'Peso Mín',route:'Ruta',eastSide:'Este',westSide:'Oeste',extraItems:'Artículos Extra',addExtra:'+ Agregar',price:'Precio',category:'Categoría',generateInvoice:'Generar Factura',invoice:'FACTURA',to:'Para:',period:'Período:',date:'Fecha',total:'Total',grandTotal:'Total',settingsTitle:'Ajustes',sameDayMult:'Mult Mismo Día',defaultRate:'Tarifa/lb',saveSettings:'Guardar',clearAllOrders:'Borrar Todo',clearWarning:'¡BORRARÁ TODO!',clearConfirm:'Escriba BORRAR:',staffName:'Ingresado Por',other:'Otro',selectStaff:'Seleccionar nombre',customPrices:'Precios Personalizados',exportPDF:'PDF',exportExcel:'Excel',exportAllPDF:'Todos PDF',duplicates:'Duplicados Encontrados',dailyBreakdown:'Desglose Diario',eastVsWest:'Este vs Oeste',amount:'Monto',white:'Blanco',blue:'Azul',red:'Rojo',green:'Verde',yellow:'Amarillo',black:'Negro',orange:'Naranja',purple:'Morado',pink:'Rosa',brown:'Marrón',grey:'Gris',beige:'Beige',tan:'Canela',teal:'Verde Azulado',violet:'Violeta',indigo:'Índigo'}
+};
+
+const api={
+  token:localStorage.getItem('token'),
+  setToken(t){this.token=t;localStorage.setItem('token',t)},
+  clearToken(){this.token=null;localStorage.removeItem('token')},
+  async req(m,p,b){
+    const o={method:m,headers:{'Content-Type':'application/json'}};
+    if(this.token)o.headers['Authorization']='Bearer '+this.token;
+    if(b)o.body=JSON.stringify(b);
+    const r=await fetch(API+p,o);
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Error');
+    return d;
+  },
+  get(p){return this.req('GET',p)},
+  post(p,b){return this.req('POST',p,b)},
+  put(p,b){return this.req('PUT',p,b)},
+  del(p){return this.req('DELETE',p)}
+};
+
+const fmt$=n=>'$'+Number(n||0).toFixed(2);
+const fmtD=d=>{if(!d)return'';try{const s=d.toString().split('T')[0];const p=s.split('-');if(p.length!==3)return d;return parseInt(p[1])+'/'+parseInt(p[2])+'/'+p[0].slice(2)}catch(e){return d||''}};
+const fmtDF=d=>{if(!d)return'';try{const s=d.toString().split('T')[0];const p=s.split('-');if(p.length!==3)return d;const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return months[parseInt(p[1])-1]+' '+parseInt(p[2])+', '+p[0]}catch(e){return d||''}};
+const fmtTime=d=>{if(!d)return'';try{const dt=new Date(d);const h=dt.getHours();const m=dt.getMinutes();const ampm=h>=12?'pm':'am';const h12=h%12||12;return h12+':'+(m<10?'0':'')+m+ampm}catch(e){return''}};
+const invoiceName=n=>{const map={'harlem':'Elevate Properties'};const key=Object.keys(map).find(k=>n.toLowerCase().includes(k));return key?map[key]:n};
+
+const S={
+  lbl:{display:'block',color:'#94a3b8',fontSize:'11px',marginBottom:'4px',textTransform:'uppercase',fontWeight:'600'},
+  inp:{width:'100%',padding:'10px',background:'#0f172a',border:'1px solid #475569',borderRadius:'6px',color:'#fff',fontSize:'14px',boxSizing:'border-box'},
+  btn:{background:'linear-gradient(90deg,#3b82f6,#8b5cf6)',border:'none',color:'#fff',padding:'10px 20px',borderRadius:'8px',fontWeight:'bold',cursor:'pointer'},
+  cancel:{padding:'10px 20px',border:'1px solid #475569',background:'transparent',color:'#94a3b8',borderRadius:'8px',cursor:'pointer'},
+  edit:{border:'1px solid #3b82f6',background:'transparent',color:'#3b82f6',padding:'6px 12px',borderRadius:'6px',cursor:'pointer'},
+  del:{border:'1px solid #ef4444',background:'transparent',color:'#ef4444',padding:'6px 12px',borderRadius:'6px',cursor:'pointer'},
+  modal:{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',zIndex:100},
+  card:{background:'#1e293b',borderRadius:'12px',padding:'16px',marginBottom:'12px',border:'1px solid #334155'}
+};
+
+function App(){
+  const[user,setUser]=useState(null);
+  const[loading,setLoading]=useState(true);
+  const[view,setView]=useState('orders');
+  const[orders,setOrders]=useState([]);
+  const[cleaners,setCleaners]=useState([]);
+  const[extras,setExtras]=useState([]);
+  const[settings,setSettings]=useState({sameDayMult:1,defaultRate:0.85});
+  const[toast,setToast]=useState('');
+  const[lang,setLang]=useState(localStorage.getItem('lang')||'en');
+  const[staffName,setStaffName]=useState(sessionStorage.getItem('staffName')||'');
+  const[cleanerExtras,setCleanerExtras]=useState({});
+  const t=T[lang];
+
+  useEffect(()=>{localStorage.setItem('lang',lang)},[lang]);
+  useEffect(()=>{sessionStorage.setItem('staffName',staffName)},[staffName]);
+  useEffect(()=>{
+    if(api.token){api.get('/me').then(d=>{setUser(d.user);loadData()}).catch(()=>{api.clearToken();setLoading(false)})}
+    else setLoading(false);
+  },[]);
+
+  const loadData=async()=>{
+    try{
+      const[o,c,e,s]=await Promise.all([api.get('/orders'),api.get('/cleaners'),api.get('/extras'),api.get('/settings')]);
+      setOrders(o);setCleaners(c);setExtras(e);setSettings(s);
+      const ceMap={};
+      for(const cl of c){
+        try{const ce=await api.get('/cleaners/'+cl.id+'/extras');ceMap[cl.id]={};ce.forEach(x=>{ceMap[cl.id][x.extra_id]=parseFloat(x.custom_price)})}catch(e){}
+      }
+      setCleanerExtras(ceMap);
+    }catch(e){console.error(e)}
+    setLoading(false);
+  };
+
+  const handleLogin=async(u,p)=>{const d=await api.post('/login',{username:u,password:p});api.setToken(d.token);setUser(d.user);await loadData()};
+  const handleLogout=()=>{api.clearToken();setUser(null);setOrders([]);sessionStorage.removeItem('staffName');setStaffName('')};
+  const notify=m=>{setToast(m);setTimeout(()=>setToast(''),2000)};
+
+  const calcTotal=(o,cid)=>{
+    const c=cleaners.find(x=>x.id===cid);
+    if(!c)return 0;
+    const rate=parseFloat(c.rate);
+    const w=parseFloat(o.weight)||0;
+    const minW=parseFloat(c.min_weight)||10;
+    const mult=o.service_type==='same-day'?settings.sameDayMult:1;
+    const billW=w===0?0:Math.max(w,minW);
+    const base=billW*rate*mult;
+    const extT=(o.extras||[]).reduce((s,id)=>{
+      const cp=cleanerExtras[cid]?.[id];
+      const ex=extras.find(x=>x.id===id);
+      return s+(cp!==undefined?cp:parseFloat(ex?.price||0));
+    },0);
+    return base+extT;
+  };
+
+  if(loading)return React.createElement('div',{style:{minHeight:'100vh',background:'#0f172a',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff'}},t.loading);
+  if(!user)return React.createElement(Login,{onLogin:handleLogin,lang,setLang,t});
+
+  const isAdmin=user.role==='admin';
+  const tabs=isAdmin?['orders','cleaners','extras','invoices','payments','reports','errors','settings']:['orders'];
+
+  return React.createElement('div',{style:{minHeight:'100vh',background:'#0f172a',color:'#e2e8f0',fontFamily:'system-ui'}},
+    React.createElement('div',{style:{background:'linear-gradient(90deg,#1e40af,#7c3aed)',padding:'16px 20px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}},
+      React.createElement('div',{style:{fontWeight:'bold',fontSize:'20px'}},t.appName),
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
+        staffName&&React.createElement('span',{style:{fontSize:'14px',background:'rgba(255,255,255,0.2)',padding:'4px 10px',borderRadius:'6px'}},'👤 '+staffName),
+        React.createElement('button',{onClick:handleLogout,style:{background:'rgba(255,255,255,0.2)',border:'none',color:'#fff',padding:'6px 12px',borderRadius:'6px',cursor:'pointer'}},t.logout))),
+    React.createElement('div',{style:{background:'#1e293b',padding:'8px 16px',display:'flex',gap:'8px',borderBottom:'1px solid #334155',flexWrap:'wrap'}},
+      tabs.map(tab=>React.createElement('button',{key:tab,onClick:()=>setView(tab),style:{padding:'10px 16px',borderRadius:'8px',border:'none',cursor:'pointer',background:view===tab?'linear-gradient(90deg,#3b82f6,#8b5cf6)':'transparent',color:view===tab?'#fff':'#94a3b8',fontWeight:'500'}},t[tab]))),
+    toast&&React.createElement('div',{style:{position:'fixed',top:20,right:20,background:'#065f46',color:'#fff',padding:'12px 20px',borderRadius:'8px',zIndex:999}},toast),
+    React.createElement('div',{style:{maxWidth:'1000px',margin:'0 auto',padding:'20px'}},
+      view==='orders'&&React.createElement(Orders,{orders,cleaners,extras,settings,cleanerExtras,notify,loadData,isAdmin,staffName,setStaffName,calcTotal,lang,t}),
+      view==='cleaners'&&isAdmin&&React.createElement(Cleaners,{cleaners,extras,cleanerExtras,notify,loadData,t}),
+      view==='extras'&&isAdmin&&React.createElement(Extras,{extras,notify,loadData,t}),
+      view==='invoices'&&isAdmin&&React.createElement(Invoices,{cleaners,extras,cleanerExtras,settings,t}),
+      view==='payments'&&isAdmin&&React.createElement(Payments,{cleaners,settings,t}),
+      view==='reports'&&isAdmin&&React.createElement(Reports,{t}),
+      view==='errors'&&isAdmin&&React.createElement(Errors,{cleaners,t}),
+      view==='settings'&&isAdmin&&React.createElement(Settings,{settings,setSettings,notify,lang,setLang,loadData,t})));
+}
+
+function Login({onLogin,lang,setLang,t}){
+  const[u,setU]=useState('');const[p,setP]=useState('');const[err,setErr]=useState('');const[ld,setLd]=useState(false);
+  const sub=async e=>{e.preventDefault();setErr('');setLd(true);try{await onLogin(u,p)}catch(e){setErr(e.message)}setLd(false)};
+  return React.createElement('div',{style:{minHeight:'100vh',background:'#0f172a',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}},
+    React.createElement('div',{style:{background:'#1e293b',padding:'40px',borderRadius:'16px',width:'100%',maxWidth:'360px',border:'1px solid #334155'}},
+      React.createElement('h1',{style:{color:'#fff',textAlign:'center',marginBottom:'24px',fontSize:'28px'}},t.appName),
+      React.createElement('div',{style:{display:'flex',justifyContent:'center',gap:'8px',marginBottom:'20px'}},
+        React.createElement('button',{onClick:()=>setLang('en'),style:{padding:'6px 12px',borderRadius:'6px',border:lang==='en'?'2px solid #3b82f6':'1px solid #475569',background:lang==='en'?'rgba(59,130,246,0.2)':'transparent',color:'#fff',cursor:'pointer'}},'English'),
+        React.createElement('button',{onClick:()=>setLang('es'),style:{padding:'6px 12px',borderRadius:'6px',border:lang==='es'?'2px solid #3b82f6':'1px solid #475569',background:lang==='es'?'rgba(59,130,246,0.2)':'transparent',color:'#fff',cursor:'pointer'}},'Español')),
+      React.createElement('form',{onSubmit:sub},
+        err&&React.createElement('div',{style:{background:'#991b1b',color:'#fff',padding:'10px',borderRadius:'8px',marginBottom:'16px',textAlign:'center'}},err),
+        React.createElement('div',{style:{marginBottom:'16px'}},React.createElement('label',{style:S.lbl},t.username),React.createElement('input',{value:u,onChange:e=>setU(e.target.value),style:S.inp,disabled:ld})),
+        React.createElement('div',{style:{marginBottom:'20px'}},React.createElement('label',{style:S.lbl},t.password),React.createElement('input',{type:'password',value:p,onChange:e=>setP(e.target.value),style:S.inp,disabled:ld})),
+        React.createElement('button',{type:'submit',disabled:ld,style:{...S.btn,width:'100%',padding:'14px',fontSize:'16px',opacity:ld?0.6:1}},ld?'...':t.signIn))));
+}
+
+function DateTime(){
+  const[now,setNow]=useState(new Date());
+  useEffect(()=>{const t=setInterval(()=>setNow(new Date()),1000);return()=>clearInterval(t)},[]);
+  return React.createElement('div',{style:{textAlign:'center',marginBottom:'16px',color:'#94a3b8',fontSize:'14px'}},
+    now.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})+' • '+now.toLocaleTimeString());
+}
+
+function StaffSelector({staffName,setStaffName,t}){
+  const[showOther,setShowOther]=useState(false);const[other,setOther]=useState('');
+  if(staffName)return React.createElement('div',{style:{background:'#065f46',padding:'12px 16px',borderRadius:'8px',marginBottom:'16px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+    React.createElement('span',null,'👤 '+t.staffName+': ',React.createElement('strong',null,staffName)),
+    React.createElement('button',{onClick:()=>setStaffName(''),style:{background:'rgba(255,255,255,0.2)',border:'none',color:'#fff',padding:'4px 12px',borderRadius:'6px',cursor:'pointer',fontSize:'12px'}},'Change'));
+  return React.createElement('div',{style:{background:'#1e293b',padding:'16px',borderRadius:'12px',marginBottom:'16px',border:'2px solid #f59e0b'}},
+    React.createElement('div',{style:{color:'#f59e0b',fontWeight:'bold',marginBottom:'12px',fontSize:'14px'}},'👤 '+t.selectStaff),
+    React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:showOther?'12px':'0'}},
+      STAFF.map(n=>React.createElement('button',{key:n,onClick:()=>setStaffName(n),style:{padding:'10px 16px',borderRadius:'8px',border:'1px solid #475569',background:'#0f172a',color:'#fff',cursor:'pointer',fontWeight:'500'}},n)),
+      React.createElement('button',{onClick:()=>setShowOther(!showOther),style:{padding:'10px 16px',borderRadius:'8px',border:showOther?'2px solid #3b82f6':'1px solid #475569',background:showOther?'rgba(59,130,246,0.2)':'#0f172a',color:'#fff',cursor:'pointer'}},t.other+'...')),
+    showOther&&React.createElement('div',{style:{display:'flex',gap:'8px'}},
+      React.createElement('input',{value:other,onChange:e=>setOther(e.target.value),style:{...S.inp,flex:1},onKeyPress:e=>e.key==='Enter'&&other.trim()&&setStaffName(other.trim())}),
+      React.createElement('button',{onClick:()=>other.trim()&&setStaffName(other.trim()),style:{...S.btn,padding:'10px 20px'}},'OK')));
+}
+
+function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,isAdmin,staffName,setStaffName,calcTotal,lang,t}){
+  const[showForm,setShowForm]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState('');const[showImport,setShowImport]=useState(false);
+  const[searchResults,setSearchResults]=useState(null);const[searching,setSearching]=useState(false);const[filterCleaner,setFilterCleaner]=useState('');
+  
+  const doSearch=async(term)=>{
+    setSearch(term);
+    if(term.length>=2){
+      setSearching(true);
+      try{
+        const results=await api.get('/orders?search='+encodeURIComponent(term));
+        setSearchResults(results);
+      }catch(e){console.error(e)}
+      setSearching(false);
+    }else{
+      setSearchResults(null);
+    }
+  };
+  
+  const displayOrders=searchResults!==null?searchResults:orders;
+  const filtered=displayOrders.filter(o=>{
+    const c=cleaners.find(c=>c.id===o.cleaner_id);
+    const matchesSearch=!search||o.order_num.includes(search)||(c?.name||'').toLowerCase().includes(search.toLowerCase());
+    const matchesCleaner=!filterCleaner||o.cleaner_id===parseInt(filterCleaner);
+    return matchesSearch&&matchesCleaner;
+  });
+  const save=async d=>{try{if(editing){await api.put('/orders/'+d.id,d);notify('Updated')}else{await api.post('/orders',d);notify('Added')}await loadData();setSearchResults(null);setSearch('');setShowForm(false);setEditing(null)}catch(e){alert(e.message)}};
+  const del=async id=>{if(!confirm(t.delete+'?'))return;try{await api.del('/orders/'+id);notify('Deleted');await loadData();if(search)doSearch(search)}catch(e){alert(e.message)}};
+  const exp=async()=>{try{const d=await api.get('/orders/export');const rows=d.orders.map(o=>({'Order #':o.order_num,Cleaner:o.cleaner_name,Route:o.route,Weight:o.weight,'Rate/lb':o.rate_per_lb,Service:o.service_type,'Pickup Date':fmtDF(o.pickup_date),Created:o.created_at?fmtD(o.created_at)+' '+fmtTime(o.created_at):'','Bag Color':o.bag_color,Extras:o.extras,'Extras $':o.extras_total,Total:o.total,Notes:o.notes,'Entered By':o.staff_name}));const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Orders');XLSX.writeFile(wb,'orders_'+new Date().toISOString().split('T')[0]+'.xlsx');notify('Exported')}catch(e){alert(e.message)}};
+  const handleNew=()=>{if(!staffName){alert('Select name first');return}setEditing(null);setShowForm(true)};
+  const groupExtras=(extraIds)=>{const groups={};(extraIds||[]).forEach(id=>{const ex=extras.find(e=>e.id===id);if(ex){const cat=ex.category||'Other';if(!groups[cat])groups[cat]=[];groups[cat].push(ex.name)}});return groups};
+
+  return React.createElement('div',null,
+    React.createElement(DateTime),
+    React.createElement(StaffSelector,{staffName,setStaffName,t}),
+    React.createElement('div',{style:{textAlign:'center',marginBottom:'24px'}},
+      React.createElement('button',{onClick:handleNew,style:{...S.btn,padding:'20px 60px',fontSize:'22px',fontWeight:'bold',opacity:staffName?1:0.5,boxShadow:'0 4px 15px rgba(59,130,246,0.4)'}},t.newOrder)),
+    isAdmin&&React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
+      React.createElement('h2',{style:{margin:0,fontSize:'22px'}},t.orders),
+      React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+        React.createElement('button',{onClick:()=>setShowImport(true),style:{...S.btn,background:'#059669'}},t.import),
+        React.createElement('button',{onClick:exp,style:{...S.btn,background:'#0891b2'}},t.export))),
+    cleaners.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'#64748b'}},t.noCleaners):
+      React.createElement(React.Fragment,null,
+        React.createElement('div',{style:{display:'flex',gap:'12px',marginBottom:'16px',flexWrap:'wrap'}},
+          React.createElement('div',{style:{position:'relative',flex:'1',minWidth:'200px'}},
+            React.createElement('input',{placeholder:t.searchPlaceholder+' (type 2+ chars to search all)',value:search,onChange:e=>doSearch(e.target.value),style:{...S.inp,fontSize:'18px',padding:'16px'}}),
+            searching&&React.createElement('span',{style:{position:'absolute',right:'16px',top:'50%',transform:'translateY(-50%)',color:'#94a3b8',fontSize:'18px'}},'...')),
+          React.createElement('select',{value:filterCleaner,onChange:e=>setFilterCleaner(e.target.value),style:{...S.inp,fontSize:'16px',padding:'16px',minWidth:'180px'}},
+            React.createElement('option',{value:''},'Customers'),
+            cleaners.map(c=>React.createElement('option',{key:c.id,value:c.id},c.name)))),
+        searchResults!==null&&React.createElement('div',{style:{marginBottom:'12px',color:'#94a3b8',fontSize:'13px'}},'Found '+filtered.length+' orders matching "'+search+'"',React.createElement('button',{onClick:()=>{setSearch('');setSearchResults(null)},style:{marginLeft:'12px',background:'none',border:'none',color:'#3b82f6',cursor:'pointer',textDecoration:'underline'}},'Clear')),
+        filtered.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'#64748b'}},t.noOrders):
+          filtered.slice(0,200).map(o=>{const c=cleaners.find(c=>c.id===o.cleaner_id);const groups=groupExtras(o.extras);const total=calcTotal(o,o.cleaner_id);
+            return React.createElement('div',{key:o.id,style:S.card},
+              React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'8px'}},
+                React.createElement('div',null,React.createElement('span',{style:{fontWeight:'bold',fontSize:'18px',marginRight:'10px'}},'#'+o.order_num),React.createElement('span',{style:{background:o.service_type==='same-day'?'#f59e0b':'#3b82f6',padding:'4px 12px',borderRadius:'10px',fontSize:'13px',fontWeight:'bold'}},o.service_type==='same-day'?t.sameDay:t.hour24)),
+                React.createElement('div',{style:{textAlign:'right'}},isAdmin&&React.createElement('div',{style:{fontWeight:'bold',color:'#4ade80',fontSize:'16px'}},fmt$(total)),o.staff_name&&React.createElement('span',{style:{color:'#94a3b8',fontSize:'12px'}},'👤 '+o.staff_name))),
+              React.createElement('div',{style:{fontWeight:'600',marginBottom:'8px',fontSize:'16px'}},c?.name||'Unknown'),
+              React.createElement('div',{style:{color:'#e2e8f0',fontSize:'16px',display:'flex',gap:'20px',flexWrap:'wrap',fontWeight:'500'}},React.createElement('span',null,'⚖️ '+o.weight+' lbs'),React.createElement('span',null,'📅 '+fmtD(o.pickup_date)+(o.created_at?' @ '+fmtTime(o.created_at):'')),React.createElement('span',null,'🎨 '+o.bag_color)),
+              Object.keys(groups).length>0&&React.createElement('div',{style:{marginTop:'10px'}},Object.entries(groups).map(([cat,items])=>React.createElement('div',{key:cat,style:{fontSize:'14px',color:'#94a3b8',marginBottom:'4px'}},React.createElement('span',{style:{color:'#f59e0b'}},cat+': '),items.join(', ')))),
+              o.notes&&React.createElement('div',{style:{marginTop:'10px',color:'#94a3b8',fontSize:'14px',fontStyle:'italic'}},'📝 '+o.notes),
+              isAdmin&&parseFloat(o.price_adjustment)!==0&&React.createElement('div',{style:{marginTop:'6px',color:parseFloat(o.price_adjustment)>0?'#4ade80':'#ef4444',fontSize:'14px',fontWeight:'bold'}},'💲 Adj: '+(parseFloat(o.price_adjustment)>0?'+':'')+fmt$(o.price_adjustment)),
+              React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #334155'}},React.createElement('button',{onClick:()=>{setEditing(o);setShowForm(true)},style:S.edit},t.edit),React.createElement('button',{onClick:()=>del(o.id),style:S.del},t.delete)))})),
+    showForm&&React.createElement(OrderForm,{order:editing,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave:save,onClose:()=>{setShowForm(false);setEditing(null)},lang,t}),
+    showImport&&React.createElement(ImportModal,{cleaners,staffName,onClose:()=>setShowImport(false),onImport:loadData,notify,t}));
+}
+
+function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave,onClose,lang,t}){
+  const getDefaultPickupDate=()=>{const now=new Date();const hour=now.getHours();const target=hour>=6&&hour<9?new Date(now.setDate(now.getDate()-1)):now;const y=target.getFullYear();const m=String(target.getMonth()+1).padStart(2,'0');const d=String(target.getDate()).padStart(2,'0');return y+'-'+m+'-'+d};
+  const[d,setD]=useState({order_num:order?.order_num||'',weight:order?.weight||'',service_type:order?.service_type||'same-day',pickup_date:order?.pickup_date?.split('T')[0]||getDefaultPickupDate(),bag_color:order?.bag_color||'Blue',cleaner_id:order?.cleaner_id||'',extras:order?.extras||[],notes:order?.notes||'',staff_name:order?.staff_name||staffName,price_adjustment:order?.price_adjustment||'',id:order?.id||null});
+  const[saving,setSaving]=useState(false);const[dupWarn,setDupWarn]=useState(null);const[seqWarn,setSeqWarn]=useState(null);const[cleanerSearch,setCleanerSearch]=useState('');const[highlightIdx,setHighlightIdx]=useState(0);
+
+  useEffect(()=>{
+    const check=async()=>{if(d.order_num&&d.cleaner_id){try{const dup=await api.get('/orders/check-duplicate?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id+(d.id?'&exclude_id='+d.id:''));setDupWarn(dup.isDuplicate?'REPEAT: #'+d.order_num+' exists ('+fmtD(dup.existingOrder.pickup_date)+')':null);const seq=await api.get('/orders/check-sequence?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id);setSeqWarn(seq.isOutOfSequence?'Check # - last was #'+seq.lastOrderNum+' (diff: '+seq.difference+')':null)}catch(e){}}else{setDupWarn(null);setSeqWarn(null)}};
+    const tm=setTimeout(check,300);return()=>clearTimeout(tm);
+  },[d.order_num,d.cleaner_id,d.id]);
+
+  const sub=async e=>{e.preventDefault();if(!d.order_num||!d.cleaner_id){alert('Fill required fields');return}if(!d.weight&&d.extras.length===0){alert('Enter weight or select extras');return}if(dupWarn&&!confirm(dupWarn+'\n\nSave anyway?'))return;if(seqWarn&&!confirm(seqWarn+'\n\nSave anyway?'))return;setSaving(true);await onSave({...d,weight:d.weight||0});setSaving(false)};
+  
+  const getQty=(id)=>d.extras.filter(x=>x===id).length;
+  const addOne=(id)=>setD({...d,extras:[...d.extras,id]});
+  const removeOne=(id)=>{const idx=d.extras.indexOf(id);if(idx>-1){const newExtras=[...d.extras];newExtras.splice(idx,1);setD({...d,extras:newExtras})}};
+  
+  const grouped={};extras.forEach(ex=>{const cat=ex.category||'Other';if(!grouped[cat])grouped[cat]=[];grouped[cat].push(ex)});
+  
+  const filteredCleaners=cleanerSearch?cleaners.filter(c=>c.name.toLowerCase().includes(cleanerSearch.toLowerCase())):cleaners;
+  const selectedCleaner=cleaners.find(c=>c.id===d.cleaner_id);
+
+  return React.createElement('div',{style:S.modal},
+    React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'500px',maxHeight:'90vh',overflow:'auto',border:'1px solid #334155'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},
+        React.createElement('h3',{style:{margin:0}},(order?t.edit:t.add)+' '+t.orders),
+        React.createElement('button',{onClick:onClose,style:{background:'#ef4444',border:'none',color:'#fff',fontSize:'28px',cursor:'pointer',width:'44px',height:'44px',borderRadius:'8px',fontWeight:'bold'}},'✕')),
+      React.createElement('form',{onSubmit:sub,style:{padding:'16px'}},
+        d.staff_name&&React.createElement('div',{style:{background:'#065f46',padding:'8px 12px',borderRadius:'6px',marginBottom:'12px',fontSize:'13px'}},'👤 '+d.staff_name),
+        dupWarn&&React.createElement('div',{style:{background:'#7f1d1d',border:'2px solid #ef4444',color:'#fecaca',padding:'12px',borderRadius:'8px',marginBottom:'12px',fontSize:'14px',fontWeight:'bold'}},'⚠️ '+dupWarn),
+        seqWarn&&React.createElement('div',{style:{background:'#78350f',border:'2px solid #f59e0b',color:'#fef3c7',padding:'12px',borderRadius:'8px',marginBottom:'12px',fontSize:'14px',fontWeight:'bold'}},'⚠️ '+seqWarn),
+        React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}},
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.cleaner+' *'),
+            React.createElement('input',{type:'text',placeholder:selectedCleaner?selectedCleaner.name:t.searchCleaner,value:cleanerSearch,onChange:e=>{setCleanerSearch(e.target.value);setHighlightIdx(0);if(!e.target.value)setD({...d,cleaner_id:''})},onKeyDown:e=>{if(!cleanerSearch||filteredCleaners.length===0)return;if(e.key==='ArrowDown'){e.preventDefault();setHighlightIdx(i=>(i+1)%filteredCleaners.length)}else if(e.key==='ArrowUp'){e.preventDefault();setHighlightIdx(i=>(i-1+filteredCleaners.length)%filteredCleaners.length)}else if(e.key==='Enter'&&filteredCleaners.length>0){e.preventDefault();setD({...d,cleaner_id:filteredCleaners[highlightIdx].id});setCleanerSearch('')}},style:{...S.inp,fontSize:'16px',padding:'12px',marginBottom:cleanerSearch?'4px':'0'}}),
+            cleanerSearch&&React.createElement('div',{style:{background:'#0f172a',border:'1px solid #475569',borderRadius:'6px',maxHeight:'150px',overflow:'auto'}},filteredCleaners.length>0?filteredCleaners.map((c,idx)=>React.createElement('div',{key:c.id,onClick:function(){setD({...d,cleaner_id:c.id});setCleanerSearch('');},style:{padding:'10px 12px',cursor:'pointer',borderBottom:'1px solid #334155',fontSize:'14px',background:idx===highlightIdx?'#3b82f6':'transparent',color:idx===highlightIdx?'#fff':'#e2e8f0'}},c.name)):React.createElement('div',{style:{padding:'10px 12px',color:'#94a3b8',fontSize:'14px'}},'No matches'))),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.orderNum+' *'),React.createElement('input',{value:d.order_num,onChange:e=>setD({...d,order_num:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}})),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.weight),React.createElement('input',{type:'number',step:'0.1',value:d.weight,onChange:e=>setD({...d,weight:parseFloat(e.target.value)||''}),placeholder:t.extrasOnlyHint,style:{...S.inp,fontSize:'18px',padding:'12px',fontWeight:'bold'}})),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.service),React.createElement('select',{value:d.service_type,onChange:e=>setD({...d,service_type:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}},React.createElement('option',{value:'same-day'},t.sameDay),React.createElement('option',{value:'24-hour'},t.hour24))),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.pickupDate),React.createElement('input',{type:'date',value:d.pickup_date,onChange:e=>setD({...d,pickup_date:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}})),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.bagColor),React.createElement('select',{value:d.bag_color,onChange:e=>setD({...d,bag_color:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}},COLORS.map(c=>React.createElement('option',{key:c,value:c},lang==='es'?COLOR_ES[c]||c:c))))),
+        React.createElement('div',{style:{marginTop:'16px'}},React.createElement('label',{style:S.lbl},t.notes),React.createElement('textarea',{value:d.notes,onChange:e=>setD({...d,notes:e.target.value}),style:{...S.inp,minHeight:'60px',resize:'vertical',fontSize:'16px'}})),
+        isAdmin&&React.createElement('div',{style:{marginTop:'16px',padding:'12px',background:'rgba(59,130,246,0.1)',border:'1px solid #3b82f6',borderRadius:'8px'}},
+          React.createElement('label',{style:{...S.lbl,color:'#60a5fa'}},'💲 Price Adjustment (Admin)'),
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+            React.createElement('input',{type:'number',step:'0.01',value:d.price_adjustment,onChange:e=>setD({...d,price_adjustment:parseFloat(e.target.value)||''}),placeholder:'0.00 (+ or -)',style:{...S.inp,fontSize:'16px',padding:'12px',flex:1}}),
+            d.price_adjustment&&React.createElement('span',{style:{color:parseFloat(d.price_adjustment)>0?'#4ade80':'#ef4444',fontWeight:'bold',fontSize:'16px'}},parseFloat(d.price_adjustment)>0?'+':'',(parseFloat(d.price_adjustment)||0).toFixed(2)))),
+        React.createElement('div',{style:{display:'flex',gap:'12px',justifyContent:'flex-end',marginTop:'20px',paddingTop:'16px',borderTop:'1px solid #334155'}},
+          React.createElement('button',{type:'button',onClick:onClose,style:S.cancel},t.cancel),
+          React.createElement('button',{type:'submit',disabled:saving,style:{...S.btn,opacity:saving?0.6:1,padding:'14px 28px',fontSize:'16px'}},saving?t.saving:(order?t.update:t.add))),
+        extras.length>0&&React.createElement('div',{style:{marginTop:'20px',paddingTop:'16px',borderTop:'1px solid #334155'}},
+          React.createElement('label',{style:S.lbl},t.extrasLabel),
+          Object.entries(grouped).map(function([cat,items]){return React.createElement('div',{key:cat,style:{marginBottom:'12px'}},
+            React.createElement('div',{style:{color:'#f59e0b',fontSize:'14px',marginBottom:'8px',fontWeight:'bold'}},cat),
+            React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},items.map(function(ex){var cp=d.cleaner_id&&cleanerExtras[d.cleaner_id]?cleanerExtras[d.cleaner_id][ex.id]:undefined;var price=cp!==undefined?cp:ex.price;var qty=getQty(ex.id);return React.createElement('div',{key:ex.id,style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderRadius:'8px',border:qty>0?'2px solid #3b82f6':'1px solid #475569',background:qty>0?'rgba(59,130,246,0.2)':'#0f172a'}},
+              React.createElement('span',{style:{fontSize:'14px'}},ex.name+(isAdmin?' '+fmt$(price):'')),
+              React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+                React.createElement('button',{type:'button',onClick:function(){removeOne(ex.id);},style:{width:'32px',height:'32px',borderRadius:'6px',border:'none',background:'#ef4444',color:'white',fontSize:'18px',cursor:'pointer',opacity:qty>0?1:0.3}},'-'),
+                React.createElement('span',{style:{fontSize:'18px',fontWeight:'bold',minWidth:'30px',textAlign:'center'}},qty),
+                React.createElement('button',{type:'button',onClick:function(){addOne(ex.id);},style:{width:'32px',height:'32px',borderRadius:'6px',border:'none',background:'#22c55e',color:'white',fontSize:'18px',cursor:'pointer'}},'+')));
+            })));
+          })))));
+}
+
+function ImportModal({cleaners,staffName,onClose,onImport,notify,t}){
+  const[file,setFile]=useState(null);const[prev,setPrev]=useState([]);const[imp,setImp]=useState(false);const[res,setRes]=useState(null);
+  const hFile=e=>{const f=e.target.files[0];if(!f)return;setFile(f);const r=new FileReader();r.onload=ev=>{const wb=XLSX.read(ev.target.result,{type:'binary'});setPrev(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]).slice(0,5))};r.readAsBinaryString(f)};
+  const parseDate=v=>{if(!v)return new Date().toISOString().split('T')[0];if(typeof v==='number'){const d=new Date((v-25569)*86400*1000);return d.toISOString().split('T')[0]}if(typeof v==='string'&&v.match(/^\d{4}-\d{2}-\d{2}/))return v.split('T')[0];return new Date().toISOString().split('T')[0]};
+  const doImp=async()=>{if(!file)return;setImp(true);const r=new FileReader();r.onload=async ev=>{const wb=XLSX.read(ev.target.result,{type:'binary'});const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);const cMap={};cleaners.forEach(c=>{cMap[c.name.toLowerCase()]=c.id});const errs=[];const ords=[];data.forEach((row,i)=>{const orderNum=String(row['Order #']||row['order_num']||'');const cleanerName=(row['Cleaner']||row['cleaner_name']||'').toString();const cleanerId=cMap[cleanerName.toLowerCase()]||null;const weight=parseFloat(row['Weight']||row['Weight (lbs)']||0);if(!orderNum){errs.push('Row '+(i+2)+': Missing Order #');return}if(!cleanerId){errs.push('Row '+(i+2)+': Cleaner "'+cleanerName+'" not found');return}if(!weight){errs.push('Row '+(i+2)+': Missing Weight');return}ords.push({order_num:orderNum,cleaner_id:cleanerId,weight,service_type:(row['Service']||'24-hour').toString().toLowerCase().includes('same')?'same-day':'24-hour',pickup_date:parseDate(row['Pickup Date']||row['pickup_date']),bag_color:row['Bag Color']||'White',extras:[],notes:row['Notes']||'',staff_name:row['Entered By']||staffName||''})});if(ords.length===0){setRes({imported:0,skipped:data.length,errors:errs});setImp(false);return}try{const r=await api.post('/orders/import',{orders:ords});setRes({...r,errors:errs});if(r.imported>0){await onImport();notify('Imported '+r.imported)}}catch(e){alert(e.message)}setImp(false)};r.readAsBinaryString(file)};
+
+  return React.createElement('div',{style:S.modal},
+    React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'600px',maxHeight:'90vh',overflow:'auto',border:'1px solid #334155'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},React.createElement('h3',{style:{margin:0}},t.import),React.createElement('button',{onClick:onClose,style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'×')),
+      React.createElement('div',{style:{padding:'16px'}},
+        React.createElement('div',{style:{background:'#0f172a',padding:'12px',borderRadius:'8px',marginBottom:'16px',fontSize:'13px',color:'#94a3b8'}},'Columns: Order #, Cleaner, Weight, Service, Pickup Date, Bag Color, Notes'),
+        React.createElement('input',{type:'file',accept:'.xlsx,.xls,.csv',onChange:hFile,style:{marginBottom:'16px'}}),
+        prev.length>0&&React.createElement('pre',{style:{background:'#0f172a',padding:'8px',borderRadius:'8px',fontSize:'11px',color:'#e2e8f0',overflow:'auto',maxHeight:'100px',marginBottom:'16px'}},JSON.stringify(prev,null,2)),
+        res&&React.createElement('div',{style:{marginBottom:'16px'}},
+          React.createElement('div',{style:{background:res.imported>0?'#065f46':'#7f1d1d',padding:'12px',borderRadius:'8px',marginBottom:res.errors?.length?'8px':'0'}},'Imported: '+res.imported+', Skipped: '+res.skipped),
+          res.errors?.length>0&&React.createElement('div',{style:{background:'#1e293b',border:'1px solid #ef4444',borderRadius:'8px',padding:'12px',maxHeight:'150px',overflow:'auto'}},React.createElement('div',{style:{color:'#ef4444',fontWeight:'bold',marginBottom:'8px',fontSize:'13px'}},'Errors:'),res.errors.slice(0,20).map((err,i)=>React.createElement('div',{key:i,style:{color:'#fca5a5',fontSize:'12px',padding:'2px 0'}},err)))),
+        React.createElement('div',{style:{display:'flex',gap:'12px',justifyContent:'flex-end'}},React.createElement('button',{onClick:onClose,style:S.cancel},t.cancel),React.createElement('button',{onClick:doImp,disabled:!file||imp,style:{...S.btn,opacity:(!file||imp)?0.6:1}},imp?'...':'Import')))));
+}
+
+function Reports({t}){
+  const[start,setStart]=useState('');const[end,setEnd]=useState('');const[data,setData]=useState(null);const[ld,setLd]=useState(false);
+  const gen=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{setData(await api.get('/reports/daily-stats?start_date='+start+'&end_date='+end))}catch(e){alert(e.message)}setLd(false)};
+  const setToday=()=>{const n=new Date();const y=n.getFullYear();const m=String(n.getMonth()+1).padStart(2,'0');const d=String(n.getDate()).padStart(2,'0');const today=y+'-'+m+'-'+d;setStart(today);setEnd(today)};
+  const setLW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay()-7);const e=new Date(s);e.setDate(s.getDate()+6);setStart(s.toISOString().split('T')[0]);setEnd(e.toISOString().split('T')[0])};
+  const setTW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay());setStart(s.toISOString().split('T')[0]);setEnd(n.toISOString().split('T')[0])};
+  const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  
+  const exportExcel=()=>{if(!data)return;const wb=XLSX.utils.book_new();
+    const summary=[['Summary',''],['Total Orders',data.totals.total_orders],['Total Weight (lbs)',Math.round(data.totals.total_weight)],['Total Amount',data.totals.total_amount],['',''],['East Orders',data.totals.east_orders],['East Amount',data.totals.east_amount],['West Orders',data.totals.west_orders],['West Amount',data.totals.west_amount],['',''],['Same-Day Orders',data.totals.same_day_orders],['Same-Day Weight',Math.round(data.totals.same_day_weight)],['24-Hour Orders',data.totals.twenty_four_hour_orders],['24-Hour Weight',Math.round(data.totals.twenty_four_hour_weight)]];
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(summary),'Summary');
+    if(data.cleanerBreakdown?.length>0){const clnRows=[['Cleaner','Route','Orders','Weight','Amount'],...data.cleanerBreakdown.map(c=>[c.name,c.route,c.orders,Math.round(c.weight),c.amount])];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(clnRows),'By Cleaner')}
+    if(data.dailyBreakdown?.length>0){const dayRows=[['Date','Orders','Weight','Amount','East Orders','East Amount','West Orders','West Amount'],...data.dailyBreakdown.map(d=>[d.date,d.orders,Math.round(d.weight),d.amount,d.eastOrders,d.eastAmount,d.westOrders,d.westAmount])];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(dayRows),'Daily')}
+    XLSX.writeFile(wb,'daily_report_'+start+'_to_'+end+'.xlsx')};
+  
+  const exportPDF=()=>{if(!data)return;const{jsPDF}=window.jspdf;const doc=new jsPDF();
+    doc.setFontSize(16);doc.text('Daily Report: '+fmtD(start)+' - '+fmtD(end),14,20);
+    doc.setFontSize(12);doc.text('Total Orders: '+data.totals.total_orders,14,35);doc.text('Total Weight: '+Math.round(data.totals.total_weight).toLocaleString()+' lbs',14,42);doc.text('Total Amount: '+fmtC(data.totals.total_amount),14,49);
+    doc.text('East: '+data.totals.east_orders+' orders / '+fmtC(data.totals.east_amount),14,60);doc.text('West: '+data.totals.west_orders+' orders / '+fmtC(data.totals.west_amount),14,67);
+    if(data.cleanerBreakdown?.length>0){const rows=data.cleanerBreakdown.map(c=>[c.name,c.route,c.orders,Math.round(c.weight),fmtC(c.amount)]);doc.autoTable({startY:80,head:[['Cleaner','Route','Orders','Weight','Amount']],body:rows,styles:{fontSize:9},headStyles:{fillColor:[30,64,175]}})}
+    doc.save('daily_report_'+start+'_to_'+end+'.pdf')};
+
+  return React.createElement('div',null,
+    React.createElement('h2',null,t.dailyReports),
+    React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'12px',marginBottom:'12px'}},
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},t.start),React.createElement('input',{type:'date',value:start,onChange:e=>setStart(e.target.value),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},t.end),React.createElement('input',{type:'date',value:end,onChange:e=>setEnd(e.target.value),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setToday,style:{...S.inp,cursor:'pointer'}},t.today||'Today')),
+        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setTW,style:{...S.inp,cursor:'pointer'}},t.thisWeek)),
+        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer'}},t.lastWeek))),
+      React.createElement('button',{onClick:gen,disabled:ld,style:{...S.btn,width:'100%',opacity:ld?0.6:1}},ld?t.loading:t.generate)),
+    data&&React.createElement('div',null,
+      React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px'}},
+        React.createElement('button',{onClick:exportExcel,style:{...S.btn,background:'#059669'}},'Export Excel'),
+        React.createElement('button',{onClick:exportPDF,style:{...S.btn,background:'#dc2626'}},'Export PDF')),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
+        React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'32px',fontWeight:'bold',color:'#4ade80'}},data.totals.total_orders||0),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},t.totalOrders)),
+        React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'32px',fontWeight:'bold',color:'#60a5fa'}},Math.round(data.totals.total_weight||0).toLocaleString()),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},t.totalPounds)),
+        React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'32px',fontWeight:'bold',color:'#f59e0b'}},fmtC(data.totals.total_amount)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},t.totalAmount))),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
+        React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'32px',fontWeight:'bold',color:'#ef4444'}},fmtC(data.totals.total_congestion||0)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'🚗 Congestion Charges')),
+        React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'32px',fontWeight:'bold',color:'#22c55e'}},fmtC(data.totals.grand_total||data.totals.total_amount||0)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Grand Total')),
+        React.createElement('div',{style:{...S.card,textAlign:'center',opacity:0.5}})),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'24px'}},
+        React.createElement('div',{style:S.card},React.createElement('h3',{style:{marginBottom:'16px',fontSize:'16px'}},t.eastVsWest),
+          [['🗽 East Orders',data.totals.east_orders],['East $',fmtC(data.totals.east_amount)],['🌆 West Orders',data.totals.west_orders],['West $',fmtC(data.totals.west_amount)]].map(([l,v],i)=>React.createElement('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:i<3?'1px solid #334155':'none'}},React.createElement('span',null,l),React.createElement('span',{style:{fontWeight:'bold'}},v||0)))),
+        React.createElement('div',{style:S.card},React.createElement('h3',{style:{marginBottom:'16px',fontSize:'16px'}},t.sameDay+' vs '+t.hour24),
+          [[t.sameDay+' Orders',data.totals.same_day_orders,'#f59e0b'],[t.sameDay+' lbs',Math.round(data.totals.same_day_weight||0),'#f59e0b'],[t.hour24+' Orders',data.totals.twenty_four_hour_orders,'#3b82f6'],[t.hour24+' lbs',Math.round(data.totals.twenty_four_hour_weight||0),'#3b82f6']].map(([l,v,c],i)=>React.createElement('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:i<3?'1px solid #334155':'none'}},React.createElement('span',null,l),React.createElement('span',{style:{fontWeight:'bold',color:c}},v||0))))),
+      data.cleanerBreakdown?.length>0&&React.createElement('div',{style:{...S.card,marginBottom:'24px'}},
+        React.createElement('h3',{style:{marginBottom:'16px'}},'Cleaner Breakdown'),
+        React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
+          React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
+            React.createElement('th',{style:{padding:'10px',textAlign:'left',fontSize:'12px'}},'Cleaner'),
+            React.createElement('th',{style:{padding:'10px',textAlign:'center',fontSize:'12px'}},'Route'),
+            React.createElement('th',{style:{padding:'10px',textAlign:'right',fontSize:'12px'}},'Orders'),
+            React.createElement('th',{style:{padding:'10px',textAlign:'right',fontSize:'12px'}},'Weight (lbs)'),
+            React.createElement('th',{style:{padding:'10px',textAlign:'right',fontSize:'12px'}},'Amount'))),
+          React.createElement('tbody',null,data.cleanerBreakdown.map((c,i)=>React.createElement('tr',{key:i,style:{borderBottom:'1px solid #334155'}},
+            React.createElement('td',{style:{padding:'10px',fontWeight:'500'}},c.name),
+            React.createElement('td',{style:{padding:'10px',textAlign:'center'}},React.createElement('span',{style:{background:c.route==='east'?'#3b82f6':'#f59e0b',padding:'2px 8px',borderRadius:'4px',fontSize:'11px'}},c.route==='east'?'East':'West')),
+            React.createElement('td',{style:{padding:'10px',textAlign:'right'}},c.orders),
+            React.createElement('td',{style:{padding:'10px',textAlign:'right'}},Math.round(c.weight).toLocaleString()),
+            React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#4ade80',fontWeight:'bold'}},fmtC(c.amount))))))),
+      data.dailyBreakdown?.length>0&&React.createElement('div',{style:S.card},
+        React.createElement('h3',{style:{marginBottom:'16px'}},t.dailyBreakdown),
+        React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
+          React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
+            React.createElement('th',{style:{padding:'10px',textAlign:'left',fontSize:'12px'}},t.date),
+            React.createElement('th',{style:{padding:'10px',textAlign:'right',fontSize:'12px'}},'Orders'),
+            React.createElement('th',{style:{padding:'10px',textAlign:'right',fontSize:'12px'}},'Weight'),
+            React.createElement('th',{style:{padding:'10px',textAlign:'right',fontSize:'12px'}},t.amount),
+            React.createElement('th',{style:{padding:'10px',textAlign:'right',fontSize:'12px'}},'🗽 East'),
+            React.createElement('th',{style:{padding:'10px',textAlign:'right',fontSize:'12px'}},'🌆 West'))),
+          React.createElement('tbody',null,data.dailyBreakdown.map((d,i)=>React.createElement('tr',{key:i,style:{borderBottom:'1px solid #334155'}},
+            React.createElement('td',{style:{padding:'10px'}},fmtD(d.date)),
+            React.createElement('td',{style:{padding:'10px',textAlign:'right'}},d.orders),
+            React.createElement('td',{style:{padding:'10px',textAlign:'right'}},Math.round(d.weight)),
+            React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#4ade80'}},fmtC(d.amount)),
+            React.createElement('td',{style:{padding:'10px',textAlign:'right'}},d.eastOrders+' / '+fmtC(d.eastAmount)),
+            React.createElement('td',{style:{padding:'10px',textAlign:'right'}},d.westOrders+' / '+fmtC(d.westAmount)))))))));
+}
+
+function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
+  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5});const[showPrices,setShowPrices]=useState(null);
+  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setF({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5})}catch(e){alert(e.message)}};
+  const del=async id=>{if(!confirm(t.delete+'?'))return;try{await api.del('/cleaners/'+id);notify('Deleted');await loadData()}catch(e){alert(e.message)}};
+
+  return React.createElement('div',null,
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5});setShow(true)},style:S.btn},t.addCleaner)),
+    React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
+      cleaners.map(c=>React.createElement('div',{key:c.id,style:S.card},
+        React.createElement('div',{style:{fontWeight:'bold',marginBottom:'4px'}},c.name),
+        React.createElement('div',{style:{fontSize:'24px',color:'#4ade80',fontWeight:'bold'}},fmt$(c.rate)+'/lb'),
+        React.createElement('div',{style:{color:'#94a3b8',fontSize:'12px',marginTop:'4px'}},'Min: '+(c.min_weight||10)+' lbs'),
+        React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'8px',flexWrap:'wrap'}},
+          React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:c.route==='east'?'#3b82f6':'#f59e0b'}},c.route==='east'?'🗽 East':'🌆 West'),
+          c.congestion_zone&&React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#dc2626'}},'🚗 Congestion $'+parseFloat(c.congestion_rate||5).toFixed(2)+'/day')),
+        React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',flexWrap:'wrap'}},
+          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5});setShow(true)},style:S.edit},t.edit),
+          React.createElement('button',{onClick:()=>setShowPrices(c),style:{...S.edit,borderColor:'#f59e0b',color:'#f59e0b'}},t.customPrices),
+          React.createElement('button',{onClick:()=>del(c.id),style:S.del},t.delete))))),
+    show&&React.createElement('div',{style:S.modal},
+      React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'400px',border:'1px solid #334155'}},
+        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},React.createElement('h3',{style:{margin:0}},(ed?t.edit:t.add)+' '+t.cleaners),React.createElement('button',{onClick:()=>setShow(false),style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'×')),
+        React.createElement('form',{onSubmit:save,style:{padding:'16px'}},
+          React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.name+' *'),React.createElement('input',{value:f.name,onChange:e=>setF({...f,name:e.target.value}),style:S.inp})),
+          React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.rateLb+' *'),React.createElement('input',{type:'number',step:'0.01',value:f.rate,onChange:e=>setF({...f,rate:parseFloat(e.target.value)}),style:S.inp})),
+          React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.minWeight),React.createElement('input',{type:'number',value:f.min_weight,onChange:e=>setF({...f,min_weight:parseFloat(e.target.value)||10}),style:S.inp})),
+          React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.route),React.createElement('select',{value:f.route,onChange:e=>setF({...f,route:e.target.value}),style:S.inp},React.createElement('option',{value:'east'},t.eastSide),React.createElement('option',{value:'west'},t.westSide))),
+          React.createElement('div',{style:{marginBottom:'12px',padding:'12px',background:'#0f172a',borderRadius:'8px',border:'1px solid #334155'}},
+            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'8px'}},
+              React.createElement('input',{type:'checkbox',id:'congestion',checked:f.congestion_zone,onChange:e=>setF({...f,congestion_zone:e.target.checked}),style:{width:'20px',height:'20px'}}),
+              React.createElement('label',{htmlFor:'congestion',style:{color:'#f87171',fontWeight:'bold',cursor:'pointer'}},'🚗 Congestion Zone')),
+            f.congestion_zone&&React.createElement('div',{style:{marginTop:'8px'}},React.createElement('label',{style:S.lbl},'Rate per Pickup Day ($)'),React.createElement('input',{type:'number',step:'0.01',value:f.congestion_rate,onChange:e=>setF({...f,congestion_rate:parseFloat(e.target.value)||5}),style:S.inp}))),
+          React.createElement('div',{style:{display:'flex',gap:'12px',justifyContent:'flex-end'}},React.createElement('button',{type:'button',onClick:()=>setShow(false),style:S.cancel},t.cancel),React.createElement('button',{type:'submit',style:S.btn},ed?t.update:t.add))))),
+    showPrices&&React.createElement(CleanerPricesModal,{cleaner:showPrices,extras,cleanerExtras,onClose:()=>setShowPrices(null),onSave:loadData,notify,t}));
+}
+
+function CleanerPricesModal({cleaner,extras,cleanerExtras,onClose,onSave,notify,t}){
+  const[prices,setPrices]=useState({...(cleanerExtras[cleaner.id]||{})});const[saving,setSaving]=useState(false);
+  const save=async()=>{setSaving(true);try{for(const ex of extras){const cp=prices[ex.id];if(cp!==undefined&&cp!==''){await api.post('/cleaners/'+cleaner.id+'/extras',{extra_id:ex.id,custom_price:parseFloat(cp)})}else{try{await api.del('/cleaners/'+cleaner.id+'/extras/'+ex.id)}catch(e){}}}notify('Saved');await onSave();onClose()}catch(e){alert(e.message)}setSaving(false)};
+
+  return React.createElement('div',{style:S.modal},
+    React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'500px',maxHeight:'80vh',overflow:'auto',border:'1px solid #334155'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},React.createElement('h3',{style:{margin:0}},t.customPrices+': '+cleaner.name),React.createElement('button',{onClick:onClose,style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'×')),
+      React.createElement('div',{style:{padding:'16px'}},
+        React.createElement('p',{style:{color:'#94a3b8',fontSize:'13px',marginBottom:'16px'}},'Leave blank for default price'),
+        extras.map(ex=>React.createElement('div',{key:ex.id,style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'8px'}},React.createElement('span',{style:{flex:1}},ex.name+' (default: '+fmt$(ex.price)+')'),React.createElement('input',{type:'number',step:'0.01',value:prices[ex.id]||'',onChange:e=>setPrices({...prices,[ex.id]:e.target.value}),placeholder:'Default',style:{...S.inp,width:'100px'}}))),
+        React.createElement('div',{style:{display:'flex',gap:'12px',justifyContent:'flex-end',marginTop:'16px'}},React.createElement('button',{onClick:onClose,style:S.cancel},t.cancel),React.createElement('button',{onClick:save,disabled:saving,style:{...S.btn,opacity:saving?0.6:1}},saving?'...':t.saveSettings)))));
+}
+
+function Extras({extras,notify,loadData,t}){
+  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',price:'',category:'Other'});
+  const cats=['Blanket','Comforter','Rug','Carpet','Other'];
+  const save=async e=>{e.preventDefault();if(!f.name||f.price===''){alert('Fill fields');return}try{if(ed)await api.put('/extras/'+ed.id,f);else await api.post('/extras',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setF({name:'',price:'',category:'Other'})}catch(e){alert(e.message)}};
+  const grouped={};extras.forEach(ex=>{const c=ex.category||'Other';if(!grouped[c])grouped[c]=[];grouped[c].push(ex)});
+
+  return React.createElement('div',null,
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.extraItems),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',price:'',category:'Other'});setShow(true)},style:S.btn},t.addExtra)),
+    Object.entries(grouped).map(([cat,items])=>React.createElement('div',{key:cat,style:{marginBottom:'16px'}},
+      React.createElement('h4',{style:{color:'#f59e0b',marginBottom:'8px'}},cat),
+      items.map(ex=>React.createElement('div',{key:ex.id,style:{...S.card,display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px'}},
+        React.createElement('span',null,ex.name),
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'16px'}},React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold'}},fmt$(ex.price)),React.createElement('button',{onClick:()=>{setEd(ex);setF({name:ex.name,price:ex.price,category:ex.category||'Other'});setShow(true)},style:{...S.edit,padding:'4px 10px',fontSize:'12px'}},t.edit),React.createElement('button',{onClick:async()=>{await api.del('/extras/'+ex.id);notify('Deleted');await loadData()},style:{...S.del,padding:'4px 10px',fontSize:'12px'}},'Del')))))),
+    show&&React.createElement('div',{style:S.modal},
+      React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'350px',border:'1px solid #334155'}},
+        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},React.createElement('h3',{style:{margin:0}},(ed?t.edit:t.add)+' Extra'),React.createElement('button',{onClick:()=>setShow(false),style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'×')),
+        React.createElement('form',{onSubmit:save,style:{padding:'16px'}},
+          React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.name+' *'),React.createElement('input',{value:f.name,onChange:e=>setF({...f,name:e.target.value}),style:S.inp})),
+          React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.price+' *'),React.createElement('input',{type:'number',step:'0.01',value:f.price,onChange:e=>setF({...f,price:parseFloat(e.target.value)}),style:S.inp})),
+          React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.category),React.createElement('select',{value:f.category,onChange:e=>setF({...f,category:e.target.value}),style:S.inp},cats.map(c=>React.createElement('option',{key:c},c)))),
+          React.createElement('div',{style:{display:'flex',gap:'12px',justifyContent:'flex-end'}},React.createElement('button',{type:'button',onClick:()=>setShow(false),style:S.cancel},t.cancel),React.createElement('button',{type:'submit',style:S.btn},ed?t.update:t.add))))));
+}
+
+function Invoices({cleaners,extras,cleanerExtras,settings,t}){
+  const[cid,setCid]=useState('');const[start,setStart]=useState('');const[end,setEnd]=useState('');const[inv,setInv]=useState(null);const[dups,setDups]=useState([]);const[seqWarns,setSeqWarns]=useState([]);const[ld,setLd]=useState(false);
+  const gen=async()=>{if(!cid||!start||!end){alert('Select all');return}setLd(true);try{const d=await api.get('/reports/invoice?cleaner_id='+cid+'&start_date='+start+'&end_date='+end);const dupRes=await api.get('/orders/find-duplicates?cleaner_id='+cid+'&start_date='+start+'&end_date='+end);setDups(dupRes);setSeqWarns(d.sequenceWarnings||[]);setInv({cleaner:cleaners.find(c=>c.id===parseInt(cid)),start,end,orders:d.orders,ordersTotal:d.ordersTotal,congestionZone:d.congestionZone,congestionRate:d.congestionRate,congestionDays:d.congestionDays,congestionSurcharge:d.congestionSurcharge,total:d.grandTotal})}catch(e){alert(e.message)}setLd(false)};
+  const setLW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay()-7);const e=new Date(s);e.setDate(s.getDate()+6);setStart(s.toISOString().split('T')[0]);setEnd(e.toISOString().split('T')[0])};
+
+  const exportPDF=()=>{if(!inv)return;const{jsPDF}=window.jspdf;const doc=new jsPDF();const weekNum=Math.ceil((new Date(inv.start).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);const clnIdx=cleaners.findIndex(c=>c.id===inv.cleaner.id)+1;const invoiceId=10000+(weekNum*100)+clnIdx;const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});const cleanerName=invoiceName(inv.cleaner.name);let isFirstPage=true;doc.setFontSize(10);doc.text(settings.companyName||'WEBSTER AVE LAUNDROMAT',14,18);doc.text(settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',14,24);doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Store: '+(settings.storePhone||'929-263-1560'),14,30);doc.setFontSize(10);doc.setFont(undefined,'normal');doc.text('Manager: '+(settings.managerPhone||'347-632-2024'),75,30);doc.setFontSize(12);doc.text('Invoice #: '+invoiceId,150,18);doc.setFontSize(24);doc.setFont(undefined,'bold');doc.text(cleanerName,14,48);doc.setFont(undefined,'normal');doc.setFontSize(12);doc.text('Period: '+fmtD(inv.start)+' - '+fmtD(inv.end),14,56);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(inv.total),150,48);doc.setFont(undefined,'normal');const rows=inv.orders.map((o,i)=>[i+1,fmtD(o.pickup_date),fmtC(o.total),o.order_num,o.weight,o.extras_formatted||'',o.notes||'']);doc.autoTable({startY:64,head:[['#','Date','Amount','Order #','Weight','Extras','Notes']],body:rows,columnStyles:{0:{cellWidth:10},1:{cellWidth:22},2:{cellWidth:22},3:{cellWidth:22},4:{cellWidth:18},5:{cellWidth:44},6:{cellWidth:44}},styles:{fontSize:10,textColor:[0,0,0],lineColor:[200,200,200],lineWidth:0.1,overflow:'linebreak'},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold',lineWidth:0.5,lineColor:[0,0,0]},alternateRowStyles:{fillColor:[255,255,255]},bodyStyles:{fillColor:[255,255,255]},margin:{top:25},didDrawPage:function(){if(!isFirstPage){doc.setFontSize(11);doc.setFont(undefined,'normal');doc.text(cleanerName+' (continued)',14,15)}isFirstPage=false}});let fy=doc.lastAutoTable.finalY;doc.setFontSize(11);if(inv.congestionZone&&inv.congestionSurcharge>0){doc.text('Congestion Charge = '+fmtC(inv.congestionSurcharge)+' ('+inv.congestionDays+' days)',14,fy+8);fy+=6}fy+=2;doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(inv.total),14,fy+8);doc.setFont(undefined,'normal');doc.setFontSize(11);doc.setFont(undefined,'italic');doc.text('Thank you for your business!',14,fy+18);doc.save(cleanerName.replace(/\s/g,'_')+'_'+inv.start+'_to_'+inv.end+'.pdf')};
+
+  const exportExcel=()=>{if(!inv)return;const rows=inv.orders.map((o,i)=>({'#':i+1,Date:fmtD(o.pickup_date),Amount:o.total,'Order #':o.order_num,Weight:o.weight,Extras:o.extras_formatted||'',Notes:o.notes||''}));rows.push({});if(inv.congestionZone&&inv.congestionSurcharge>0){rows.push({'#':'',Date:'Congestion Charge ('+inv.congestionDays+' days)',Amount:inv.congestionSurcharge})}rows.push({'#':'',Date:'Total Due',Amount:inv.total});const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,invoiceName(inv.cleaner.name).substring(0,30));XLSX.writeFile(wb,'invoice_'+invoiceName(inv.cleaner.name).replace(/\s/g,'_')+'_'+inv.start+'.xlsx')};
+
+  const exportAllPDF=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{const res=await api.get('/reports/invoices-all?start_date='+start+'&end_date='+end);const{jsPDF}=window.jspdf;const doc=new jsPDF();let first=true;let invNum=1;const weekNum=Math.ceil((new Date(start).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});const excludeNames=['Lincoln Plaza','Harlem','Laundry Day'];const filteredInvoices=res.invoices.filter(inv=>!excludeNames.some(ex=>inv.cleaner.name.toLowerCase().includes(ex.toLowerCase())));for(const i of filteredInvoices){if(!first)doc.addPage();first=false;const invoiceId=10000+(weekNum*100)+invNum;invNum++;const startPage=doc.internal.getNumberOfPages();doc.setFontSize(10);doc.text(settings.companyName||'WEBSTER AVE LAUNDROMAT',14,18);doc.text(settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',14,24);doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Store: '+(settings.storePhone||'929-263-1560'),14,30);doc.setFontSize(10);doc.setFont(undefined,'normal');doc.text('Manager: '+(settings.managerPhone||'347-632-2024'),75,30);doc.setFontSize(12);doc.text('Invoice #: '+invoiceId,150,18);doc.setFontSize(24);doc.setFont(undefined,'bold');doc.text(invoiceName(i.cleaner.name),14,48);doc.setFont(undefined,'normal');doc.setFontSize(12);doc.text('Period: '+fmtD(start)+' - '+fmtD(end),14,56);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(i.grandTotal),150,48);doc.setFont(undefined,'normal');const cleanerName=invoiceName(i.cleaner.name);const rows=i.orders.map((o,j)=>[j+1,fmtD(o.pickup_date),fmtC(o.total),o.order_num,o.weight,o.extras_formatted||'',o.notes||'']);doc.autoTable({startY:64,head:[['#','Date','Amount','Order #','Weight','Extras','Notes']],body:rows,columnStyles:{0:{cellWidth:10},1:{cellWidth:22},2:{cellWidth:22},3:{cellWidth:22},4:{cellWidth:18},5:{cellWidth:44},6:{cellWidth:44}},styles:{fontSize:10,textColor:[0,0,0],lineColor:[200,200,200],lineWidth:0.1,overflow:'linebreak'},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold',lineWidth:0.5,lineColor:[0,0,0]},alternateRowStyles:{fillColor:[255,255,255]},bodyStyles:{fillColor:[255,255,255]},margin:{top:25},didDrawPage:function(data){if(doc.internal.getNumberOfPages()>startPage){doc.setFontSize(11);doc.setFont(undefined,'normal');doc.text(cleanerName+' (continued)',14,15)}}});let fy=doc.lastAutoTable.finalY;doc.setFontSize(11);if(i.congestionZone&&i.congestionSurcharge>0){doc.text('Congestion Charge = '+fmtC(i.congestionSurcharge)+' ('+i.congestionDays+' days)',14,fy+8);fy+=6}fy+=2;doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(i.grandTotal),14,fy+8);doc.setFont(undefined,'normal');doc.setFontSize(11);doc.setFont(undefined,'italic');doc.text('Thank you for your business!',14,fy+18)}doc.save('All_Invoices_'+start+'_to_'+end+'.pdf')}catch(e){alert(e.message)}setLd(false)};
+
+  return React.createElement('div',null,
+    React.createElement('h2',null,t.generateInvoice),
+    React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}},
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},t.cleaner),React.createElement('select',{value:cid,onChange:e=>setCid(e.target.value),style:S.inp},React.createElement('option',{value:''},t.select),cleaners.map(c=>React.createElement('option',{key:c.id,value:c.id},c.name+(c.congestion_zone?' 🚗':''))))),
+        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer',textAlign:'center'}},t.lastWeek)),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},t.start),React.createElement('input',{type:'date',value:start,onChange:e=>setStart(e.target.value),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},t.end),React.createElement('input',{type:'date',value:end,onChange:e=>setEnd(e.target.value),style:S.inp}))),
+      React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+        React.createElement('button',{onClick:gen,disabled:ld,style:{...S.btn,flex:1,opacity:ld?0.6:1}},ld?t.loading:t.generateInvoice),
+        React.createElement('button',{onClick:exportAllPDF,disabled:ld||!start||!end,style:{...S.btn,background:'#dc2626',opacity:(ld||!start||!end)?0.6:1}},t.exportAllPDF))),
+    dups.length>0&&React.createElement('div',{style:{...S.card,background:'#7f1d1d',border:'2px solid #ef4444',marginBottom:'20px'}},React.createElement('h4',{style:{color:'#fecaca',marginBottom:'8px'}},'⚠️ '+t.duplicates),dups.map((d,i)=>React.createElement('div',{key:i,style:{color:'#fca5a5',fontSize:'13px'}},'Order #'+d.order_num+' appears '+d.count+' times'))),
+    seqWarns.length>0&&React.createElement('div',{style:{...S.card,background:'#78350f',border:'2px solid #f59e0b',marginBottom:'20px'}},React.createElement('h4',{style:{color:'#fef3c7',marginBottom:'8px'}},'⚠️ Sequence Gaps Detected'),seqWarns.map((w,i)=>React.createElement('div',{key:i,style:{color:'#fde68a',fontSize:'13px'}},'Gap of '+w.gap+' between order #'+w.from+' and #'+w.to+' - please verify'))),
+    inv&&React.createElement('div',{style:{background:'#fff',color:'#1e293b',padding:'24px',borderRadius:'12px'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',borderBottom:'2px solid #e2e8f0',paddingBottom:'16px',marginBottom:'16px',flexWrap:'wrap',gap:'12px'}},
+        React.createElement('div',null,React.createElement('h2',{style:{color:'#1e40af',margin:0,fontSize:'18px'}},settings.companyName||'WEBSTER AVE LAUNDROMAT'),React.createElement('div',{style:{fontSize:'12px',color:'#64748b'}},settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456'),React.createElement('div',{style:{fontSize:'12px',color:'#64748b'}},'Store: '+(settings.storePhone||'929-263-1560')+' | Manager: '+(settings.managerPhone||'347-632-2024'))),
+        React.createElement('div',{style:{textAlign:'right'}},React.createElement('h3',{style:{color:'#1e40af',margin:0}},t.invoice),React.createElement('div',{style:{fontSize:'24px',fontWeight:'bold',color:'#1e293b',marginTop:'4px'}},invoiceName(inv.cleaner.name)),React.createElement('div',{style:{fontSize:'12px'}},React.createElement('b',null,t.period),' ',fmtD(inv.start),' - ',fmtD(inv.end)))),
+      React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px'}},React.createElement('button',{onClick:exportPDF,style:{...S.btn,padding:'8px 16px',fontSize:'13px'}},t.exportPDF),React.createElement('button',{onClick:exportExcel,style:{...S.btn,padding:'8px 16px',fontSize:'13px',background:'#059669'}},t.exportExcel)),
+      inv.orders.length===0?React.createElement('p',{style:{textAlign:'center',color:'#64748b'}},t.noOrders):
+        React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'14px'}},
+          React.createElement('thead',null,React.createElement('tr',{style:{background:'#f1f5f9'}},
+            React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'#'),
+            React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},t.date),
+            React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},t.amount),
+            React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},t.orderNum),
+            React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},t.weight),
+            React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},t.extrasLabel),
+            React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},t.notes))),
+          React.createElement('tbody',null,inv.orders.map((o,i)=>React.createElement('tr',{key:o.id,style:{borderBottom:'1px solid #e2e8f0'}},
+            React.createElement('td',{style:{padding:'8px'}},i+1),
+            React.createElement('td',{style:{padding:'8px'}},fmtD(o.pickup_date)),
+            React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmt$(o.total)),
+            React.createElement('td',{style:{padding:'8px'}},o.order_num),
+            React.createElement('td',{style:{padding:'8px',textAlign:'right'}},o.weight),
+            React.createElement('td',{style:{padding:'8px',fontSize:'12px'}},o.extras_formatted||'-'),
+            React.createElement('td',{style:{padding:'8px',fontSize:'12px'}},o.notes||'-')))),
+          React.createElement('tfoot',null,
+            inv.congestionZone&&inv.congestionSurcharge>0&&React.createElement('tr',null,
+              React.createElement('td',{colSpan:'2',style:{padding:'8px',textAlign:'right',borderTop:'1px solid #e2e8f0'}},'Congestion Charge ('+inv.congestionDays+' days)'),
+              React.createElement('td',{style:{padding:'8px',textAlign:'right',borderTop:'1px solid #e2e8f0'}},fmt$(inv.congestionSurcharge)),
+              React.createElement('td',{colSpan:'4',style:{borderTop:'1px solid #e2e8f0'}})),
+            React.createElement('tr',null,
+              React.createElement('td',{colSpan:'2',style:{padding:'12px',textAlign:'right',fontWeight:'bold',borderTop:'2px solid #1e40af'}},'Total Due:'),
+              React.createElement('td',{style:{padding:'12px',textAlign:'right',fontWeight:'bold',fontSize:'18px',borderTop:'2px solid #1e40af'}},fmt$(inv.total)),
+              React.createElement('td',{colSpan:'4',style:{borderTop:'2px solid #1e40af'}})))),
+      React.createElement('div',{style:{textAlign:'center',marginTop:'16px',fontStyle:'italic',color:'#64748b'}},'Thank you for your business!')));
+}
+
+function Payments({cleaners,settings,t}){
+  const[data,setData]=useState([]);const[summary,setSummary]=useState(null);const[ld,setLd]=useState(false);
+  const[start,setStart]=useState('');const[end,setEnd]=useState('');const[editing,setEditing]=useState(null);
+  const[editPay,setEditPay]=useState('');const[editNote,setEditNote]=useState('');const[editStat,setEditStat]=useState('unpaid');
+  const[viewInv,setViewInv]=useState(null);
+  const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  
+  const load=async()=>{setLd(true);try{const[tracking,sum]=await Promise.all([api.get('/invoice-tracking'),api.get('/invoice-tracking/summary')]);setData(tracking);setSummary(sum)}catch(e){console.error(e)}setLd(false)};
+  useEffect(()=>{load()},[]);
+  
+  const setLW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay()-7);const e=new Date(s);e.setDate(s.getDate()+6);setStart(s.toISOString().split('T')[0]);setEnd(e.toISOString().split('T')[0])};
+  const setTW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay());setStart(s.toISOString().split('T')[0]);setEnd(n.toISOString().split('T')[0])};
+  
+  const generateWeek=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{await api.post('/invoice-tracking/generate-week',{week_start:start,week_end:end});await load()}catch(e){alert(e.message)}setLd(false)};
+  
+  const updatePayment=async(id,updates)=>{try{await api.put('/invoice-tracking/'+id,updates);await load();setEditing(null)}catch(e){alert(e.message)}};
+  
+  const deleteInvoice=async(id)=>{if(!confirm('Delete this invoice record?'))return;try{await api.del('/invoice-tracking/'+id);await load()}catch(e){alert(e.message)}};
+  
+  const startEdit=(inv)=>{setEditing(inv.id);setEditPay(inv.amount_paid||'');setEditNote(inv.notes||'');setEditStat(inv.status||'unpaid')};
+  const handlePayChange=(val)=>{setEditPay(val);if(parseFloat(val)>0&&editStat==='unpaid')setEditStat('paid')};
+  
+  const exportExcel=()=>{
+    const wb=XLSX.utils.book_new();
+    const unpaidTotal=data.filter(d=>d.status!=='paid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid),0);
+    const cleanerUnpaid={};data.forEach(d=>{if(d.status!=='paid'){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=parseFloat(d.invoice_amount)-parseFloat(d.amount_paid)}});
+    if(summary&&summary.cleaners){const sumRows=[['Cleaner','Route','Total Invoiced','Total Paid','Balance Due (Unpaid Only)']];summary.cleaners.forEach(c=>sumRows.push([c.cleaner_name,c.route,parseFloat(c.total_invoiced),parseFloat(c.total_paid),cleanerUnpaid[c.cleaner_name]||0]));sumRows.push(['','','','','']);sumRows.push(['TOTAL','',summary.overall.total_invoiced,summary.overall.total_paid,unpaidTotal]);XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sumRows),'Summary')}
+    if(data.length>0){const detRows=[['Cleaner','Week Start','Week End','Invoice Amount','Amount Paid','Balance','Status','Notes']];data.forEach(d=>detRows.push([d.cleaner_name,d.week_start?d.week_start.split('T')[0]:'',d.week_end?d.week_end.split('T')[0]:'',parseFloat(d.invoice_amount),parseFloat(d.amount_paid),parseFloat(d.invoice_amount)-parseFloat(d.amount_paid),d.status,d.notes||'']));XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(detRows),'Details')}
+    XLSX.writeFile(wb,'payment_tracking_'+new Date().toISOString().split('T')[0]+'.xlsx')};
+  
+  const viewInvoice=async(inv)=>{
+    try{setLd(true);const wkStart=inv.week_start.split('T')[0];const wkEnd=inv.week_end.split('T')[0];
+    const d=await api.get('/reports/invoice?cleaner_id='+inv.cleaner_id+'&start_date='+wkStart+'&end_date='+wkEnd);
+    const cleaner=cleaners.find(c=>c.id===inv.cleaner_id);
+    const weekNum=Math.ceil((new Date(wkStart).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);
+    const clnIdx=cleaners.findIndex(c=>c.id===inv.cleaner_id)+1;
+    const invoiceId=10000+(weekNum*100)+clnIdx;
+    setViewInv({cleaner:cleaner||{name:inv.cleaner_name},displayName:invoiceName(cleaner?.name||inv.cleaner_name),start:wkStart,end:wkEnd,orders:d.orders,ordersTotal:d.ordersTotal,congestionZone:d.congestionZone,congestionDays:d.congestionDays,congestionSurcharge:d.congestionSurcharge,total:d.grandTotal,invoiceId});
+    }catch(e){alert('Error loading invoice: '+e.message)}setLd(false)};
+  
+  const exportViewPDF=()=>{if(!viewInv)return;
+    const{jsPDF}=window.jspdf;const doc=new jsPDF();
+    const cleanerName=viewInv.displayName||invoiceName(viewInv.cleaner.name);let isFirstPage=true;
+    doc.setFontSize(10);doc.text(settings.companyName||'WEBSTER AVE LAUNDROMAT',14,18);doc.text(settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',14,24);
+    doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Store: '+(settings.storePhone||'929-263-1560'),14,30);
+    doc.setFontSize(10);doc.setFont(undefined,'normal');doc.text('Manager: '+(settings.managerPhone||'347-632-2024'),75,30);
+    doc.setFontSize(12);doc.text('Invoice #: '+viewInv.invoiceId,150,18);
+    doc.setFontSize(24);doc.setFont(undefined,'bold');doc.text(cleanerName,14,48);
+    doc.setFont(undefined,'normal');doc.setFontSize(12);doc.text('Period: '+fmtD(viewInv.start)+' - '+fmtD(viewInv.end),14,56);
+    doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(viewInv.total),150,48);doc.setFont(undefined,'normal');
+    const rows=viewInv.orders.map((o,i)=>[i+1,fmtD(o.pickup_date),fmtC(o.total),o.order_num,o.weight,o.extras_formatted||'',o.notes||'']);
+    doc.autoTable({startY:64,head:[['#','Date','Amount','Order #','Weight','Extras','Notes']],body:rows,columnStyles:{0:{cellWidth:10},1:{cellWidth:22},2:{cellWidth:22},3:{cellWidth:22},4:{cellWidth:18},5:{cellWidth:44},6:{cellWidth:44}},styles:{fontSize:10,textColor:[0,0,0],lineColor:[200,200,200],lineWidth:0.1,overflow:'linebreak'},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold',lineWidth:0.5,lineColor:[0,0,0]},alternateRowStyles:{fillColor:[255,255,255]},bodyStyles:{fillColor:[255,255,255]},margin:{top:25},didDrawPage:function(){if(!isFirstPage){doc.setFontSize(11);doc.setFont(undefined,'normal');doc.text(cleanerName+' (continued)',14,15)}isFirstPage=false}});
+    let fy=doc.lastAutoTable.finalY;doc.setFontSize(11);
+    if(viewInv.congestionZone&&viewInv.congestionSurcharge>0){doc.text('Congestion Charge = '+fmtC(viewInv.congestionSurcharge)+' ('+viewInv.congestionDays+' days)',14,fy+8);fy+=6}
+    fy+=2;doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(viewInv.total),14,fy+8);
+    doc.setFont(undefined,'normal');doc.setFontSize(11);doc.setFont(undefined,'italic');doc.text('Thank you for your business!',14,fy+18);
+    doc.save(cleanerName.replace(/\s/g,'_')+'_'+viewInv.start+'_to_'+viewInv.end+'.pdf')};
+  
+  
+  const groupedByWeek={};data.forEach(d=>{const wk=d.week_start?d.week_start.split('T')[0]:'unknown';if(!groupedByWeek[wk])groupedByWeek[wk]=[];groupedByWeek[wk].push(d)});
+  
+  const unpaidTotal=data.filter(d=>d.status!=='paid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid),0);
+  const cleanerUnpaid={};data.forEach(d=>{if(d.status!=='paid'){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=parseFloat(d.invoice_amount)-parseFloat(d.amount_paid)}});
+
+  return React.createElement('div',null,
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
+      React.createElement('h2',{style:{margin:0}},t.payments+' Tracking'),
+      React.createElement('button',{onClick:exportExcel,style:{...S.btn,background:'#059669'}},'Export Excel')),
+    
+    summary&&React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
+      React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#60a5fa'}},fmtC(summary.overall.total_invoiced)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Invoiced')),
+      React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#4ade80'}},fmtC(summary.overall.total_paid)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Paid')),
+      React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#ef4444'}},fmtC(unpaidTotal)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Past Due (Unpaid)'))),
+    
+    React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
+      React.createElement('h3',{style:{marginBottom:'12px'}},'Generate Weekly Invoices'),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'}},
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Week Start'),React.createElement('input',{type:'date',value:start,onChange:e=>setStart(e.target.value),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Week End'),React.createElement('input',{type:'date',value:end,onChange:e=>setEnd(e.target.value),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setTW,style:{...S.inp,cursor:'pointer'}},t.thisWeek)),
+        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer'}},t.lastWeek))),
+      React.createElement('button',{onClick:generateWeek,disabled:ld,style:{...S.btn,width:'100%',opacity:ld?0.6:1}},ld?t.loading:'Generate from Orders')),
+    
+    summary&&summary.cleaners&&React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
+      React.createElement('h3',{style:{marginBottom:'12px'}},'Balance by Cleaner (Unpaid Only)'),
+      React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
+        React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
+          React.createElement('th',{style:{padding:'10px',textAlign:'left'}},'Cleaner'),
+          React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Invoiced'),
+          React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Paid'),
+          React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Balance Due'))),
+        React.createElement('tbody',null,summary.cleaners.filter(c=>(cleanerUnpaid[c.cleaner_name]||0)>0).map((c,i)=>React.createElement('tr',{key:i,style:{borderBottom:'1px solid #334155'}},
+          React.createElement('td',{style:{padding:'10px'}},c.cleaner_name),
+          React.createElement('td',{style:{padding:'10px',textAlign:'right'}},fmtC(c.total_invoiced)),
+          React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#4ade80'}},fmtC(c.total_paid)),
+          React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#ef4444',fontWeight:'bold'}},fmtC(cleanerUnpaid[c.cleaner_name]||0))))))),
+    
+    Object.keys(groupedByWeek).sort().reverse().map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
+      React.createElement('h3',{style:{marginBottom:'12px'}},'Week of '+fmtD(week)),
+      React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
+        React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
+          React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Cleaner'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},'Invoice'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},'Paid'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},'Balance'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Status'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Actions'))),
+        React.createElement('tbody',null,groupedByWeek[week].map(inv=>{
+          const bal=parseFloat(inv.invoice_amount)-parseFloat(inv.amount_paid);
+          if(editing===inv.id){
+            return React.createElement('tr',{key:inv.id,style:{background:'#1e3a5f'}},
+              React.createElement('td',{style:{padding:'8px'}},inv.cleaner_name),
+              React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmtC(inv.invoice_amount)),
+              React.createElement('td',{style:{padding:'8px'}},React.createElement('input',{type:'number',step:'0.01',value:editPay,onChange:e=>handlePayChange(e.target.value),style:{...S.inp,width:'80px',padding:'4px'}})),
+              React.createElement('td',{style:{padding:'8px'}},React.createElement('input',{type:'text',value:editNote,onChange:e=>setEditNote(e.target.value),placeholder:'Notes',style:{...S.inp,width:'80px',padding:'4px'}})),
+              React.createElement('td',{style:{padding:'8px',textAlign:'center'}},React.createElement('select',{value:editStat,onChange:e=>setEditStat(e.target.value),style:{...S.inp,padding:'4px'}},React.createElement('option',{value:'unpaid'},'Unpaid'),React.createElement('option',{value:'partial'},'Partial'),React.createElement('option',{value:'paid'},'Paid'))),
+              React.createElement('td',{style:{padding:'8px',textAlign:'center'}},
+                React.createElement('button',{onClick:function(){updatePayment(inv.id,{amount_paid:parseFloat(editPay)||0,notes:editNote,status:editStat,paid_date:new Date().toISOString().split('T')[0]});},style:{...S.btn,padding:'4px 8px',fontSize:'12px',marginRight:'4px'}},'Save'),
+                React.createElement('button',{onClick:function(){setEditing(null);},style:{...S.cancel,padding:'4px 8px',fontSize:'12px'}},'X')));
+          }
+          return React.createElement('tr',{key:inv.id,style:{borderBottom:'1px solid #334155'}},
+            React.createElement('td',{style:{padding:'8px'}},inv.cleaner_name),
+            React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmtC(inv.invoice_amount)),
+            React.createElement('td',{style:{padding:'8px',textAlign:'right',color:'#4ade80'}},fmtC(inv.amount_paid)),
+            React.createElement('td',{style:{padding:'8px',textAlign:'right',color:bal>0?'#ef4444':'#4ade80',fontWeight:'bold'}},fmtC(bal)),
+            React.createElement('td',{style:{padding:'8px',textAlign:'center'}},React.createElement('span',{style:{padding:'2px 8px',borderRadius:'4px',fontSize:'11px',background:inv.status==='paid'?'#065f46':inv.status==='partial'?'#78350f':'#7f1d1d'}},inv.status)),
+            React.createElement('td',{style:{padding:'8px',textAlign:'center'}},
+              React.createElement('button',{onClick:function(){viewInvoice(inv);},style:{...S.btn,padding:'4px 8px',fontSize:'11px',marginRight:'4px',background:'#0ea5e9'}},'View'),
+              React.createElement('button',{onClick:function(){startEdit(inv);},style:{...S.edit,padding:'4px 8px',fontSize:'11px',marginRight:'4px'}},'Edit'),
+              React.createElement('button',{onClick:function(){deleteInvoice(inv.id);},style:{...S.del,padding:'4px 8px',fontSize:'11px'}},'X')));
+        }))))),
+    viewInv&&React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'20px',overflow:'auto'}},
+      React.createElement('div',{style:{background:'#fff',borderRadius:'12px',maxWidth:'800px',width:'100%',maxHeight:'90vh',overflow:'auto',color:'#000'}},
+        React.createElement('div',{style:{padding:'20px',borderBottom:'1px solid #ddd',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+          React.createElement('div',null,
+            React.createElement('div',{style:{fontSize:'12px',color:'#666'}},settings.companyName||'WEBSTER AVE LAUNDROMAT'),
+            React.createElement('div',{style:{fontSize:'12px',color:'#666'}},settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456')),
+          React.createElement('div',{style:{textAlign:'right'}},
+            React.createElement('div',{style:{fontSize:'14px',fontWeight:'bold'}},'Invoice #'+viewInv.invoiceId),
+            React.createElement('button',{onClick:()=>setViewInv(null),style:{marginTop:'8px',padding:'4px 12px',border:'1px solid #ccc',borderRadius:'4px',cursor:'pointer'}},'✕ Close'))),
+        React.createElement('div',{style:{padding:'20px'}},
+          React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'16px'}},
+            React.createElement('div',null,
+              React.createElement('div',{style:{fontSize:'24px',fontWeight:'bold'}},viewInv.displayName||invoiceName(viewInv.cleaner.name)),
+              React.createElement('div',{style:{color:'#666'}},'Period: '+fmtD(viewInv.start)+' - '+fmtD(viewInv.end))),
+            React.createElement('div',{style:{textAlign:'right'}},
+              React.createElement('div',{style:{fontSize:'20px',fontWeight:'bold',color:'#1e40af'}},'Total Due: '+fmtC(viewInv.total)))),
+          React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',marginBottom:'16px'}},
+            React.createElement('thead',null,React.createElement('tr',{style:{background:'#f3f4f6'}},
+              React.createElement('th',{style:{padding:'8px',textAlign:'left',borderBottom:'2px solid #000'}},'#'),
+              React.createElement('th',{style:{padding:'8px',textAlign:'left',borderBottom:'2px solid #000'}},'Date'),
+              React.createElement('th',{style:{padding:'8px',textAlign:'right',borderBottom:'2px solid #000'}},'Amount'),
+              React.createElement('th',{style:{padding:'8px',textAlign:'left',borderBottom:'2px solid #000'}},'Order #'),
+              React.createElement('th',{style:{padding:'8px',textAlign:'right',borderBottom:'2px solid #000'}},'Weight'),
+              React.createElement('th',{style:{padding:'8px',textAlign:'left',borderBottom:'2px solid #000'}},'Extras'),
+              React.createElement('th',{style:{padding:'8px',textAlign:'left',borderBottom:'2px solid #000'}},'Notes'))),
+            React.createElement('tbody',null,viewInv.orders.map((o,i)=>React.createElement('tr',{key:i,style:{borderBottom:'1px solid #ddd'}},
+              React.createElement('td',{style:{padding:'8px'}},i+1),
+              React.createElement('td',{style:{padding:'8px'}},fmtD(o.pickup_date)),
+              React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmtC(o.total)),
+              React.createElement('td',{style:{padding:'8px'}},o.order_num),
+              React.createElement('td',{style:{padding:'8px',textAlign:'right'}},o.weight),
+              React.createElement('td',{style:{padding:'8px',fontSize:'12px'}},o.extras_formatted||''),
+              React.createElement('td',{style:{padding:'8px',fontSize:'12px'}},o.notes||''))))),
+          viewInv.congestionZone&&viewInv.congestionSurcharge>0&&React.createElement('div',{style:{marginBottom:'8px'}},'Congestion Charge = '+fmtC(viewInv.congestionSurcharge)+' ('+viewInv.congestionDays+' days)'),
+          React.createElement('div',{style:{fontSize:'18px',fontWeight:'bold',marginBottom:'16px'}},'Total Due: '+fmtC(viewInv.total)),
+          React.createElement('div',{style:{fontStyle:'italic',color:'#666',marginBottom:'20px'}},'Thank you for your business!'),
+          React.createElement('div',{style:{display:'flex',gap:'12px'}},
+            React.createElement('button',{onClick:exportViewPDF,style:{...S.btn,padding:'10px 20px'}},'Download PDF'),
+            React.createElement('button',{onClick:()=>setViewInv(null),style:{...S.cancel,padding:'10px 20px'}},'Close'))))));
+}
+
+function Errors({cleaners,t}){
+  const[duplicates,setDuplicates]=useState([]);const[seqErrors,setSeqErrors]=useState([]);const[ld,setLd]=useState(false);
+  const[start,setStart]=useState('');const[end,setEnd]=useState('');const[cleanerId,setCleanerId]=useState('');
+  
+  const setLW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay()-7);const e=new Date(s);e.setDate(s.getDate()+6);setStart(s.toISOString().split('T')[0]);setEnd(e.toISOString().split('T')[0])};
+  const setTW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay());setStart(s.toISOString().split('T')[0]);setEnd(n.toISOString().split('T')[0])};
+  
+  const scan=async()=>{
+    if(!start||!end){alert('Select dates');return}
+    setLd(true);
+    try{
+      const allDups=[];const allSeq=[];
+      const cleanersToCheck=cleanerId?cleaners.filter(c=>c.id===parseInt(cleanerId)):cleaners;
+      for(const c of cleanersToCheck){
+        const dups=await api.get('/orders/find-duplicates?cleaner_id='+c.id+'&start_date='+start+'&end_date='+end);
+        if(dups.length>0)allDups.push({cleaner:c.name,duplicates:dups});
+        const inv=await api.get('/reports/invoice?cleaner_id='+c.id+'&start_date='+start+'&end_date='+end);
+        if(inv.sequenceWarnings&&inv.sequenceWarnings.length>0)allSeq.push({cleaner:c.name,warnings:inv.sequenceWarnings});
+      }
+      setDuplicates(allDups);setSeqErrors(allSeq);
+    }catch(e){console.error(e);alert(e.message)}
+    setLd(false);
+  };
+  
+  const exportPDF=()=>{
+    if(duplicates.length===0&&seqErrors.length===0){alert('No errors to export');return}
+    const{jsPDF}=window.jspdf;const doc=new jsPDF();
+    doc.setFontSize(18);doc.setFont(undefined,'bold');doc.text('Error Report',14,20);
+    doc.setFontSize(12);doc.setFont(undefined,'normal');doc.text('Period: '+fmtD(start)+' - '+fmtD(end),14,28);
+    doc.text('Generated: '+new Date().toLocaleDateString(),14,35);
+    let y=50;
+    if(duplicates.length>0){
+      doc.setFontSize(14);doc.setFont(undefined,'bold');doc.setTextColor(220,38,38);doc.text('Duplicate Orders',14,y);y+=10;
+      doc.setFontSize(11);doc.setFont(undefined,'normal');doc.setTextColor(0,0,0);
+      duplicates.forEach(d=>{
+        doc.setFont(undefined,'bold');doc.text(d.cleaner,14,y);y+=7;doc.setFont(undefined,'normal');
+        d.duplicates.forEach(dup=>{doc.text('  Order #'+dup.order_num+' appears '+dup.count+' times',14,y);y+=6;if(y>270){doc.addPage();y=20}});
+        y+=4;
+      });
+      y+=10;
+    }
+    if(seqErrors.length>0){
+      doc.setFontSize(14);doc.setFont(undefined,'bold');doc.setTextColor(245,158,11);doc.text('Sequence Gaps',14,y);y+=10;
+      doc.setFontSize(11);doc.setFont(undefined,'normal');doc.setTextColor(0,0,0);
+      seqErrors.forEach(s=>{
+        doc.setFont(undefined,'bold');doc.text(s.cleaner,14,y);y+=7;doc.setFont(undefined,'normal');
+        s.warnings.forEach(w=>{doc.text('  Gap of '+w.gap+' between #'+w.from+' and #'+w.to,14,y);y+=6;if(y>270){doc.addPage();y=20}});
+        y+=4;
+      });
+    }
+    doc.save('error_report_'+start+'_to_'+end+'.pdf');
+  };
+
+  return React.createElement('div',null,
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px'}},
+      React.createElement('h2',{style:{margin:0}},t.errors),
+      (duplicates.length>0||seqErrors.length>0)&&React.createElement('button',{onClick:exportPDF,style:{...S.btn,background:'#dc2626'}},'Export PDF')),
+    React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
+      React.createElement('h3',{style:{marginBottom:'12px'}},'Scan for Errors'),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'12px',marginBottom:'12px'}},
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},t.start),React.createElement('input',{type:'date',value:start,onChange:e=>setStart(e.target.value),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},t.end),React.createElement('input',{type:'date',value:end,onChange:e=>setEnd(e.target.value),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},t.cleaner),React.createElement('select',{value:cleanerId,onChange:e=>setCleanerId(e.target.value),style:S.inp},React.createElement('option',{value:''},'Customers'),cleaners.map(c=>React.createElement('option',{key:c.id,value:c.id},c.name)))),
+        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setTW,style:{...S.inp,cursor:'pointer'}},t.thisWeek)),
+        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer'}},t.lastWeek))),
+      React.createElement('button',{onClick:scan,disabled:ld,style:{...S.btn,width:'100%',opacity:ld?0.6:1}},ld?t.loading:'Scan for Errors')),
+    
+    duplicates.length>0&&React.createElement('div',{style:{...S.card,marginBottom:'20px',background:'#7f1d1d',border:'2px solid #ef4444'}},
+      React.createElement('h3',{style:{color:'#fecaca',marginBottom:'12px'}},'⚠️ Duplicate Orders Found'),
+      duplicates.map((d,i)=>React.createElement('div',{key:i,style:{marginBottom:'16px'}},
+        React.createElement('div',{style:{fontWeight:'bold',color:'#fecaca',marginBottom:'8px'}},d.cleaner),
+        d.duplicates.map((dup,j)=>React.createElement('div',{key:j,style:{color:'#fca5a5',fontSize:'14px',marginLeft:'16px'}},'Order #'+dup.order_num+' appears '+dup.count+' times'))))),
+    
+    seqErrors.length>0&&React.createElement('div',{style:{...S.card,marginBottom:'20px',background:'#78350f',border:'2px solid #f59e0b'}},
+      React.createElement('h3',{style:{color:'#fef3c7',marginBottom:'12px'}},'⚠️ Sequence Gaps Detected'),
+      seqErrors.map((s,i)=>React.createElement('div',{key:i,style:{marginBottom:'16px'}},
+        React.createElement('div',{style:{fontWeight:'bold',color:'#fef3c7',marginBottom:'8px'}},s.cleaner),
+        s.warnings.map((w,j)=>React.createElement('div',{key:j,style:{color:'#fde68a',fontSize:'14px',marginLeft:'16px'}},'Gap of '+w.gap+' between #'+w.from+' and #'+w.to))))),
+    
+    duplicates.length===0&&seqErrors.length===0&&(start||end)&&!ld&&React.createElement('div',{style:{...S.card,background:'#065f46',border:'2px solid #10b981',textAlign:'center'}},
+      React.createElement('div',{style:{fontSize:'24px',marginBottom:'8px'}},'✓'),
+      React.createElement('div',{style:{color:'#a7f3d0'}},'No errors found for selected date range')));
+}
+
+function Settings({settings,setSettings,notify,lang,setLang,loadData,t}){
+  const[f,setF]=useState({...settings,companyName:settings.companyName||'WEBSTER AVE LAUNDROMAT',companyAddress:settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',storePhone:settings.storePhone||'929-263-1560',managerPhone:settings.managerPhone||'347-632-2024'});
+  const[sav,setSav]=useState(false);const[clr,setClr]=useState(false);const[conf,setConf]=useState('');const[exp,setExp]=useState(false);
+  const save=async e=>{e.preventDefault();setSav(true);try{await api.put('/settings',{sameDayMult:parseFloat(f.sameDayMult),defaultRate:parseFloat(f.defaultRate),companyName:f.companyName,companyAddress:f.companyAddress,storePhone:f.storePhone,managerPhone:f.managerPhone});setSettings(f);notify('Saved')}catch(e){alert(e.message)}setSav(false)};
+  const clear=async()=>{const need=lang==='es'?'BORRAR':'DELETE';if(conf!==need){alert('Type '+need);return}setClr(true);try{const res=await api.del('/orders/clear-all');alert('Cleared '+res.deleted+' orders!');setConf('');window.location.reload()}catch(e){console.error('Clear error:',e);alert('Error: '+e.message)}setClr(false)};
+  const exportDB=async()=>{setExp(true);try{const data=await api.get('/export-database');const wb=XLSX.utils.book_new();if(data.orders&&data.orders.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.orders),'Orders')}if(data.cleaners&&data.cleaners.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.cleaners),'Cleaners')}if(data.extras&&data.extras.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.extras),'Extras')}if(data.cleaner_extras&&data.cleaner_extras.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.cleaner_extras),'CleanerExtras')}if(data.invoice_tracking&&data.invoice_tracking.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.invoice_tracking),'InvoiceTracking')}if(data.settings&&data.settings.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.settings),'Settings')}XLSX.writeFile(wb,'database_backup_'+new Date().toISOString().split('T')[0]+'.xlsx');notify('Backup downloaded!')}catch(e){alert(e.message)}setExp(false)};
+
+  return React.createElement('div',null,
+    React.createElement('h2',null,t.settingsTitle),
+    React.createElement('form',{onSubmit:save,style:{...S.card,maxWidth:'500px',marginBottom:'20px'}},
+      React.createElement('div',{style:{marginBottom:'16px'}},React.createElement('label',{style:S.lbl},'Language'),
+        React.createElement('div',{style:{display:'flex',gap:'8px'}},
+          React.createElement('button',{type:'button',onClick:()=>setLang('en'),style:{flex:1,padding:'10px',borderRadius:'6px',border:lang==='en'?'2px solid #3b82f6':'1px solid #475569',background:lang==='en'?'rgba(59,130,246,0.2)':'transparent',color:'#fff',cursor:'pointer'}},'English'),
+          React.createElement('button',{type:'button',onClick:()=>setLang('es'),style:{flex:1,padding:'10px',borderRadius:'6px',border:lang==='es'?'2px solid #3b82f6':'1px solid #475569',background:lang==='es'?'rgba(59,130,246,0.2)':'transparent',color:'#fff',cursor:'pointer'}},'Español'))),
+      React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.sameDayMult),React.createElement('input',{type:'number',step:'0.1',value:f.sameDayMult,onChange:e=>setF({...f,sameDayMult:e.target.value}),style:S.inp})),
+      React.createElement('p',{style:{color:'#64748b',fontSize:'12px',marginTop:'-8px',marginBottom:'16px'}},'1.0 = no extra. 1.5 = 50% more.'),
+      React.createElement('div',{style:{marginBottom:'16px'}},React.createElement('label',{style:S.lbl},t.defaultRate),React.createElement('input',{type:'number',step:'0.01',value:f.defaultRate,onChange:e=>setF({...f,defaultRate:e.target.value}),style:S.inp})),
+      React.createElement('div',{style:{marginTop:'20px',paddingTop:'16px',borderTop:'1px solid #334155'}},
+        React.createElement('h4',{style:{color:'#60a5fa',marginBottom:'12px'}},'📄 Invoice Settings'),
+        React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},'Company Name'),React.createElement('input',{value:f.companyName,onChange:e=>setF({...f,companyName:e.target.value}),style:S.inp})),
+        React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},'Company Address'),React.createElement('input',{value:f.companyAddress,onChange:e=>setF({...f,companyAddress:e.target.value}),style:S.inp})),
+        React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}},
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},'Store Phone'),React.createElement('input',{value:f.storePhone,onChange:e=>setF({...f,storePhone:e.target.value}),style:S.inp})),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},'Manager Phone'),React.createElement('input',{value:f.managerPhone,onChange:e=>setF({...f,managerPhone:e.target.value}),style:S.inp})))),
+      React.createElement('button',{type:'submit',disabled:sav,style:{...S.btn,width:'100%',opacity:sav?0.6:1,marginTop:'16px'}},sav?'...':t.saveSettings)),
+    React.createElement('div',{style:{...S.card,maxWidth:'500px',marginBottom:'20px',border:'1px solid #059669'}},
+      React.createElement('h3',{style:{color:'#4ade80',marginBottom:'12px'}},'💾 Database Backup'),
+      React.createElement('p',{style:{color:'#94a3b8',fontSize:'14px',marginBottom:'16px'}},'Download all data (orders, cleaners, extras, payments) as Excel file.'),
+      React.createElement('button',{onClick:exportDB,disabled:exp,style:{...S.btn,width:'100%',background:'#059669',opacity:exp?0.6:1}},exp?'Exporting...':'Download Backup')),
+    React.createElement('div',{style:{...S.card,maxWidth:'500px',border:'1px solid #7f1d1d'}},
+      React.createElement('h3',{style:{color:'#ef4444',marginBottom:'12px'}},t.clearAllOrders),
+      React.createElement('p',{style:{color:'#fca5a5',fontSize:'14px',marginBottom:'16px'}},t.clearWarning),
+      React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.clearConfirm),React.createElement('input',{value:conf,onChange:e=>setConf(e.target.value),style:S.inp,placeholder:lang==='es'?'BORRAR':'DELETE'})),
+      React.createElement('button',{onClick:clear,disabled:clr,style:{...S.del,width:'100%',padding:'12px',opacity:clr?0.6:1}},clr?'...':t.clearAllOrders)));
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>
