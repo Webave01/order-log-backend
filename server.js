@@ -420,7 +420,15 @@ app.get('/api/settings', authenticate, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM settings');
     const settings = {};
-    result.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
+    const stringKeys = ['companyName', 'companyAddress', 'storePhone', 'managerPhone'];
+    result.rows.forEach(row => { 
+      settings[row.key] = stringKeys.includes(row.key) ? row.value : parseFloat(row.value); 
+    });
+    // Set defaults if not present
+    if (!settings.companyName) settings.companyName = 'WEBSTER AVE LAUNDROMAT';
+    if (!settings.companyAddress) settings.companyAddress = '1363 WEBSTER AVE, NEW YORK, NY 10456';
+    if (!settings.storePhone) settings.storePhone = '929-263-1560';
+    if (!settings.managerPhone) settings.managerPhone = '347-632-2024';
     res.json(settings);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -428,11 +436,15 @@ app.get('/api/settings', authenticate, async (req, res) => {
 });
 
 app.put('/api/settings', authenticate, adminOnly, async (req, res) => {
-  const { sameDayMult, defaultRate } = req.body;
+  const { sameDayMult, defaultRate, companyName, companyAddress, storePhone, managerPhone } = req.body;
   try {
-    await pool.query('UPDATE settings SET value = $1 WHERE key = $2', [sameDayMult.toString(), 'sameDayMult']);
-    await pool.query('UPDATE settings SET value = $1 WHERE key = $2', [defaultRate.toString(), 'defaultRate']);
-    res.json({ sameDayMult, defaultRate });
+    if (sameDayMult !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['sameDayMult', sameDayMult.toString()]);
+    if (defaultRate !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['defaultRate', defaultRate.toString()]);
+    if (companyName !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['companyName', companyName]);
+    if (companyAddress !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['companyAddress', companyAddress]);
+    if (storePhone !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['storePhone', storePhone]);
+    if (managerPhone !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['managerPhone', managerPhone]);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
