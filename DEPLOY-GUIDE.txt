@@ -1,0 +1,54 @@
+DEPLOYMENT GUIDE — Driver Scheduling & Pay
+Total time: ~10 minutes. 3 steps.
+
+STEP 1: Add schedule-routes.js to GitHub (2 min)
+================================================
+1. Go to github.com/Webave01/order-log-backend
+2. Click "Add file" -> "Create new file"
+3. Name it exactly: schedule-routes.js
+4. Paste the ENTIRE contents of the schedule-routes.js file
+5. Click "Commit new file"
+
+STEP 2: Replace server.js on GitHub (3 min)
+================================================
+1. On GitHub, click on server.js
+2. Click the pencil icon to edit
+3. Select all (Ctrl+A) and delete everything
+4. Paste the ENTIRE contents of the new server.js file
+5. Click "Commit changes"
+6. Render will auto-deploy (~2 min, check Events tab)
+
+The new server.js automatically creates all driver scheduling
+tables when it starts up. No separate database migration needed.
+
+STEP 3: Deploy schedule.html to Netlify (2 min)
+================================================
+1. Download your current Netlify site folder
+2. Add schedule.html to the folder (alongside index.html)
+3. Re-deploy the folder to Netlify (drag and drop)
+4. Access at: websterorders.netlify.app/schedule.html
+
+VERIFY
+================================================
+1. Go to websterorders.netlify.app/schedule.html
+2. Login with your admin credentials
+3. Go to "Drivers" tab -> Add your drivers
+4. Go to "Schedule" tab -> Assign drivers to routes
+5. Test clock in/out on "Time Tracking" tab
+
+NOTE ON API URL
+================================================
+In schedule.html, the script section has:
+   const API = 'https://order-log-backend.onrender.com/api';
+
+If your Render backend URL changed, update this before deploying.
+
+WHAT CHANGED IN server.js
+================================================
+Only 3 things added to your existing code:
+1. Line 22: const scheduleRoutes = require('./schedule-routes');
+2. initDB(): New tables for drivers, routes, shifts, schedules, time, pay
+3. Before health check: app.use('/api', scheduleRoutes(pool, authenticate, adminOnly));
+
+Everything else is identical to your current server.js.
+Your orders app continues to work exactly as before.

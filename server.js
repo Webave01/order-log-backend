@@ -19,6 +19,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// === Schedule Routes (Driver Scheduling & Pay) ===
+const scheduleRoutes = require('./schedule-routes');
+
 const authenticate = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
@@ -113,6 +116,139 @@ async function initDB() {
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS price_adjustment DECIMAL(10,2) DEFAULT 0;
     `);
 
+    // =============================================
+    // DRIVER SCHEDULING & PAY TABLES
+    // =============================================
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS drivers (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        name VARCHAR(100) NOT NULL,
+        phone VARCHAR(20),
+        email VARCHAR(100),
+        hourly_rate DECIMAL(10,2) NOT NULL DEFAULT 16.50,
+        overtime_rate DECIMAL(10,2),
+        status VARCHAR(20) DEFAULT 'active',
+        hired_date DATE DEFAULT CURRENT_DATE,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS routes (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(50) NOT NULL,
+        description TEXT,
+        active_days INTEGER[] DEFAULT '{1,2,3,4,5,6}',
+        estimated_hours DECIMAL(4,2) DEFAULT 5.0,
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS shift_templates (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(50) NOT NULL,
+        start_time TIME NOT NULL,
+        end_time TIME NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS schedule_assignments (
+        id SERIAL PRIMARY KEY,
+        driver_id INTEGER REFERENCES drivers(id) NOT NULL,
+        route_id INTEGER REFERENCES routes(id) NOT NULL,
+        shift_template_id INTEGER REFERENCES shift_templates(id) NOT NULL,
+        day_of_week INTEGER NOT NULL,
+        is_recurring BOOLEAN DEFAULT true,
+        effective_date DATE DEFAULT CURRENT_DATE,
+        end_date DATE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(route_id, shift_template_id, day_of_week, effective_date)
+      );
+      CREATE TABLE IF NOT EXISTS schedule_exceptions (
+        id SERIAL PRIMARY KEY,
+        original_assignment_id INTEGER REFERENCES schedule_assignments(id),
+        exception_date DATE NOT NULL,
+        exception_type VARCHAR(20) NOT NULL,
+        replacement_driver_id INTEGER REFERENCES drivers(id),
+        reason TEXT,
+        approved_by INTEGER REFERENCES users(id),
+        approved_at TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS time_entries (
+        id SERIAL PRIMARY KEY,
+        driver_id INTEGER REFERENCES drivers(id) NOT NULL,
+        route_id INTEGER REFERENCES routes(id) NOT NULL,
+        shift_template_id INTEGER REFERENCES shift_templates(id),
+        work_date DATE NOT NULL,
+        clock_in TIMESTAMP,
+        clock_out TIMESTAMP,
+        break_minutes INTEGER DEFAULT 0,
+        total_hours DECIMAL(5,2),
+        status VARCHAR(20) DEFAULT 'pending',
+        notes TEXT,
+        approved_by INTEGER REFERENCES users(id),
+        approved_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS pay_periods (
+        id SERIAL PRIMARY KEY,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        status VARCHAR(20) DEFAULT 'open',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS pay_records (
+        id SERIAL PRIMARY KEY,
+        pay_period_id INTEGER REFERENCES pay_periods(id) NOT NULL,
+        driver_id INTEGER REFERENCES drivers(id) NOT NULL,
+        regular_hours DECIMAL(5,2) DEFAULT 0,
+        overtime_hours DECIMAL(5,2) DEFAULT 0,
+        regular_pay DECIMAL(10,2) DEFAULT 0,
+        overtime_pay DECIMAL(10,2) DEFAULT 0,
+        bonuses DECIMAL(10,2) DEFAULT 0,
+        gross_pay DECIMAL(10,2) DEFAULT 0,
+        notes TEXT,
+        status VARCHAR(20) DEFAULT 'draft',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(pay_period_id, driver_id)
+      );
+    `);
+
+    // Scheduling indexes
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_schedule_driver ON schedule_assignments(driver_id);
+      CREATE INDEX IF NOT EXISTS idx_schedule_day ON schedule_assignments(day_of_week);
+      CREATE INDEX IF NOT EXISTS idx_time_entries_date ON time_entries(work_date);
+      CREATE INDEX IF NOT EXISTS idx_time_entries_driver ON time_entries(driver_id);
+      CREATE INDEX IF NOT EXISTS idx_pay_records_period ON pay_records(pay_period_id);
+      CREATE INDEX IF NOT EXISTS idx_exceptions_date ON schedule_exceptions(exception_date);
+    `);
+
+    // Seed routes and shifts if empty
+    const routeCheck = await client.query('SELECT COUNT(*) FROM routes');
+    if (parseInt(routeCheck.rows[0].count) === 0) {
+      await client.query(`
+        INSERT INTO routes (name, description, active_days) VALUES
+          ('East', 'East Side Manhattan pickups/deliveries', '{1,2,3,4,5,6}'),
+          ('West', 'West Side Manhattan pickups/deliveries', '{1,2,3,4,5,6}'),
+          ('Other', 'Additional route - Mon/Fri/Sat only', '{1,5,6}')
+      `);
+    }
+    const shiftCheck = await client.query('SELECT COUNT(*) FROM shift_templates');
+    if (parseInt(shiftCheck.rows[0].count) === 0) {
+      await client.query(`
+        INSERT INTO shift_templates (name, start_time, end_time) VALUES
+          ('AM', '06:00', '12:00'),
+          ('PM', '12:00', '18:00')
+      `);
+    }
+    // =============================================
+    // END DRIVER SCHEDULING TABLES
+    // =============================================
+
     const userCheck = await client.query('SELECT COUNT(*) FROM users');
     if (parseInt(userCheck.rows[0].count) === 0) {
       const adminHash = await bcrypt.hash('admin123', 10);
@@ -127,7 +263,7 @@ async function initDB() {
         ['sameDayMult', '1.0', 'defaultRate', '0.65']);
     }
 
-    console.log('Database initialized');
+    console.log('Database initialized (including driver scheduling tables)');
   } catch (err) {
     console.error('DB init error:', err);
   } finally {
@@ -426,7 +562,6 @@ app.get('/api/settings', authenticate, async (req, res) => {
     result.rows.forEach(row => { 
       settings[row.key] = stringKeys.includes(row.key) ? row.value : parseFloat(row.value); 
     });
-    // Set defaults if not present
     if (!settings.companyName) settings.companyName = 'WEBSTER AVE LAUNDROMAT';
     if (!settings.companyAddress) settings.companyAddress = '1363 WEBSTER AVE, NEW YORK, NY 10456';
     if (!settings.storePhone) settings.storePhone = '929-263-1560';
@@ -480,10 +615,8 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
     const settings = {};
     settingsResult.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
 
-    // Track unique pickup dates for congestion calculation
     const uniquePickupDates = new Set();
 
-    // Sequence gap detection
     const orderNums = ordersResult.rows.map(o => parseInt(o.order_num.replace(/\D/g, ''))).filter(n => !isNaN(n)).sort((a, b) => a - b);
     const sequenceWarnings = [];
     for (let i = 1; i < orderNums.length; i++) {
@@ -513,7 +646,6 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
         return ex ? ex.name : null;
       }).filter(Boolean).join(', ');
 
-      // Track pickup date for congestion calculation
       if (o.pickup_date) {
         uniquePickupDates.add(o.pickup_date.toISOString().split('T')[0]);
       }
@@ -523,7 +655,6 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
 
     const ordersTotal = orders.reduce((sum, o) => sum + o.total, 0);
 
-    // Calculate congestion surcharge
     let congestionSurcharge = 0;
     let congestionDays = 0;
     if (cleaner && cleaner.congestion_zone) {
@@ -612,7 +743,6 @@ app.get('/api/reports/invoices-all', authenticate, adminOnly, async (req, res) =
 
       const ordersTotal = orders.reduce((sum, o) => sum + o.total, 0);
 
-      // Calculate congestion surcharge
       let congestionSurcharge = 0;
       let congestionDays = 0;
       if (cleaner.congestion_zone) {
@@ -720,7 +850,6 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
       cleanerStats[cleaner.id].weight += parseFloat(o.weight);
       cleanerStats[cleaner.id].amount += orderTotal;
 
-      // Track unique pickup dates per cleaner for congestion calculation
       if (cleaner.congestion_zone && o.pickup_date) {
         if (!cleanerPickupDates[cleaner.id]) cleanerPickupDates[cleaner.id] = new Set();
         cleanerPickupDates[cleaner.id].add(o.pickup_date.toISOString().split('T')[0]);
@@ -735,7 +864,6 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
       else { dailyStats[dateKey].westOrders++; dailyStats[dateKey].westAmount += orderTotal; }
     }
 
-    // Calculate total congestion charges
     let totalCongestion = 0;
     for (const cleanerId in cleanerPickupDates) {
       const cleaner = cleanerMap[cleanerId];
@@ -845,7 +973,6 @@ app.post('/api/invoice-tracking/generate-week', authenticate, adminOnly, async (
         }
       }
 
-      // Add congestion surcharge
       if (cleaner.congestion_zone) {
         const congestionDays = uniquePickupDates.size;
         total += congestionDays * parseFloat(cleaner.congestion_rate || 5);
@@ -921,13 +1048,15 @@ async function cleanupOldOrders() {
   }
 }
 
+// === Mount Schedule Routes (Driver Scheduling & Pay) ===
+app.use('/api', scheduleRoutes(pool, authenticate, adminOnly));
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
 // Serve frontend for all non-API routes
 app.get('*', (req, res) => {
-  // Don't intercept API routes
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ error: 'API endpoint not found' });
   }
