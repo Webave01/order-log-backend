@@ -274,6 +274,10 @@ async function initDB() {
         await client.query('ALTER TABLE drivers ADD COLUMN IF NOT EXISTS ' + col + ' ' + def);
       } catch(e) { /* column exists */ }
     }
+
+    // Migration: lowercase all usernames for consistent login
+    await client.query('UPDATE users SET username = LOWER(username) WHERE username != LOWER(username)');
+
     // =============================================
     // END DRIVER SCHEDULING TABLES
     // =============================================

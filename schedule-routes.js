@@ -232,7 +232,7 @@ module.exports = function(pool, authenticate, adminOnly) {
       const hash = await bcrypt.hash(password, 10);
       const { rows } = await pool.query(
         'INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, role, created_at',
-        [username, hash, userRole]
+        [username.toLowerCase(), hash, userRole]
       );
       // Link to driver profile if driver_id provided
       if (userRole === 'driver' && driver_id) {
@@ -256,7 +256,7 @@ module.exports = function(pool, authenticate, adminOnly) {
         const hash = await bcrypt.hash(password, 10);
         const { rows } = await pool.query(
           'UPDATE users SET username = COALESCE($1, username), password = $2, role = COALESCE($3, role) WHERE id = $4 RETURNING id, username, role, created_at',
-          [username, hash, validRoles.includes(role) ? role : undefined, userId]
+          [username ? username.toLowerCase() : undefined, hash, validRoles.includes(role) ? role : undefined, userId]
         );
         if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
         // Update driver linking
@@ -270,7 +270,7 @@ module.exports = function(pool, authenticate, adminOnly) {
       } else {
         const { rows } = await pool.query(
           'UPDATE users SET username = COALESCE($1, username), role = COALESCE($2, role) WHERE id = $3 RETURNING id, username, role, created_at',
-          [username, validRoles.includes(role) ? role : undefined, userId]
+          [username ? username.toLowerCase() : undefined, validRoles.includes(role) ? role : undefined, userId]
         );
         if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
         // Update driver linking
