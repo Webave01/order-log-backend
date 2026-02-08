@@ -307,6 +307,121 @@ module.exports = function(pool, authenticate, adminOnly) {
   });
 
   // =============================================
+  // DRIVER AVAILABILITY
+  // =============================================
+
+  // Get availability for a date range (admin sees all, driver sees own)
+  router.get('/availability', authenticate, async (req, res) => {
+    try {
+      const { start_date, end_date, driver_id } = req.query;
+      let query = 'SELECT da.*, d.name as driver_name FROM driver_availability da JOIN drivers d ON da.driver_id = d.id WHERE 1=1';
+      const params = [];
+
+      if (start_date) { params.push(start_date); query += ` AND da.work_date >= $${params.length}`; }
+      if (end_date) { params.push(end_date); query += ` AND da.work_date <= $${params.length}`; }
+      if (driver_id) { params.push(driver_id); query += ` AND da.driver_id = $${params.length}`; }
+
+      // Non-admin only sees own
+      if (req.user.role === 'driver') {
+        const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [req.user.id]);
+        if (dResult.rows.length > 0) {
+          params.push(dResult.rows[0].id);
+          query += ` AND da.driver_id = $${params.length}`;
+        } else {
+          return res.json([]);
+        }
+      }
+
+      query += ' ORDER BY da.work_date, d.name';
+      const { rows } = await pool.query(query, params);
+      res.json(rows);
+    } catch (err) {
+      console.error('Get availability error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Driver submits availability (confirmed=true means double-confirmed)
+  router.post('/availability', authenticate, async (req, res) => {
+    try {
+      const { driver_id, work_date, status, preferred_shift, notes, confirmed } = req.body;
+      if (!driver_id || !work_date) return res.status(400).json({ error: 'driver_id and work_date required' });
+
+      // Verify driver owns this profile (unless admin)
+      if (req.user.role !== 'admin') {
+        const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1 AND id = $2', [req.user.id, driver_id]);
+        if (dResult.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+      }
+
+      const { rows } = await pool.query(
+        `INSERT INTO driver_availability (driver_id, work_date, status, preferred_shift, notes, confirmed)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (driver_id, work_date)
+         DO UPDATE SET status = $3, preferred_shift = $4, notes = $5, confirmed = $6, updated_at = NOW()
+         RETURNING *`,
+        [driver_id, work_date, status || 'available', preferred_shift || null, notes || null, confirmed || false]
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      console.error('Set availability error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Delete availability entry
+  router.delete('/availability/:id', authenticate, async (req, res) => {
+    try {
+      // Verify ownership unless admin
+      if (req.user.role !== 'admin') {
+        const check = await pool.query(
+          'SELECT da.id FROM driver_availability da JOIN drivers d ON da.driver_id = d.id WHERE da.id = $1 AND d.user_id = $2',
+          [req.params.id, req.user.id]
+        );
+        if (check.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+      }
+      await pool.query('DELETE FROM driver_availability WHERE id = $1', [req.params.id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Delete availability error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Admin: get coverage summary for a week (who's available, what's unfilled)
+  router.get('/availability/coverage', authenticate, adminOnly, async (req, res) => {
+    try {
+      const { week_of } = req.query;
+      if (!week_of) return res.status(400).json({ error: 'week_of required' });
+
+      // Get all confirmed availability for the week
+      const endDate = new Date(week_of);
+      endDate.setDate(endDate.getDate() + 5);
+      const endStr = endDate.toISOString().split('T')[0];
+
+      const { rows: available } = await pool.query(
+        `SELECT da.*, d.name as driver_name
+         FROM driver_availability da JOIN drivers d ON da.driver_id = d.id
+         WHERE da.work_date BETWEEN $1 AND $2 AND da.confirmed = true AND da.status = 'available'
+         ORDER BY da.work_date, d.name`,
+        [week_of, endStr]
+      );
+
+      // Get assignments for the same week
+      const { rows: assignments } = await pool.query(
+        `SELECT sa.*, d.name as driver_name
+         FROM schedule_assignments sa LEFT JOIN drivers d ON sa.driver_id = d.id
+         WHERE sa.start_date = $1`,
+        [week_of]
+      );
+
+      res.json({ available, assignments });
+    } catch (err) {
+      console.error('Get coverage error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // =============================================
   // SCHEDULE ASSIGNMENTS
   // =============================================
 

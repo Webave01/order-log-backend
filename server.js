@@ -278,6 +278,22 @@ async function initDB() {
     // Migration: lowercase all usernames for consistent login
     await client.query('UPDATE users SET username = LOWER(username) WHERE username != LOWER(username)');
 
+    // Driver availability requests table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS driver_availability (
+        id SERIAL PRIMARY KEY,
+        driver_id INTEGER REFERENCES drivers(id) NOT NULL,
+        work_date DATE NOT NULL,
+        status VARCHAR(20) DEFAULT 'available',
+        preferred_shift VARCHAR(20),
+        notes TEXT,
+        confirmed BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(driver_id, work_date)
+      )
+    `);
+
     // =============================================
     // END DRIVER SCHEDULING TABLES
     // =============================================
