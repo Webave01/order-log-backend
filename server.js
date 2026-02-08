@@ -348,6 +348,12 @@ app.get('/api/orders', authenticate, async (req, res) => {
     const params = [];
     const conditions = [];
 
+    // Drivers only see their own orders
+    if (req.user.role === 'driver') {
+      params.push(req.user.username);
+      conditions.push(`LOWER(o.staff_name) = $${params.length}`);
+    }
+
     if (search) {
       query = `SELECT o.* FROM orders o LEFT JOIN cleaners c ON o.cleaner_id = c.id`;
       params.push('%' + search + '%', '%' + search + '%');
