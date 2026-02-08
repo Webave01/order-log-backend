@@ -114,12 +114,12 @@ module.exports = function(pool, authenticate, adminOnly) {
 
   router.post('/routes', authenticate, adminOnly, async (req, res) => {
     try {
-      const { name, description, active_days, estimated_hours } = req.body;
+      const { name, description, active_days, estimated_hours, has_shifts } = req.body;
       if (!name) return res.status(400).json({ error: 'Route name required' });
       const { rows } = await pool.query(
-        `INSERT INTO routes (name, description, active_days, estimated_hours)
-         VALUES ($1,$2,$3,$4) RETURNING *`,
-        [name, description || null, active_days || [1,2,3,4,5,6], estimated_hours || 5.0]
+        `INSERT INTO routes (name, description, active_days, estimated_hours, has_shifts)
+         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [name, description || null, active_days || [1,2,3,4,5,6], estimated_hours || 5.0, has_shifts || false]
       );
       res.json(rows[0]);
     } catch (err) {
@@ -130,13 +130,13 @@ module.exports = function(pool, authenticate, adminOnly) {
 
   router.put('/routes/:id', authenticate, adminOnly, async (req, res) => {
     try {
-      const { name, description, active_days, estimated_hours, status } = req.body;
+      const { name, description, active_days, estimated_hours, status, has_shifts } = req.body;
       const { rows } = await pool.query(
         `UPDATE routes SET name=COALESCE($1,name), description=COALESCE($2,description),
          active_days=COALESCE($3,active_days), estimated_hours=COALESCE($4,estimated_hours),
-         status=COALESCE($5,status)
-         WHERE id=$6 RETURNING *`,
-        [name, description, active_days, estimated_hours, status, req.params.id]
+         status=COALESCE($5,status), has_shifts=COALESCE($6,has_shifts)
+         WHERE id=$7 RETURNING *`,
+        [name, description, active_days, estimated_hours, status, has_shifts, req.params.id]
       );
       if (rows.length === 0) return res.status(404).json({ error: 'Route not found' });
       res.json(rows[0]);
@@ -314,7 +314,7 @@ module.exports = function(pool, authenticate, adminOnly) {
   router.get('/availability', authenticate, async (req, res) => {
     try {
       const { start_date, end_date, driver_id } = req.query;
-      let query = 'SELECT da.*, d.name as driver_name FROM driver_availability da JOIN drivers d ON da.driver_id = d.id WHERE 1=1';
+      let query = 'SELECT da.*, d.name as driver_name, r.name as route_name FROM driver_availability da JOIN drivers d ON da.driver_id = d.id LEFT JOIN routes r ON da.preferred_route_id = r.id WHERE 1=1';
       const params = [];
 
       if (start_date) { params.push(start_date); query += ` AND da.work_date >= $${params.length}`; }
@@ -344,7 +344,7 @@ module.exports = function(pool, authenticate, adminOnly) {
   // Driver submits availability (confirmed=true means double-confirmed)
   router.post('/availability', authenticate, async (req, res) => {
     try {
-      const { driver_id, work_date, status, preferred_shift, notes, confirmed } = req.body;
+      const { driver_id, work_date, status, preferred_route_id, preferred_shift, notes, confirmed } = req.body;
       if (!driver_id || !work_date) return res.status(400).json({ error: 'driver_id and work_date required' });
 
       // Verify driver owns this profile (unless admin)
@@ -354,12 +354,12 @@ module.exports = function(pool, authenticate, adminOnly) {
       }
 
       const { rows } = await pool.query(
-        `INSERT INTO driver_availability (driver_id, work_date, status, preferred_shift, notes, confirmed)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO driver_availability (driver_id, work_date, status, preferred_route_id, preferred_shift, notes, confirmed)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (driver_id, work_date)
-         DO UPDATE SET status = $3, preferred_shift = $4, notes = $5, confirmed = $6, updated_at = NOW()
+         DO UPDATE SET status = $3, preferred_route_id = $4, preferred_shift = $5, notes = $6, confirmed = $7, updated_at = NOW()
          RETURNING *`,
-        [driver_id, work_date, status || 'available', preferred_shift || null, notes || null, confirmed || false]
+        [driver_id, work_date, status || 'available', preferred_route_id || null, preferred_shift || null, notes || null, confirmed || false]
       );
       res.json(rows[0]);
     } catch (err) {

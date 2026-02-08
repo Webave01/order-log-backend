@@ -231,11 +231,27 @@ async function initDB() {
     const routeCheck = await client.query('SELECT COUNT(*) FROM routes');
     if (parseInt(routeCheck.rows[0].count) === 0) {
       await client.query(`
-        INSERT INTO routes (name, description, active_days) VALUES
-          ('East', 'East Side Manhattan pickups/deliveries', '{1,2,3,4,5,6}'),
-          ('West', 'West Side Manhattan pickups/deliveries', '{1,2,3,4,5,6}'),
-          ('Other', 'Additional route - Mon/Fri/Sat only', '{1,5,6}')
+        INSERT INTO routes (name, description, active_days, has_shifts) VALUES
+          ('East Cleaners', 'East Side Manhattan pickups/deliveries', '{1,2,3,4,5,6}', true),
+          ('West Cleaners', 'West Side Manhattan pickups/deliveries', '{1,2,3,4,5,6}', true),
+          ('Laundry Day', 'Laundry Day route', '{1,2,3,4,5,6}', false),
+          ('Schools', 'School pickups/deliveries', '{1,2,3,4,5,6}', false),
+          ('Sleepy', 'Sleepy route', '{1,2,3,4,5,6}', false),
+          ('Panda', 'Panda route', '{1,2,3,4,5,6}', false)
       `);
+    } else {
+      // Migration: add has_shifts column
+      try { await client.query("ALTER TABLE routes ADD COLUMN IF NOT EXISTS has_shifts BOOLEAN DEFAULT false"); } catch(e) {}
+      // Migration: update existing East/West and add missing routes
+      await client.query("UPDATE routes SET has_shifts = true WHERE name ILIKE '%east%' OR name ILIKE '%west%'");
+      const routeNames = ['East Cleaners','West Cleaners','Laundry Day','Schools','Sleepy','Panda'];
+      for (const rn of routeNames) {
+        const exists = await client.query("SELECT id FROM routes WHERE name ILIKE $1", [rn]);
+        if (exists.rows.length === 0) {
+          const hasShifts = rn.includes('Cleaners');
+          await client.query("INSERT INTO routes (name, has_shifts) VALUES ($1, $2)", [rn, hasShifts]);
+        }
+      }
     }
     const shiftCheck = await client.query('SELECT COUNT(*) FROM shift_templates');
     if (parseInt(shiftCheck.rows[0].count) === 0) {
@@ -285,6 +301,7 @@ async function initDB() {
         driver_id INTEGER REFERENCES drivers(id) NOT NULL,
         work_date DATE NOT NULL,
         status VARCHAR(20) DEFAULT 'available',
+        preferred_route_id INTEGER REFERENCES routes(id),
         preferred_shift VARCHAR(20),
         notes TEXT,
         confirmed BOOLEAN DEFAULT false,
@@ -293,6 +310,8 @@ async function initDB() {
         UNIQUE(driver_id, work_date)
       )
     `);
+    // Migration: add preferred_route_id if missing
+    try { await client.query("ALTER TABLE driver_availability ADD COLUMN IF NOT EXISTS preferred_route_id INTEGER REFERENCES routes(id)"); } catch(e) {}
 
     // =============================================
     // END DRIVER SCHEDULING TABLES
