@@ -29,18 +29,24 @@ module.exports = function(pool, authenticate, adminOnly) {
   // Add driver
   router.post('/drivers', authenticate, adminOnly, async (req, res) => {
     try {
-      const { name, phone, email, hourly_rate, notes } = req.body;
+      const { name, phone, email, hourly_rate, day_rate, pay_type, payment_method,
+              worker_type, legal_name, dob, address, dl_number, tax_id, tax_id_type,
+              zelle_handle, notes } = req.body;
       if (!name) return res.status(400).json({ error: 'Name required' });
       
+      const ptype = pay_type === 'flat_day' ? 'flat_day' : 'hourly';
       const rate = parseFloat(hourly_rate) || 16.50;
-      if (rate < 16.50) {
+      if (ptype === 'hourly' && rate < 16.50) {
         return res.status(400).json({ error: 'Hourly rate cannot be below NYC minimum wage ($16.50)' });
       }
 
       const { rows } = await pool.query(
-        `INSERT INTO drivers (name, phone, email, hourly_rate, notes)
-         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-        [name, phone || null, email || null, rate, notes || null]
+        `INSERT INTO drivers (name, phone, email, hourly_rate, day_rate, pay_type, payment_method,
+         worker_type, legal_name, dob, address, dl_number, tax_id, tax_id_type, zelle_handle, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+        [name, phone||null, email||null, rate, parseFloat(day_rate)||null, ptype,
+         payment_method||'cash', worker_type||'1099', legal_name||null, dob||null,
+         address||null, dl_number||null, tax_id||null, tax_id_type||'ssn', zelle_handle||null, notes||null]
       );
       res.json(rows[0]);
     } catch (err) {
@@ -52,18 +58,26 @@ module.exports = function(pool, authenticate, adminOnly) {
   // Update driver
   router.put('/drivers/:id', authenticate, adminOnly, async (req, res) => {
     try {
-      const { name, phone, email, hourly_rate, status, notes } = req.body;
+      const { name, phone, email, hourly_rate, day_rate, pay_type, payment_method,
+              worker_type, legal_name, dob, address, dl_number, tax_id, tax_id_type,
+              zelle_handle, status, notes } = req.body;
       const rate = parseFloat(hourly_rate);
-      if (rate && rate < 16.50) {
+      if (pay_type !== 'flat_day' && rate && rate < 16.50) {
         return res.status(400).json({ error: 'Hourly rate cannot be below NYC minimum wage ($16.50)' });
       }
 
       const { rows } = await pool.query(
         `UPDATE drivers SET name=COALESCE($1,name), phone=COALESCE($2,phone),
          email=COALESCE($3,email), hourly_rate=COALESCE($4,hourly_rate),
-         status=COALESCE($5,status), notes=COALESCE($6,notes), updated_at=NOW()
-         WHERE id=$7 RETURNING *`,
-        [name, phone, email, rate || null, status, notes, req.params.id]
+         day_rate=$5, pay_type=COALESCE($6,pay_type), payment_method=COALESCE($7,payment_method),
+         worker_type=COALESCE($8,worker_type), legal_name=$9, dob=$10,
+         address=$11, dl_number=$12, tax_id=$13, tax_id_type=COALESCE($14,tax_id_type),
+         zelle_handle=$15, status=COALESCE($16,status), notes=COALESCE($17,notes), updated_at=NOW()
+         WHERE id=$18 RETURNING *`,
+        [name, phone, email, rate||null, parseFloat(day_rate)||null, pay_type,
+         payment_method, worker_type, legal_name||null, dob||null,
+         address||null, dl_number||null, tax_id||null, tax_id_type,
+         zelle_handle||null, status, notes, req.params.id]
       );
       if (rows.length === 0) return res.status(404).json({ error: 'Driver not found' });
       res.json(rows[0]);
@@ -142,6 +156,131 @@ module.exports = function(pool, authenticate, adminOnly) {
       res.json(rows);
     } catch (err) {
       console.error('Get shifts error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Add shift
+  router.post('/shifts', authenticate, adminOnly, async (req, res) => {
+    try {
+      const { name, start_time, end_time } = req.body;
+      if (!name || !start_time || !end_time) return res.status(400).json({ error: 'name, start_time, end_time required' });
+      const { rows } = await pool.query(
+        'INSERT INTO shift_templates (name, start_time, end_time) VALUES ($1, $2, $3) RETURNING *',
+        [name, start_time, end_time]
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      console.error('Add shift error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Update shift
+  router.put('/shifts/:id', authenticate, adminOnly, async (req, res) => {
+    try {
+      const { name, start_time, end_time } = req.body;
+      const { rows } = await pool.query(
+        'UPDATE shift_templates SET name = COALESCE($1, name), start_time = COALESCE($2, start_time), end_time = COALESCE($3, end_time) WHERE id = $4 RETURNING *',
+        [name, start_time, end_time, req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: 'Shift not found' });
+      res.json(rows[0]);
+    } catch (err) {
+      console.error('Update shift error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Delete shift
+  router.delete('/shifts/:id', authenticate, adminOnly, async (req, res) => {
+    try {
+      await pool.query('DELETE FROM shift_templates WHERE id = $1', [req.params.id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Delete shift error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // =============================================
+  // USER MANAGEMENT
+  // =============================================
+
+  const bcrypt = require('bcryptjs');
+
+  // List all users (admin only)
+  router.get('/users', authenticate, adminOnly, async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        'SELECT id, username, role, created_at FROM users ORDER BY username'
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error('Get users error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Create user (admin only)
+  router.post('/users', authenticate, adminOnly, async (req, res) => {
+    try {
+      const { username, password, role } = req.body;
+      if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+      const validRoles = ['admin', 'attendant', 'driver'];
+      const userRole = validRoles.includes(role) ? role : 'attendant';
+      const hash = await bcrypt.hash(password, 10);
+      const { rows } = await pool.query(
+        'INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, role, created_at',
+        [username, hash, userRole]
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      if (err.code === '23505') return res.status(400).json({ error: 'Username already exists' });
+      console.error('Create user error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Update user (admin only)
+  router.put('/users/:id', authenticate, adminOnly, async (req, res) => {
+    try {
+      const { username, password, role } = req.body;
+      const validRoles = ['admin', 'attendant', 'driver'];
+      if (password) {
+        const hash = await bcrypt.hash(password, 10);
+        const { rows } = await pool.query(
+          'UPDATE users SET username = COALESCE($1, username), password = $2, role = COALESCE($3, role) WHERE id = $4 RETURNING id, username, role, created_at',
+          [username, hash, validRoles.includes(role) ? role : undefined, req.params.id]
+        );
+        if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+        res.json(rows[0]);
+      } else {
+        const { rows } = await pool.query(
+          'UPDATE users SET username = COALESCE($1, username), role = COALESCE($2, role) WHERE id = $3 RETURNING id, username, role, created_at',
+          [username, validRoles.includes(role) ? role : undefined, req.params.id]
+        );
+        if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+        res.json(rows[0]);
+      }
+    } catch (err) {
+      if (err.code === '23505') return res.status(400).json({ error: 'Username already exists' });
+      console.error('Update user error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Delete user (admin only)
+  router.delete('/users/:id', authenticate, adminOnly, async (req, res) => {
+    try {
+      // Prevent deleting yourself
+      if (parseInt(req.params.id) === req.user.id) {
+        return res.status(400).json({ error: 'Cannot delete your own account' });
+      }
+      await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Delete user error:', err);
       res.status(500).json({ error: 'Server error' });
     }
   });
@@ -492,7 +631,7 @@ module.exports = function(pool, authenticate, adminOnly) {
     try {
       const period = await getCurrentPayPeriod();
       const { rows: records } = await pool.query(`
-        SELECT pr.*, d.name as driver_name, d.hourly_rate
+        SELECT pr.*, d.name as driver_name, d.hourly_rate, d.pay_type, d.day_rate, d.payment_method
         FROM pay_records pr
         JOIN drivers d ON pr.driver_id = d.id
         WHERE pr.pay_period_id = $1
@@ -513,7 +652,7 @@ module.exports = function(pool, authenticate, adminOnly) {
       if (periods.length === 0) return res.status(404).json({ error: 'Pay period not found' });
 
       const { rows: records } = await pool.query(`
-        SELECT pr.*, d.name as driver_name, d.hourly_rate
+        SELECT pr.*, d.name as driver_name, d.hourly_rate, d.pay_type, d.day_rate, d.payment_method
         FROM pay_records pr
         JOIN drivers d ON pr.driver_id = d.id
         WHERE pr.pay_period_id = $1
@@ -553,7 +692,7 @@ module.exports = function(pool, authenticate, adminOnly) {
 
       // Get approved time entries for this period
       const { rows: entries } = await pool.query(`
-        SELECT te.*, d.hourly_rate, d.overtime_rate, d.name as driver_name
+        SELECT te.*, d.hourly_rate, d.overtime_rate, d.pay_type, d.day_rate, d.name as driver_name
         FROM time_entries te
         JOIN drivers d ON te.driver_id = d.id
         WHERE te.work_date BETWEEN $1 AND $2
@@ -564,7 +703,7 @@ module.exports = function(pool, authenticate, adminOnly) {
       // Group by driver
       const byDriver = {};
       entries.forEach(e => {
-        if (!byDriver[e.driver_id]) byDriver[e.driver_id] = { entries: [], rate: e.hourly_rate, otRate: e.overtime_rate, name: e.driver_name };
+        if (!byDriver[e.driver_id]) byDriver[e.driver_id] = { entries: [], rate: e.hourly_rate, otRate: e.overtime_rate, pay_type: e.pay_type, day_rate: e.day_rate, name: e.driver_name };
         byDriver[e.driver_id].entries.push(e);
       });
 
@@ -572,28 +711,50 @@ module.exports = function(pool, authenticate, adminOnly) {
       for (const [driverId, data] of Object.entries(byDriver)) {
         const totalHours = data.entries.reduce((sum, e) => sum + parseFloat(e.total_hours || 0), 0);
 
-        let effectiveRate = parseFloat(data.rate);
-        if (effectiveRate < NYC_MIN_WAGE) effectiveRate = NYC_MIN_WAGE;
-
-        const regularHours = Math.min(totalHours, OT_THRESHOLD);
-        const overtimeHours = Math.max(0, totalHours - OT_THRESHOLD);
-        const otRate = data.otRate ? parseFloat(data.otRate) : effectiveRate * OT_MULTIPLIER;
-        const regularPay = Math.round(regularHours * effectiveRate * 100) / 100;
-        const overtimePay = Math.round(overtimeHours * otRate * 100) / 100;
-        const grossPay = regularPay + overtimePay;
-
-        // Spread of hours check: if any day > 10 hours, add 1 hour at min wage
-        let spreadBonus = 0;
-        const dailyHours = {};
+        // Count unique work days
+        const uniqueDays = new Set();
         data.entries.forEach(e => {
           const d = typeof e.work_date === 'string' ? e.work_date.split('T')[0] : e.work_date.toISOString().split('T')[0];
-          dailyHours[d] = (dailyHours[d] || 0) + parseFloat(e.total_hours || 0);
+          uniqueDays.add(d);
         });
-        Object.values(dailyHours).forEach(h => {
-          if (h > 10) spreadBonus += NYC_MIN_WAGE;
-        });
+        const workDays = uniqueDays.size;
 
-        const finalGross = grossPay + spreadBonus;
+        let regularHours, overtimeHours, regularPay, overtimePay, spreadBonus = 0, finalGross, payNotes = null;
+
+        if (data.pay_type === 'flat_day') {
+          // Flat day rate: days worked × day rate, no OT calculation
+          const dayRate = parseFloat(data.day_rate) || 0;
+          regularHours = totalHours;
+          overtimeHours = 0;
+          regularPay = Math.round(workDays * dayRate * 100) / 100;
+          overtimePay = 0;
+          finalGross = regularPay;
+          payNotes = workDays + ' days @ ' + '$' + dayRate.toFixed(2) + '/day (flat rate)';
+        } else {
+          // Hourly rate calculation
+          let effectiveRate = parseFloat(data.rate);
+          if (effectiveRate < NYC_MIN_WAGE) effectiveRate = NYC_MIN_WAGE;
+
+          regularHours = Math.min(totalHours, OT_THRESHOLD);
+          overtimeHours = Math.max(0, totalHours - OT_THRESHOLD);
+          const otRate = data.otRate ? parseFloat(data.otRate) : effectiveRate * OT_MULTIPLIER;
+          regularPay = Math.round(regularHours * effectiveRate * 100) / 100;
+          overtimePay = Math.round(overtimeHours * otRate * 100) / 100;
+          const grossPay = regularPay + overtimePay;
+
+          // Spread of hours check: if any day > 10 hours, add 1 hour at min wage
+          const dailyHours = {};
+          data.entries.forEach(e => {
+            const d = typeof e.work_date === 'string' ? e.work_date.split('T')[0] : e.work_date.toISOString().split('T')[0];
+            dailyHours[d] = (dailyHours[d] || 0) + parseFloat(e.total_hours || 0);
+          });
+          Object.values(dailyHours).forEach(h => {
+            if (h > 10) spreadBonus += NYC_MIN_WAGE;
+          });
+
+          finalGross = grossPay + spreadBonus;
+          if (spreadBonus > 0) payNotes = 'Includes $' + spreadBonus.toFixed(2) + ' spread-of-hours bonus';
+        }
 
         await pool.query(`
           INSERT INTO pay_records (pay_period_id, driver_id, regular_hours, overtime_hours,
@@ -605,7 +766,7 @@ module.exports = function(pool, authenticate, adminOnly) {
             notes=$9, updated_at=NOW()
         `, [period.id, parseInt(driverId), regularHours, overtimeHours,
             regularPay, overtimePay, spreadBonus, finalGross,
-            spreadBonus > 0 ? `Includes $${spreadBonus.toFixed(2)} spread-of-hours bonus` : null]);
+            payNotes]);
 
         results.push({
           driver_id: parseInt(driverId),
@@ -654,7 +815,7 @@ module.exports = function(pool, authenticate, adminOnly) {
       if (period.length === 0) return res.status(404).json({ error: 'Pay period not found' });
 
       const { rows } = await pool.query(`
-        SELECT d.name, d.hourly_rate, pr.regular_hours, pr.overtime_hours,
+        SELECT d.name, d.hourly_rate, d.pay_type, d.day_rate, d.payment_method, pr.regular_hours, pr.overtime_hours,
                pr.regular_pay, pr.overtime_pay, pr.bonuses, pr.gross_pay, pr.notes
         FROM pay_records pr
         JOIN drivers d ON pr.driver_id = d.id
@@ -662,9 +823,10 @@ module.exports = function(pool, authenticate, adminOnly) {
         ORDER BY d.name
       `, [req.params.id]);
 
-      let csv = 'Driver,Hourly Rate,Regular Hours,OT Hours,Regular Pay,OT Pay,Bonuses,Gross Pay,Notes\n';
+      let csv = 'Driver,Pay Type,Rate,Payment Method,Regular Hours,OT Hours,Regular Pay,OT Pay,Bonuses,Gross Pay,Notes\n';
       rows.forEach(r => {
-        csv += `"${r.name}",${r.hourly_rate},${r.regular_hours},${r.overtime_hours},${r.regular_pay},${r.overtime_pay},${r.bonuses},${r.gross_pay},"${r.notes || ''}"\n`;
+        const rateStr = r.pay_type === 'flat_day' ? (r.day_rate + '/day') : (r.hourly_rate + '/hr');
+        csv += `"${r.name}",${r.pay_type || 'hourly'},${rateStr},${r.payment_method || 'cash'},${r.regular_hours},${r.overtime_hours},${r.regular_pay},${r.overtime_pay},${r.bonuses},${r.gross_pay},"${r.notes || ''}"\n`;
       });
 
       res.setHeader('Content-Type', 'text/csv');

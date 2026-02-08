@@ -242,8 +242,37 @@ async function initDB() {
       await client.query(`
         INSERT INTO shift_templates (name, start_time, end_time) VALUES
           ('AM', '06:00', '12:00'),
-          ('PM', '12:00', '18:00')
+          ('PM', '12:00', '18:00'),
+          ('Full Day', '07:30', '23:59')
       `);
+    } else {
+      // Migration: add Full Day if missing
+      const fdCheck = await client.query("SELECT id FROM shift_templates WHERE name = 'Full Day'");
+      if (fdCheck.rows.length === 0) {
+        await client.query("INSERT INTO shift_templates (name, start_time, end_time) VALUES ('Full Day', '07:30', '23:59')");
+      } else {
+        await client.query("UPDATE shift_templates SET start_time='07:30', end_time='23:59' WHERE name='Full Day'");
+      }
+    }
+
+    // Migration: add driver profile columns
+    const driverCols = [
+      ['pay_type', "VARCHAR(20) DEFAULT 'hourly'"],
+      ['day_rate', 'DECIMAL(10,2)'],
+      ['payment_method', "VARCHAR(20) DEFAULT 'cash'"],
+      ['worker_type', "VARCHAR(10) DEFAULT '1099'"],
+      ['legal_name', 'VARCHAR(200)'],
+      ['dob', 'DATE'],
+      ['address', 'TEXT'],
+      ['dl_number', 'VARCHAR(100)'],
+      ['tax_id', 'VARCHAR(100)'],
+      ['tax_id_type', "VARCHAR(10) DEFAULT 'ssn'"],
+      ['zelle_handle', 'VARCHAR(100)']
+    ];
+    for (const [col, def] of driverCols) {
+      try {
+        await client.query('ALTER TABLE drivers ADD COLUMN IF NOT EXISTS ' + col + ' ' + def);
+      } catch(e) { /* column exists */ }
     }
     // =============================================
     // END DRIVER SCHEDULING TABLES
