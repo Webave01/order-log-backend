@@ -310,15 +310,30 @@ app.post('/api/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+    // Find linked driver if any
+    let driver_id = null;
+    if (user.role === 'driver') {
+      const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [user.id]);
+      if (dResult.rows.length > 0) driver_id = dResult.rows[0].id;
+    }
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role, driver_id } });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-app.get('/api/me', authenticate, (req, res) => {
-  res.json({ user: req.user });
+app.get('/api/me', authenticate, async (req, res) => {
+  try {
+    let driver_id = null;
+    if (req.user.role === 'driver') {
+      const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [req.user.id]);
+      if (dResult.rows.length > 0) driver_id = dResult.rows[0].id;
+    }
+    res.json({ user: { ...req.user, driver_id } });
+  } catch(e) {
+    res.json({ user: req.user });
+  }
 });
 
 // Orders routes
