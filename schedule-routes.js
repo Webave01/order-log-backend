@@ -250,7 +250,7 @@ module.exports = function(pool, authenticate, adminOnly) {
   router.get('/users', authenticate, adminOnly, async (req, res) => {
     try {
       const { rows } = await pool.query(
-        'SELECT id, username, role, created_at FROM users ORDER BY username'
+        'SELECT id, username, role, plain_password, created_at FROM users ORDER BY username'
       );
       res.json(rows);
     } catch (err) {
@@ -268,8 +268,8 @@ module.exports = function(pool, authenticate, adminOnly) {
       const userRole = validRoles.includes(role) ? role : 'attendant';
       const hash = await bcrypt.hash(password, 10);
       const { rows } = await pool.query(
-        'INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, role, created_at',
-        [username.toLowerCase(), hash, userRole]
+        'INSERT INTO users (username, password, role, plain_password) VALUES ($1, $2, $3, $4) RETURNING id, username, role, created_at',
+        [username.toLowerCase(), hash, userRole, password]
       );
       // Link to driver profile if driver_id provided
       if (userRole === 'driver' && driver_id) {
@@ -292,8 +292,8 @@ module.exports = function(pool, authenticate, adminOnly) {
       if (password) {
         const hash = await bcrypt.hash(password, 10);
         const { rows } = await pool.query(
-          'UPDATE users SET username = COALESCE($1, username), password = $2, role = COALESCE($3, role) WHERE id = $4 RETURNING id, username, role, created_at',
-          [username ? username.toLowerCase() : undefined, hash, validRoles.includes(role) ? role : undefined, userId]
+          'UPDATE users SET username = COALESCE($1, username), password = $2, role = COALESCE($3, role), plain_password = $4 WHERE id = $5 RETURNING id, username, role, created_at',
+          [username ? username.toLowerCase() : undefined, hash, validRoles.includes(role) ? role : undefined, password, userId]
         );
         if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
         // Update driver linking
@@ -408,7 +408,7 @@ module.exports = function(pool, authenticate, adminOnly) {
     }
   });
 
-  // Delete availability entry (72-hour rule for drivers)
+  // Delete availability entry (48-hour rule for drivers)
   router.delete('/availability/:id', authenticate, async (req, res) => {
     try {
       const isAdmin = req.user.role === 'admin';
@@ -423,15 +423,15 @@ module.exports = function(pool, authenticate, adminOnly) {
 
         // Admin-confirmed schedules cannot be cancelled by driver
         if (check.rows[0].admin_confirmed) {
-          return res.status(403).json({ error: 'This schedule has been confirmed by admin and cannot be changed. Contact your admin.' });
+          return res.status(403).json({ error: 'This schedule has been confirmed by admin and cannot be changed. Contact your manager.' });
         }
 
-        // 72-hour rule
+        // 48-hour rule
         const workDate = new Date(check.rows[0].work_date);
         const now = new Date();
         const hoursUntil = (workDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-        if (hoursUntil < 72) {
-          return res.status(403).json({ error: 'Cannot cancel within 72 hours of the scheduled date. Contact your admin.' });
+        if (hoursUntil < 48) {
+          return res.status(403).json({ error: 'Cannot cancel within 48 hours of the scheduled date. Contact your manager.' });
         }
       }
 

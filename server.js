@@ -318,6 +318,8 @@ async function initDB() {
     try { await client.query("ALTER TABLE driver_availability ADD COLUMN IF NOT EXISTS preferred_route_id INTEGER REFERENCES routes(id)"); } catch(e) {}
     // Migration: add admin_confirmed column
     try { await client.query("ALTER TABLE driver_availability ADD COLUMN IF NOT EXISTS admin_confirmed BOOLEAN DEFAULT false"); } catch(e) {}
+    // Migration: add plain_password to users for admin visibility
+    try { await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password VARCHAR(255)"); } catch(e) {}
 
     // =============================================
     // END DRIVER SCHEDULING TABLES
