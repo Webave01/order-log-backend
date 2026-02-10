@@ -56,6 +56,42 @@ module.exports = function(pool, authenticate, adminOnly) {
   });
 
   // Update driver
+  // Driver updates own profile (limited fields - no pay/rate changes)
+  router.put('/drivers/my-profile', authenticate, async (req, res) => {
+    try {
+      // Find driver linked to this user
+      const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [req.user.id]);
+      if (dResult.rows.length === 0) return res.status(404).json({ error: 'No driver profile linked to your account' });
+      const driverId = dResult.rows[0].id;
+
+      const { phone, payment_method, zelle_handle, legal_name, dob, address, dl_number, tax_id, tax_id_type } = req.body;
+
+      const { rows } = await pool.query(
+        `UPDATE drivers SET phone=COALESCE($1,phone), payment_method=COALESCE($2,payment_method),
+         zelle_handle=$3, legal_name=$4, dob=$5, address=$6, dl_number=$7,
+         tax_id=$8, tax_id_type=COALESCE($9,tax_id_type), updated_at=NOW()
+         WHERE id=$10 RETURNING *`,
+        [phone||null, payment_method, zelle_handle||null, legal_name||null, dob||null,
+         address||null, dl_number||null, tax_id||null, tax_id_type, driverId]
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      console.error('Driver self-update error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Driver gets own profile
+  router.get('/drivers/my-profile', authenticate, async (req, res) => {
+    try {
+      const { rows } = await pool.query('SELECT * FROM drivers WHERE user_id = $1', [req.user.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'No driver profile linked' });
+      res.json(rows[0]);
+    } catch (err) {
+      console.error('Get my profile error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
   router.put('/drivers/:id', authenticate, adminOnly, async (req, res) => {
     try {
       const { name, phone, email, hourly_rate, day_rate, pay_type, payment_method,
@@ -97,6 +133,7 @@ module.exports = function(pool, authenticate, adminOnly) {
       res.status(500).json({ error: 'Server error' });
     }
   });
+
 
   // =============================================
   // ROUTES CRUD
@@ -344,7 +381,7 @@ module.exports = function(pool, authenticate, adminOnly) {
   // Driver submits availability (confirmed=true means double-confirmed)
   router.post('/availability', authenticate, async (req, res) => {
     try {
-      const { driver_id, work_date, status, preferred_route_id, preferred_shift, notes, confirmed } = req.body;
+      const { driver_id, work_date, status, preferred_route_id, preferred_shift, notes, confirmed, admin_confirmed } = req.body;
       if (!driver_id || !work_date) return res.status(400).json({ error: 'driver_id and work_date required' });
 
       // Verify driver owns this profile (unless admin)
@@ -353,13 +390,16 @@ module.exports = function(pool, authenticate, adminOnly) {
         if (dResult.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
       }
 
+      const isAdmin = req.user.role === 'admin';
       const { rows } = await pool.query(
-        `INSERT INTO driver_availability (driver_id, work_date, status, preferred_route_id, preferred_shift, notes, confirmed)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO driver_availability (driver_id, work_date, status, preferred_route_id, preferred_shift, notes, confirmed, admin_confirmed)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (driver_id, work_date)
-         DO UPDATE SET status = $3, preferred_route_id = $4, preferred_shift = $5, notes = $6, confirmed = $7, updated_at = NOW()
+         DO UPDATE SET status = $3, preferred_route_id = $4, preferred_shift = $5, notes = $6, confirmed = $7,
+           admin_confirmed = CASE WHEN $9 THEN $8 ELSE driver_availability.admin_confirmed END,
+           updated_at = NOW()
          RETURNING *`,
-        [driver_id, work_date, status || 'available', preferred_route_id || null, preferred_shift || null, notes || null, confirmed || false]
+        [driver_id, work_date, status || 'available', preferred_route_id || null, preferred_shift || null, notes || null, confirmed || false, admin_confirmed || false, isAdmin]
       );
       res.json(rows[0]);
     } catch (err) {
@@ -368,21 +408,69 @@ module.exports = function(pool, authenticate, adminOnly) {
     }
   });
 
-  // Delete availability entry
+  // Delete availability entry (72-hour rule for drivers)
   router.delete('/availability/:id', authenticate, async (req, res) => {
     try {
-      // Verify ownership unless admin
-      if (req.user.role !== 'admin') {
+      const isAdmin = req.user.role === 'admin';
+
+      if (!isAdmin) {
+        // Verify ownership
         const check = await pool.query(
-          'SELECT da.id FROM driver_availability da JOIN drivers d ON da.driver_id = d.id WHERE da.id = $1 AND d.user_id = $2',
+          'SELECT da.id, da.work_date, da.admin_confirmed FROM driver_availability da JOIN drivers d ON da.driver_id = d.id WHERE da.id = $1 AND d.user_id = $2',
           [req.params.id, req.user.id]
         );
         if (check.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+
+        // Admin-confirmed schedules cannot be cancelled by driver
+        if (check.rows[0].admin_confirmed) {
+          return res.status(403).json({ error: 'This schedule has been confirmed by admin and cannot be changed. Contact your admin.' });
+        }
+
+        // 72-hour rule
+        const workDate = new Date(check.rows[0].work_date);
+        const now = new Date();
+        const hoursUntil = (workDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+        if (hoursUntil < 72) {
+          return res.status(403).json({ error: 'Cannot cancel within 72 hours of the scheduled date. Contact your admin.' });
+        }
       }
+
       await pool.query('DELETE FROM driver_availability WHERE id = $1', [req.params.id]);
       res.json({ success: true });
     } catch (err) {
       console.error('Delete availability error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Admin: confirm schedule as final
+  router.put('/availability/:id/confirm', authenticate, adminOnly, async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        'UPDATE driver_availability SET admin_confirmed = true, updated_at = NOW() WHERE id = $1 RETURNING *',
+        [req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+      res.json(rows[0]);
+    } catch (err) {
+      console.error('Confirm availability error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Admin: bulk confirm all availability for a week
+  router.put('/availability/confirm-week', authenticate, adminOnly, async (req, res) => {
+    try {
+      const { start_date, end_date } = req.body;
+      const { rows } = await pool.query(
+        `UPDATE driver_availability SET admin_confirmed = true, updated_at = NOW()
+         WHERE work_date BETWEEN $1 AND $2 AND confirmed = true AND admin_confirmed = false
+         RETURNING *`,
+        [start_date, end_date]
+      );
+      res.json({ confirmed: rows.length });
+    } catch (err) {
+      console.error('Bulk confirm error:', err);
       res.status(500).json({ error: 'Server error' });
     }
   });

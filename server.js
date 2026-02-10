@@ -235,9 +235,9 @@ async function initDB() {
           ('East Cleaners', 'East Side Manhattan pickups/deliveries', '{1,2,3,4,5,6}', true),
           ('West Cleaners', 'West Side Manhattan pickups/deliveries', '{1,2,3,4,5,6}', true),
           ('Laundry Day', 'Laundry Day route', '{1,2,3,4,5,6}', false),
-          ('Schools', 'School pickups/deliveries', '{1,2,3,4,5,6}', false),
-          ('Sleepy', 'Sleepy route', '{1,2,3,4,5,6}', false),
-          ('Panda', 'Panda route', '{1,2,3,4,5,6}', false)
+          ('Schools', 'School pickups/deliveries', '{1,5}', false),
+          ('Sleepy', 'Sleepy route', '{1,2}', false),
+          ('Panda', 'Panda route', '{1,5}', false)
       `);
     } else {
       // Migration: add has_shifts column
@@ -245,11 +245,15 @@ async function initDB() {
       // Migration: update existing East/West and add missing routes
       await client.query("UPDATE routes SET has_shifts = true WHERE name ILIKE '%east%' OR name ILIKE '%west%'");
       const routeNames = ['East Cleaners','West Cleaners','Laundry Day','Schools','Sleepy','Panda'];
+      const routeDays = {'Schools':'{1,5}','Sleepy':'{1,2}','Panda':'{1,5}'};
       for (const rn of routeNames) {
         const exists = await client.query("SELECT id FROM routes WHERE name ILIKE $1", [rn]);
         if (exists.rows.length === 0) {
           const hasShifts = rn.includes('Cleaners');
-          await client.query("INSERT INTO routes (name, has_shifts) VALUES ($1, $2)", [rn, hasShifts]);
+          const days = routeDays[rn] || '{1,2,3,4,5,6}';
+          await client.query("INSERT INTO routes (name, has_shifts, active_days) VALUES ($1, $2, $3)", [rn, hasShifts, days]);
+        } else if (routeDays[rn]) {
+          await client.query("UPDATE routes SET active_days = $1 WHERE name ILIKE $2", [routeDays[rn], rn]);
         }
       }
     }
@@ -312,6 +316,8 @@ async function initDB() {
     `);
     // Migration: add preferred_route_id if missing
     try { await client.query("ALTER TABLE driver_availability ADD COLUMN IF NOT EXISTS preferred_route_id INTEGER REFERENCES routes(id)"); } catch(e) {}
+    // Migration: add admin_confirmed column
+    try { await client.query("ALTER TABLE driver_availability ADD COLUMN IF NOT EXISTS admin_confirmed BOOLEAN DEFAULT false"); } catch(e) {}
 
     // =============================================
     // END DRIVER SCHEDULING TABLES
