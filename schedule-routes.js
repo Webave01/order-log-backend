@@ -1029,12 +1029,13 @@ module.exports = function(pool, authenticate, adminOnly) {
         // Build route breakdown
         const routeBreakdown = Object.entries(routeSummary).map(([name, counts]) => {
           const parts = [];
-          if (counts.full > 0) parts.push(counts.full + ' full');
+          if (counts.full > 0) parts.push(counts.full + ' Full');
           if (counts.am > 0) parts.push(counts.am + ' AM');
           if (counts.pm > 0) parts.push(counts.pm + ' PM');
-          if (counts.clockIn > 0) parts.push(counts.clockIn + ' clock-in');
-          return name + ': ' + parts.join(', ');
-        }).join(' | ');
+          if (counts.clockIn > 0) parts.push(counts.clockIn + ' day' + (counts.clockIn !== 1 ? 's' : ''));
+          const total = counts.full + counts.am + counts.pm + counts.clockIn;
+          return name + ' (' + parts.join(', ') + ')';
+        }).join('\n');
 
         const payNotes = noteParts.join(' | ') + '\n' + routeBreakdown;
 
