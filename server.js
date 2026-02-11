@@ -599,6 +599,38 @@ app.get('/api/cleaner-extras', authenticate, async (req, res) => {
   }
 });
 
+// Routes matching frontend calls: /api/cleaners/:id/extras
+app.get('/api/cleaners/:cleaner_id/extras', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM cleaner_extras WHERE cleaner_id = $1', [req.params.cleaner_id]);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/cleaners/:cleaner_id/extras', authenticate, adminOnly, async (req, res) => {
+  const { extra_id, custom_price } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO cleaner_extras (cleaner_id, extra_id, custom_price) VALUES ($1, $2, $3) ON CONFLICT (cleaner_id, extra_id) DO UPDATE SET custom_price = $3 RETURNING *',
+      [req.params.cleaner_id, extra_id, custom_price]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/cleaners/:cleaner_id/extras/:extra_id', authenticate, adminOnly, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM cleaner_extras WHERE cleaner_id = $1 AND extra_id = $2', [req.params.cleaner_id, req.params.extra_id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/cleaner-extras', authenticate, adminOnly, async (req, res) => {
   const { cleaner_id, extra_id, custom_price } = req.body;
   try {
