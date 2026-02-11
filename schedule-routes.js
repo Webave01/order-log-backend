@@ -351,12 +351,16 @@ module.exports = function(pool, authenticate, adminOnly) {
   router.get('/availability', authenticate, async (req, res) => {
     try {
       const { start_date, end_date, driver_id } = req.query;
-      let query = 'SELECT da.*, d.name as driver_name, r.name as route_name FROM driver_availability da JOIN drivers d ON da.driver_id = d.id LEFT JOIN routes r ON da.preferred_route_id = r.id WHERE 1=1';
+      let query = `SELECT da.*, d.name as driver_name, r.name as route_name 
+        FROM driver_availability da 
+        JOIN drivers d ON da.driver_id = d.id 
+        LEFT JOIN routes r ON da.preferred_route_id = r.id 
+        WHERE 1=1`;
       const params = [];
 
       if (start_date) { params.push(start_date); query += ` AND da.work_date >= $${params.length}`; }
       if (end_date) { params.push(end_date); query += ` AND da.work_date <= $${params.length}`; }
-      if (driver_id) { params.push(driver_id); query += ` AND da.driver_id = $${params.length}`; }
+      if (driver_id) { params.push(parseInt(driver_id)); query += ` AND da.driver_id = $${params.length}`; }
 
       // Non-admin only sees own
       if (req.user.role === 'driver') {
@@ -371,17 +375,38 @@ module.exports = function(pool, authenticate, adminOnly) {
 
       query += ' ORDER BY da.work_date, d.name';
       const { rows } = await pool.query(query, params);
-      res.json(rows);
+      
+      // Enrich route_selections with route names
+      const routeCache = {};
+      const allRoutes = await pool.query("SELECT id, name, has_shifts, requires_clock_in FROM routes WHERE status='active'");
+      allRoutes.rows.forEach(r => { routeCache[r.id] = r; });
+      
+      const enriched = rows.map(row => {
+        let selections = row.route_selections || [];
+        if (typeof selections === 'string') try { selections = JSON.parse(selections); } catch(e) { selections = []; }
+        // Backfill from preferred_route_id if route_selections empty
+        if ((!selections || selections.length === 0) && row.preferred_route_id) {
+          selections = [{ route_id: row.preferred_route_id, shift: row.preferred_shift }];
+        }
+        selections = selections.map(s => ({
+          ...s,
+          route_name: routeCache[s.route_id] ? routeCache[s.route_id].name : null,
+          has_shifts: routeCache[s.route_id] ? routeCache[s.route_id].has_shifts : false
+        }));
+        return { ...row, route_selections: selections };
+      });
+      
+      res.json(enriched);
     } catch (err) {
       console.error('Get availability error:', err);
       res.status(500).json({ error: 'Server error' });
     }
   });
 
-  // Driver submits availability (confirmed=true means double-confirmed)
+  // Driver submits availability with multi-route support
   router.post('/availability', authenticate, async (req, res) => {
     try {
-      const { driver_id, work_date, status, preferred_route_id, preferred_shift, notes, confirmed, admin_confirmed } = req.body;
+      const { driver_id, work_date, status, route_selections, preferred_route_id, preferred_shift, notes, confirmed, admin_confirmed } = req.body;
       if (!driver_id || !work_date) return res.status(400).json({ error: 'driver_id and work_date required' });
 
       // Verify driver owns this profile (unless admin)
@@ -390,16 +415,36 @@ module.exports = function(pool, authenticate, adminOnly) {
         if (dResult.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
       }
 
+      // Build route_selections - accept new format or legacy single route
+      let selections = route_selections || [];
+      if (selections.length === 0 && preferred_route_id) {
+        selections = [{ route_id: preferred_route_id, shift: preferred_shift || null }];
+      }
+      
+      // Conflict check: East + West cannot be selected together
+      if (selections.length > 1) {
+        const routeIds = selections.map(s => parseInt(s.route_id));
+        const { rows: routeNames } = await pool.query('SELECT id, name FROM routes WHERE id = ANY($1)', [routeIds]);
+        const names = routeNames.map(r => r.name.toLowerCase());
+        if (names.some(n => n.includes('east')) && names.some(n => n.includes('west'))) {
+          return res.status(400).json({ error: 'East and West routes cannot be selected together - time conflict' });
+        }
+      }
+
+      // Store first route as preferred_route_id for backward compat
+      const primaryRouteId = selections.length > 0 ? parseInt(selections[0].route_id) : null;
+      const primaryShift = selections.length > 0 ? selections[0].shift : null;
+
       const isAdmin = req.user.role === 'admin';
       const { rows } = await pool.query(
-        `INSERT INTO driver_availability (driver_id, work_date, status, preferred_route_id, preferred_shift, notes, confirmed, admin_confirmed)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO driver_availability (driver_id, work_date, status, preferred_route_id, preferred_shift, route_selections, notes, confirmed, admin_confirmed)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
          ON CONFLICT (driver_id, work_date)
-         DO UPDATE SET status = $3, preferred_route_id = $4, preferred_shift = $5, notes = $6, confirmed = $7,
-           admin_confirmed = CASE WHEN $9 THEN $8 ELSE driver_availability.admin_confirmed END,
+         DO UPDATE SET status = $3, preferred_route_id = $4, preferred_shift = $5, route_selections = $6::jsonb, notes = $7, confirmed = $8,
+           admin_confirmed = CASE WHEN $10 THEN $9 ELSE driver_availability.admin_confirmed END,
            updated_at = NOW()
          RETURNING *`,
-        [driver_id, work_date, status || 'available', preferred_route_id || null, preferred_shift || null, notes || null, confirmed || false, admin_confirmed || false, isAdmin]
+        [driver_id, work_date, status || 'available', primaryRouteId, primaryShift, JSON.stringify(selections), notes || null, confirmed || false, admin_confirmed || false, isAdmin]
       );
       res.json(rows[0]);
     } catch (err) {

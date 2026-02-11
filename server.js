@@ -321,6 +321,14 @@ async function initDB() {
     try { await client.query("ALTER TABLE driver_availability ADD COLUMN IF NOT EXISTS preferred_route_id INTEGER REFERENCES routes(id)"); } catch(e) {}
     // Migration: add admin_confirmed column
     try { await client.query("ALTER TABLE driver_availability ADD COLUMN IF NOT EXISTS admin_confirmed BOOLEAN DEFAULT false"); } catch(e) {}
+    // Migration: add route_selections JSONB for multi-route support
+    try { await client.query("ALTER TABLE driver_availability ADD COLUMN IF NOT EXISTS route_selections JSONB DEFAULT '[]'::jsonb"); } catch(e) {}
+    // Migration: backfill route_selections from preferred_route_id
+    try { await client.query(`
+      UPDATE driver_availability SET route_selections = jsonb_build_array(
+        jsonb_build_object('route_id', preferred_route_id, 'shift', preferred_shift)
+      ) WHERE preferred_route_id IS NOT NULL AND (route_selections IS NULL OR route_selections = '[]'::jsonb)
+    `); } catch(e) {}
     // Migration: add plain_password to users for admin visibility
     try { await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password VARCHAR(255)"); } catch(e) {}
 
