@@ -151,12 +151,12 @@ module.exports = function(pool, authenticate, adminOnly) {
 
   router.post('/routes', authenticate, adminOnly, async (req, res) => {
     try {
-      const { name, description, active_days, estimated_hours, has_shifts } = req.body;
+      const { name, description, active_days, estimated_hours, has_shifts, requires_clock_in } = req.body;
       if (!name) return res.status(400).json({ error: 'Route name required' });
       const { rows } = await pool.query(
-        `INSERT INTO routes (name, description, active_days, estimated_hours, has_shifts)
-         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-        [name, description || null, active_days || [1,2,3,4,5,6], estimated_hours || 5.0, has_shifts || false]
+        `INSERT INTO routes (name, description, active_days, estimated_hours, has_shifts, requires_clock_in)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [name, description || null, active_days || [1,2,3,4,5,6], estimated_hours || 5.0, has_shifts || false, requires_clock_in || false]
       );
       res.json(rows[0]);
     } catch (err) {
@@ -167,13 +167,13 @@ module.exports = function(pool, authenticate, adminOnly) {
 
   router.put('/routes/:id', authenticate, adminOnly, async (req, res) => {
     try {
-      const { name, description, active_days, estimated_hours, status, has_shifts } = req.body;
+      const { name, description, active_days, estimated_hours, status, has_shifts, requires_clock_in } = req.body;
       const { rows } = await pool.query(
         `UPDATE routes SET name=COALESCE($1,name), description=COALESCE($2,description),
          active_days=COALESCE($3,active_days), estimated_hours=COALESCE($4,estimated_hours),
-         status=COALESCE($5,status), has_shifts=COALESCE($6,has_shifts)
-         WHERE id=$7 RETURNING *`,
-        [name, description, active_days, estimated_hours, status, has_shifts, req.params.id]
+         status=COALESCE($5,status), has_shifts=COALESCE($6,has_shifts), requires_clock_in=COALESCE($7,requires_clock_in)
+         WHERE id=$8 RETURNING *`,
+        [name, description, active_days, estimated_hours, status, has_shifts, requires_clock_in, req.params.id]
       );
       if (rows.length === 0) return res.status(404).json({ error: 'Route not found' });
       res.json(rows[0]);
@@ -904,81 +904,94 @@ module.exports = function(pool, authenticate, adminOnly) {
   // Calculate pay for a period
   router.post('/pay/calculate', authenticate, adminOnly, async (req, res) => {
     try {
-      const { pay_period_id } = req.body;
+      const { period_id, pay_period_id } = req.body;
+      const pid = period_id || pay_period_id;
       let period;
-      if (pay_period_id) {
-        const { rows } = await pool.query('SELECT * FROM pay_periods WHERE id=$1', [pay_period_id]);
+      if (pid) {
+        const { rows } = await pool.query('SELECT * FROM pay_periods WHERE id=$1', [pid]);
         if (rows.length === 0) return res.status(404).json({ error: 'Pay period not found' });
         period = rows[0];
       } else {
         period = await getCurrentPayPeriod();
       }
 
-      // Get approved time entries for this period
-      const { rows: entries } = await pool.query(`
-        SELECT te.*, d.hourly_rate, d.overtime_rate, d.pay_type, d.day_rate, d.name as driver_name
-        FROM time_entries te
-        JOIN drivers d ON te.driver_id = d.id
-        WHERE te.work_date BETWEEN $1 AND $2
-          AND te.status = 'approved'
-        ORDER BY te.driver_id, te.work_date
+      // Get admin-confirmed schedule entries for this period with route info
+      const { rows: confirmed } = await pool.query(`
+        SELECT da.driver_id, da.work_date, da.preferred_shift, da.preferred_route_id,
+               d.name as driver_name, d.day_rate, d.pay_type, d.payment_method,
+               r.name as route_name, r.requires_clock_in, r.has_shifts
+        FROM driver_availability da
+        JOIN drivers d ON da.driver_id = d.id
+        LEFT JOIN routes r ON da.preferred_route_id = r.id
+        WHERE da.work_date BETWEEN $1 AND $2
+          AND da.confirmed = true
+          AND da.admin_confirmed = true
+        ORDER BY da.driver_id, da.work_date
       `, [period.start_date, period.end_date]);
 
       // Group by driver
       const byDriver = {};
-      entries.forEach(e => {
-        if (!byDriver[e.driver_id]) byDriver[e.driver_id] = { entries: [], rate: e.hourly_rate, otRate: e.overtime_rate, pay_type: e.pay_type, day_rate: e.day_rate, name: e.driver_name };
-        byDriver[e.driver_id].entries.push(e);
+      confirmed.forEach(row => {
+        if (!byDriver[row.driver_id]) {
+          byDriver[row.driver_id] = {
+            entries: [], name: row.driver_name,
+            pay_type: row.pay_type, day_rate: row.day_rate,
+            payment_method: row.payment_method
+          };
+        }
+        byDriver[row.driver_id].entries.push(row);
       });
 
+      let processed = 0;
       const results = [];
+
       for (const [driverId, data] of Object.entries(byDriver)) {
-        const totalHours = data.entries.reduce((sum, e) => sum + parseFloat(e.total_hours || 0), 0);
+        // Categorize entries by route type
+        let fullDays = 0, amShifts = 0, pmShifts = 0;
+        const routeSummary = {};
+        const clockInDays = [];
 
-        // Count unique work days
-        const uniqueDays = new Set();
         data.entries.forEach(e => {
-          const d = typeof e.work_date === 'string' ? e.work_date.split('T')[0] : e.work_date.toISOString().split('T')[0];
-          uniqueDays.add(d);
+          const routeName = e.route_name || 'Unknown';
+          if (!routeSummary[routeName]) routeSummary[routeName] = { full: 0, am: 0, pm: 0, clockIn: 0 };
+
+          if (e.requires_clock_in) {
+            routeSummary[routeName].clockIn++;
+            clockInDays.push({ date: e.work_date, route: routeName });
+          } else if (e.preferred_shift === 'AM') {
+            amShifts++;
+            routeSummary[routeName].am++;
+          } else if (e.preferred_shift === 'PM') {
+            pmShifts++;
+            routeSummary[routeName].pm++;
+          } else {
+            fullDays++;
+            routeSummary[routeName].full++;
+          }
         });
-        const workDays = uniqueDays.size;
 
-        let regularHours, overtimeHours, regularPay, overtimePay, spreadBonus = 0, finalGross, payNotes = null;
+        // Calculate pay for full days only (flat day rate)
+        const dayRate = parseFloat(data.day_rate) || 0;
+        const fullDayPay = Math.round(fullDays * dayRate * 100) / 100;
 
-        if (data.pay_type === 'flat_day') {
-          // Flat day rate: days worked × day rate, no OT calculation
-          const dayRate = parseFloat(data.day_rate) || 0;
-          regularHours = totalHours;
-          overtimeHours = 0;
-          regularPay = Math.round(workDays * dayRate * 100) / 100;
-          overtimePay = 0;
-          finalGross = regularPay;
-          payNotes = workDays + ' days @ ' + '$' + dayRate.toFixed(2) + '/day (flat rate)';
-        } else {
-          // Hourly rate calculation
-          let effectiveRate = parseFloat(data.rate);
-          if (effectiveRate < NYC_MIN_WAGE) effectiveRate = NYC_MIN_WAGE;
+        // Build summary notes
+        const noteParts = [];
+        if (fullDays > 0) noteParts.push(fullDays + ' full day' + (fullDays !== 1 ? 's' : '') + ' @ $' + dayRate.toFixed(2));
+        if (amShifts > 0) noteParts.push(amShifts + ' AM shift' + (amShifts !== 1 ? 's' : '') + ' (set pay manually)');
+        if (pmShifts > 0) noteParts.push(pmShifts + ' PM shift' + (pmShifts !== 1 ? 's' : '') + ' (set pay manually)');
+        if (clockInDays.length > 0) noteParts.push(clockInDays.length + ' clock-in route day' + (clockInDays.length !== 1 ? 's' : '') + ' (needs hours)');
 
-          regularHours = Math.min(totalHours, OT_THRESHOLD);
-          overtimeHours = Math.max(0, totalHours - OT_THRESHOLD);
-          const otRate = data.otRate ? parseFloat(data.otRate) : effectiveRate * OT_MULTIPLIER;
-          regularPay = Math.round(regularHours * effectiveRate * 100) / 100;
-          overtimePay = Math.round(overtimeHours * otRate * 100) / 100;
-          const grossPay = regularPay + overtimePay;
+        // Build route breakdown
+        const routeBreakdown = Object.entries(routeSummary).map(([name, counts]) => {
+          const parts = [];
+          if (counts.full > 0) parts.push(counts.full + ' full');
+          if (counts.am > 0) parts.push(counts.am + ' AM');
+          if (counts.pm > 0) parts.push(counts.pm + ' PM');
+          if (counts.clockIn > 0) parts.push(counts.clockIn + ' clock-in');
+          return name + ': ' + parts.join(', ');
+        }).join(' | ');
 
-          // Spread of hours check: if any day > 10 hours, add 1 hour at min wage
-          const dailyHours = {};
-          data.entries.forEach(e => {
-            const d = typeof e.work_date === 'string' ? e.work_date.split('T')[0] : e.work_date.toISOString().split('T')[0];
-            dailyHours[d] = (dailyHours[d] || 0) + parseFloat(e.total_hours || 0);
-          });
-          Object.values(dailyHours).forEach(h => {
-            if (h > 10) spreadBonus += NYC_MIN_WAGE;
-          });
-
-          finalGross = grossPay + spreadBonus;
-          if (spreadBonus > 0) payNotes = 'Includes $' + spreadBonus.toFixed(2) + ' spread-of-hours bonus';
-        }
+        const payNotes = noteParts.join(' | ') + '\n' + routeBreakdown;
 
         await pool.query(`
           INSERT INTO pay_records (pay_period_id, driver_id, regular_hours, overtime_hours,
@@ -988,26 +1001,23 @@ module.exports = function(pool, authenticate, adminOnly) {
           DO UPDATE SET regular_hours=$3, overtime_hours=$4, regular_pay=$5,
             overtime_pay=$6, bonuses=$7, gross_pay=$8, status='draft',
             notes=$9, updated_at=NOW()
-        `, [period.id, parseInt(driverId), regularHours, overtimeHours,
-            regularPay, overtimePay, spreadBonus, finalGross,
+        `, [period.id, parseInt(driverId),
+            fullDays, amShifts + pmShifts,
+            fullDayPay, 0, 0, fullDayPay,
             payNotes]);
 
         results.push({
-          driver_id: parseInt(driverId),
-          driver_name: data.name,
-          regular_hours: regularHours,
-          overtime_hours: overtimeHours,
-          regular_pay: regularPay,
-          overtime_pay: overtimePay,
-          spread_bonus: spreadBonus,
-          gross_pay: finalGross
+          driver_id: parseInt(driverId), driver_name: data.name,
+          full_days: fullDays, am_shifts: amShifts, pm_shifts: pmShifts,
+          clock_in_days: clockInDays.length, full_day_pay: fullDayPay,
+          route_summary: routeSummary, payment_method: data.payment_method,
+          notes: payNotes
         });
+        processed++;
       }
 
-      // Update period status
       await pool.query("UPDATE pay_periods SET status='calculated' WHERE id=$1", [period.id]);
-
-      res.json({ period, results });
+      res.json({ period, results, processed });
     } catch (err) {
       console.error('Calculate pay error:', err);
       res.status(500).json({ error: 'Server error' });

@@ -242,8 +242,11 @@ async function initDB() {
     } else {
       // Migration: add has_shifts column
       try { await client.query("ALTER TABLE routes ADD COLUMN IF NOT EXISTS has_shifts BOOLEAN DEFAULT false"); } catch(e) {}
+      // Migration: add requires_clock_in column
+      try { await client.query("ALTER TABLE routes ADD COLUMN IF NOT EXISTS requires_clock_in BOOLEAN DEFAULT false"); } catch(e) {}
       // Migration: update existing East/West and add missing routes
       await client.query("UPDATE routes SET has_shifts = true WHERE name ILIKE '%east%' OR name ILIKE '%west%'");
+      await client.query("UPDATE routes SET requires_clock_in = true WHERE name ILIKE '%panda%' OR name ILIKE '%school%' OR name ILIKE '%sleepy%'");
       const routeNames = ['East Cleaners','West Cleaners','Laundry Day','Schools','Sleepy','Panda'];
       const routeDays = {'Schools':'{1,5}','Sleepy':'{1,2}','Panda':'{1,5}'};
       for (const rn of routeNames) {
