@@ -9,7 +9,52 @@
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,-apple-system,sans-serif}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}</style>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,-apple-system,sans-serif}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+
+/* Mobile-only — no effect above 768px */
+@media(max-width:768px){
+  /* Tab bars: horizontal scroll instead of wrapping */
+  .nav-tabs{overflow-x:auto !important;flex-wrap:nowrap !important;-webkit-overflow-scrolling:touch;padding-bottom:4px !important}
+  .nav-tabs::-webkit-scrollbar{height:3px}
+  .nav-tabs::-webkit-scrollbar-thumb{background:#475569;border-radius:4px}
+
+  /* All multi-column grids → single column */
+  [style*="grid-template-columns: repeat("]{grid-template-columns:1fr !important}
+  [style*="grid-template-columns: 1fr 1fr"]{grid-template-columns:1fr !important}
+
+  /* Tables: smaller text, horizontal scroll */
+  table{font-size:11px !important}
+  table th,table td{padding:4px 5px !important;font-size:11px !important}
+
+  /* Tighter gaps on mobile */
+  [style*="gap: 16px"]{gap:8px !important}
+  [style*="gap: 20px"]{gap:10px !important}
+
+  /* Scale down large headings */
+  [style*="font-size: 24px"]{font-size:18px !important}
+  [style*="font-size: 22px"]{font-size:16px !important}
+  [style*="font-size: 28px"]{font-size:20px !important}
+
+  /* Header bar tighter */
+  [style*="linear-gradient(90deg"][style*="padding: 16px 20px"]{padding:10px 12px !important}
+
+  /* Modals: full width */
+  [style*="max-width: 600px"],[style*="max-width: 500px"],[style*="max-width: 400px"]{
+    max-width:95vw !important;margin:0 auto !important}
+
+  /* Buttons: never break text */
+  button{white-space:nowrap !important}
+
+  /* Cards: tighter padding */
+  [style*="border-radius: 12px"][style*="padding: 16px"]{padding:10px !important}
+
+  /* Order detail row items */
+  [style*="gap: 20px"][style*="flex-wrap"]{gap:4px 10px !important;font-size:13px !important}
+
+  /* Main app container padding */
+  [style*="max-width: 1000px"][style*="padding: 20px"]{padding:10px !important}
+}
+</style>
 </head>
 <body>
 <div id="root"></div>
@@ -150,7 +195,7 @@ function App(){
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
         staffName&&React.createElement('span',{style:{fontSize:'14px',background:'rgba(255,255,255,0.2)',padding:'4px 10px',borderRadius:'6px'}},'👤 '+staffName),
         React.createElement('button',{onClick:handleLogout,style:{background:'rgba(255,255,255,0.2)',border:'none',color:'#fff',padding:'6px 12px',borderRadius:'6px',cursor:'pointer'}},t.logout))),
-    React.createElement('div',{style:{background:'#1e293b',padding:'8px 16px',display:'flex',gap:'8px',borderBottom:'1px solid #334155',flexWrap:'wrap'}},
+    React.createElement('div',{className:'nav-tabs',style:{background:'#1e293b',padding:'8px 16px',display:'flex',gap:'8px',borderBottom:'1px solid #334155',flexWrap:'wrap'}},
       tabs.map(tab=>React.createElement('button',{key:tab,onClick:()=>setView(tab),style:{padding:'10px 16px',borderRadius:'8px',border:'none',cursor:'pointer',background:view===tab?'linear-gradient(90deg,#3b82f6,#8b5cf6)':'transparent',color:view===tab?'#fff':'#94a3b8',fontWeight:'500'}},t[tab]))),
     toast&&React.createElement('div',{style:{position:'fixed',top:20,right:20,background:'#065f46',color:'#fff',padding:'12px 20px',borderRadius:'8px',zIndex:999}},toast),
     React.createElement('div',{style:{maxWidth:'1000px',margin:'0 auto',padding:'20px'}},
@@ -893,7 +938,7 @@ function Schedule({isAdmin,notify,t,user}){
   const subLabels={schedule:'📅 Schedule',drivers:'🚗 Drivers',payroll:'💰 Payroll',myschedule:'📅 My Schedule',myclock:'⏱️ Clock In/Out',myprofile:'👤 My Profile'};
 
   return React.createElement('div',null,
-    React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'20px',flexWrap:'wrap'}},
+    React.createElement('div',{className:'nav-tabs',style:{display:'flex',gap:'8px',marginBottom:'20px',flexWrap:'wrap'}},
       subTabs.map(st=>React.createElement('button',{key:st,onClick:()=>setSubView(st),style:st==='myclock'?{padding:'14px 24px',borderRadius:'12px',border:subView===st?'2px solid #22c55e':'2px solid #059669',background:subView===st?'rgba(34,197,94,0.3)':'rgba(34,197,94,0.1)',color:subView===st?'#fff':'#4ade80',cursor:'pointer',fontWeight:'bold',fontSize:'16px',boxShadow:subView===st?'0 4px 15px rgba(34,197,94,0.3)':'none'}:{padding:'10px 16px',borderRadius:'8px',border:subView===st?'2px solid #3b82f6':'1px solid #475569',background:subView===st?'rgba(59,130,246,0.2)':'transparent',color:subView===st?'#fff':'#94a3b8',cursor:'pointer',fontWeight:'600',fontSize:'14px'}},subLabels[st]))),
     ld&&React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'#94a3b8'}},'Loading...'),
     subView==='drivers'&&isAdmin&&React.createElement(DriversPanel,{drivers,notify,onRefresh:loadAll}),
