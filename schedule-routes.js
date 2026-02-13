@@ -976,7 +976,8 @@ module.exports = function(pool, authenticate, adminOnly) {
       // Get all routes for lookup
       const { rows: allRoutes } = await pool.query('SELECT id, name, requires_clock_in, has_shifts FROM routes');
       const routeMap = {};
-      allRoutes.forEach(r => { routeMap[r.id] = r; });
+      allRoutes.forEach(r => { routeMap[r.id] = r; routeMap[String(r.id)] = r; });
+      console.log('PAYROLL: routeMap keys:', Object.keys(routeMap).join(', '));
 
       // Group by driver
       const byDriver = {};
@@ -995,20 +996,21 @@ module.exports = function(pool, authenticate, adminOnly) {
         if (selections.length === 0 && row.preferred_route_id) {
           selections = [{ route_id: row.preferred_route_id, shift: row.preferred_shift }];
         }
+        // Filter out null/invalid route entries
+        selections = selections.filter(sel => sel && sel.route_id);
         if (selections.length === 0) {
-          // No route info at all - use preferred_shift
-          byDriver[row.driver_id].entries.push({
-            work_date: row.work_date,
-            route_name: 'Unknown',
-            requires_clock_in: false,
-            preferred_shift: row.preferred_shift || 'Full Day'
-          });
+          // No route info at all - skip this entry rather than showing Unknown
+          console.log('PAYROLL: Skipping entry with no route data - driver:', row.driver_name, 'date:', row.work_date);
         } else {
           selections.forEach(sel => {
-            const route = routeMap[sel.route_id];
+            // Try both string and int lookup
+            const route = routeMap[sel.route_id] || routeMap[parseInt(sel.route_id)] || routeMap[String(sel.route_id)];
+            if (!sel.route_name && !route) {
+              console.log('PAYROLL: Cannot resolve route - route_id:', sel.route_id, 'type:', typeof sel.route_id, 'driver:', row.driver_name, 'date:', row.work_date, 'sel:', JSON.stringify(sel));
+            }
             byDriver[row.driver_id].entries.push({
               work_date: row.work_date,
-              route_name: sel.route_name || (route ? route.name : 'Unknown'),
+              route_name: sel.route_name || (route ? route.name : null),
               requires_clock_in: route ? route.requires_clock_in : false,
               preferred_shift: sel.shift || row.preferred_shift || 'Full Day'
             });
@@ -1026,7 +1028,8 @@ module.exports = function(pool, authenticate, adminOnly) {
         const clockInDays = [];
 
         data.entries.forEach(e => {
-          const routeName = e.route_name || 'Unknown';
+          const routeName = e.route_name;
+          if (!routeName) return; // Skip entries with no identified route
           if (!routeSummary[routeName]) routeSummary[routeName] = { full: 0, am: 0, pm: 0, clockIn: 0 };
 
           if (e.requires_clock_in) {
