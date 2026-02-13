@@ -963,16 +963,20 @@ module.exports = function(pool, authenticate, adminOnly) {
       // Get admin-confirmed schedule entries for this period with route info
       const { rows: confirmed } = await pool.query(`
         SELECT da.driver_id, da.work_date, da.preferred_shift, da.preferred_route_id,
-               d.name as driver_name, d.day_rate, d.pay_type, d.payment_method,
-               r.name as route_name, r.requires_clock_in, r.has_shifts
+               da.route_selections,
+               d.name as driver_name, d.day_rate, d.pay_type, d.payment_method
         FROM driver_availability da
         JOIN drivers d ON da.driver_id = d.id
-        LEFT JOIN routes r ON da.preferred_route_id = r.id
         WHERE da.work_date BETWEEN $1 AND $2
           AND da.confirmed = true
           AND da.admin_confirmed = true
         ORDER BY da.driver_id, da.work_date
       `, [period.start_date, period.end_date]);
+
+      // Get all routes for lookup
+      const { rows: allRoutes } = await pool.query('SELECT id, name, requires_clock_in, has_shifts FROM routes');
+      const routeMap = {};
+      allRoutes.forEach(r => { routeMap[r.id] = r; });
 
       // Group by driver
       const byDriver = {};
@@ -984,7 +988,32 @@ module.exports = function(pool, authenticate, adminOnly) {
             payment_method: row.payment_method
           };
         }
-        byDriver[row.driver_id].entries.push(row);
+        // Expand route_selections into individual entries
+        let selections = row.route_selections || [];
+        if (typeof selections === 'string') try { selections = JSON.parse(selections); } catch(e) { selections = []; }
+        // Fallback to preferred_route_id if no selections
+        if (selections.length === 0 && row.preferred_route_id) {
+          selections = [{ route_id: row.preferred_route_id, shift: row.preferred_shift }];
+        }
+        if (selections.length === 0) {
+          // No route info at all - use preferred_shift
+          byDriver[row.driver_id].entries.push({
+            work_date: row.work_date,
+            route_name: 'Unknown',
+            requires_clock_in: false,
+            preferred_shift: row.preferred_shift || 'Full Day'
+          });
+        } else {
+          selections.forEach(sel => {
+            const route = routeMap[sel.route_id];
+            byDriver[row.driver_id].entries.push({
+              work_date: row.work_date,
+              route_name: sel.route_name || (route ? route.name : 'Unknown'),
+              requires_clock_in: route ? route.requires_clock_in : false,
+              preferred_shift: sel.shift || row.preferred_shift || 'Full Day'
+            });
+          });
+        }
       });
 
       let processed = 0;
