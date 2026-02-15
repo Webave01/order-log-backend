@@ -1011,7 +1011,6 @@ module.exports = function(pool, authenticate, adminOnly) {
             byDriver[row.driver_id].entries.push({
               work_date: row.work_date,
               route_name: sel.route_name || (route ? route.name : null),
-              requires_clock_in: route ? route.requires_clock_in : false,
               preferred_shift: sel.shift || row.preferred_shift || 'Full Day'
             });
           });
@@ -1025,17 +1024,13 @@ module.exports = function(pool, authenticate, adminOnly) {
         // Categorize entries by route type
         let fullDays = 0, amShifts = 0, pmShifts = 0;
         const routeSummary = {};
-        const clockInDays = [];
 
         data.entries.forEach(e => {
           const routeName = e.route_name;
           if (!routeName) return; // Skip entries with no identified route
-          if (!routeSummary[routeName]) routeSummary[routeName] = { full: 0, am: 0, pm: 0, clockIn: 0 };
+          if (!routeSummary[routeName]) routeSummary[routeName] = { full: 0, am: 0, pm: 0 };
 
-          if (e.requires_clock_in) {
-            routeSummary[routeName].clockIn++;
-            clockInDays.push({ date: e.work_date, route: routeName });
-          } else if (e.preferred_shift === 'AM') {
+          if (e.preferred_shift === 'AM') {
             amShifts++;
             routeSummary[routeName].am++;
           } else if (e.preferred_shift === 'PM') {
@@ -1056,7 +1051,6 @@ module.exports = function(pool, authenticate, adminOnly) {
         if (fullDays > 0) noteParts.push(fullDays + ' full day' + (fullDays !== 1 ? 's' : '') + ' @ $' + dayRate.toFixed(2));
         if (amShifts > 0) noteParts.push(amShifts + ' AM shift' + (amShifts !== 1 ? 's' : '') + ' (set pay manually)');
         if (pmShifts > 0) noteParts.push(pmShifts + ' PM shift' + (pmShifts !== 1 ? 's' : '') + ' (set pay manually)');
-        if (clockInDays.length > 0) noteParts.push(clockInDays.length + ' clock-in route day' + (clockInDays.length !== 1 ? 's' : '') + ' (needs hours)');
 
         // Build route breakdown
         const routeBreakdown = Object.entries(routeSummary).map(([name, counts]) => {
@@ -1064,8 +1058,6 @@ module.exports = function(pool, authenticate, adminOnly) {
           if (counts.full > 0) parts.push(counts.full + ' Full');
           if (counts.am > 0) parts.push(counts.am + ' AM');
           if (counts.pm > 0) parts.push(counts.pm + ' PM');
-          if (counts.clockIn > 0) parts.push(counts.clockIn + ' day' + (counts.clockIn !== 1 ? 's' : ''));
-          const total = counts.full + counts.am + counts.pm + counts.clockIn;
           return name + ' (' + parts.join(', ') + ')';
         }).join('\n');
 
