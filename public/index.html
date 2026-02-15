@@ -933,19 +933,18 @@ function Schedule({isAdmin,notify,t,user}){
   useEffect(()=>{loadAll()},[weekOf]);
 
   const adminTabs=['drivers','schedule','payroll'];
-  const staffTabs=['myschedule','myclock','myprofile'];
+  const staffTabs=['myschedule','myprofile'];
   const subTabs=isAdmin?adminTabs:staffTabs;
-  const subLabels={schedule:'📅 Schedule',drivers:'🚗 Drivers',payroll:'💰 Payroll',myschedule:'📅 My Schedule',myclock:'⏱️ Clock In/Out',myprofile:'👤 My Profile'};
+  const subLabels={schedule:'📅 Schedule',drivers:'🚗 Drivers',payroll:'💰 Payroll',myschedule:'📅 My Schedule',myprofile:'👤 My Profile'};
 
   return React.createElement('div',null,
     React.createElement('div',{className:'nav-tabs',style:{display:'flex',gap:'8px',marginBottom:'20px',flexWrap:'wrap'}},
-      subTabs.map(st=>React.createElement('button',{key:st,onClick:()=>setSubView(st),style:st==='myclock'?{padding:'14px 24px',borderRadius:'12px',border:subView===st?'2px solid #22c55e':'2px solid #059669',background:subView===st?'rgba(34,197,94,0.3)':'rgba(34,197,94,0.1)',color:subView===st?'#fff':'#4ade80',cursor:'pointer',fontWeight:'bold',fontSize:'16px',boxShadow:subView===st?'0 4px 15px rgba(34,197,94,0.3)':'none'}:{padding:'10px 16px',borderRadius:'8px',border:subView===st?'2px solid #3b82f6':'1px solid #475569',background:subView===st?'rgba(59,130,246,0.2)':'transparent',color:subView===st?'#fff':'#94a3b8',cursor:'pointer',fontWeight:'600',fontSize:'14px'}},subLabels[st]))),
+      subTabs.map(st=>React.createElement('button',{key:st,onClick:()=>setSubView(st),style:{padding:'10px 16px',borderRadius:'8px',border:subView===st?'2px solid #3b82f6':'1px solid #475569',background:subView===st?'rgba(59,130,246,0.2)':'transparent',color:subView===st?'#fff':'#94a3b8',cursor:'pointer',fontWeight:'600',fontSize:'14px'}},subLabels[st]))),
     ld&&React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'#94a3b8'}},'Loading...'),
     subView==='drivers'&&isAdmin&&React.createElement(DriversPanel,{drivers,notify,onRefresh:loadAll}),
     subView==='schedule'&&isAdmin&&React.createElement(AvailabilityPanel,{drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh:loadAll}),
     subView==='payroll'&&isAdmin&&React.createElement(PayrollPanel,{drivers,notify}),
     subView==='myschedule'&&!isAdmin&&React.createElement(MySchedulePanel,{schedData,weekOf,setWeekOf,addDays,dayNames,dayNums,routes,shifts,drivers,myDriverId:user&&user.driver_id}),
-    subView==='myclock'&&!isAdmin&&React.createElement(DriverClockPanel,{routes,myDriverId:user&&user.driver_id,notify}),
     subView==='myprofile'&&!isAdmin&&React.createElement(DriverProfilePanel,{notify}));
 }
 
@@ -1149,7 +1148,7 @@ function ScheduleGrid({drivers,routes,shifts,schedData,weekOf,setWeekOf,addDays,
 function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh}){
   const[avail,setAvail]=useState([]);const[assignments,setAssignments]=useState([]);const[ld,setLd]=useState(false);
   const[viewWeek,setViewWeek]=useState(0);const[showRouteManager,setShowRouteManager]=useState(false);
-  const[newRouteName,setNewRouteName]=useState('');const[newRouteShifts,setNewRouteShifts]=useState(false);const[newRouteClockIn,setNewRouteClockIn]=useState(false);
+  const[newRouteName,setNewRouteName]=useState('');const[newRouteShifts,setNewRouteShifts]=useState(false);
   const[editRoute,setEditRoute]=useState(null);
   const[overrideModal,setOverrideModal]=useState(null);const[overrideSelections,setOverrideSelections]=useState([]);const[overrideNotes,setOverrideNotes]=useState('');
   const[showDebug,setShowDebug]=useState(false);const[loadError,setLoadError]=useState(null);const[lastLoad,setLastLoad]=useState(null);
@@ -1214,7 +1213,7 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
     setOverrideSelections(overrideSelections.map(function(s){return parseInt(s.route_id)===parseInt(routeId)?{...s,shift:shift}:s}))};
 
   var addRoute=async function(){if(!newRouteName.trim()){alert('Route name required');return}
-    try{await api.post('/routes',{name:newRouteName.trim(),has_shifts:newRouteShifts,requires_clock_in:newRouteClockIn});setNewRouteName('');setNewRouteShifts(false);setNewRouteClockIn(false);notify('Route added');onRefresh()}catch(e){alert(e.message)}};
+    try{await api.post('/routes',{name:newRouteName.trim(),has_shifts:newRouteShifts});setNewRouteName('');setNewRouteShifts(false);notify('Route added');onRefresh()}catch(e){alert(e.message)}};
   var updateRoute=async function(id,data){try{await api.put('/routes/'+id,data);notify('Route updated');onRefresh();setEditRoute(null)}catch(e){alert(e.message)}};
   var deactivateRoute=async function(id){if(!confirm('Deactivate this route?'))return;try{await api.put('/routes/'+id,{status:'inactive'});notify('Route deactivated');onRefresh()}catch(e){alert(e.message)}};
 
@@ -1227,8 +1226,8 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
       var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       return months[s.getMonth()]+' '+s.getDate()+' - '+months[e.getMonth()]+' '+e.getDate()+', '+e.getFullYear()};
     var driversToExport=driverFilter?activeDrivers.filter(function(d){return d.id===driverFilter}):
-      activeDrivers.filter(function(d){return dayNums.some(function(dn,i){return getDriverAvail(d.id,addDays(currentWeekOf,i))})});
-    if(driversToExport.length===0){alert('No scheduled drivers to export');return}
+      activeDrivers.filter(function(d){return dayNums.some(function(dn,i){var av=getDriverAvail(d.id,addDays(currentWeekOf,i));return av&&av.admin_confirmed})});
+    if(driversToExport.length===0){alert('No locked schedules to export. Lock driver schedules first.');return}
 
     driversToExport.forEach(function(driver,dIdx){
       if(dIdx>0)doc.addPage();
@@ -1247,15 +1246,14 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
         var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         var dateLabel=dayName+'  '+months[dayDate.getMonth()]+' '+dayDate.getDate();
 
-        if(av&&av.confirmed){
+        if(av&&av.confirmed&&av.admin_confirmed){
           var sels=(av.route_selections)||[];
           if(typeof sels==='string')try{sels=JSON.parse(sels)}catch(e){sels=[]}
           if(sels.length>0){
             var routeParts=sels.map(function(s){return(s.route_name||'Route')+' ('+(s.shift||'Full Day')+')'});
-            var status=av.admin_confirmed?'Confirmed':'Requested';
-            rows.push([dateLabel,routeParts.join('   |   '),status]);
+            rows.push([dateLabel,routeParts.join('   |   '),'Confirmed']);
           }else{
-            rows.push([dateLabel,'No route assigned','—']);
+            rows.push([dateLabel,'—','—']);
           }
         }else{
           rows.push([dateLabel,'Off','—']);
@@ -1305,10 +1303,11 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
             React.createElement('button',{onClick:function(){exportDriverPDF(null);setShowExportMenu(false)},style:{display:'block',width:'100%',padding:'10px 12px',background:'rgba(124,58,237,0.15)',border:'1px solid #7c3aed',borderRadius:'6px',color:'#c4b5fd',cursor:'pointer',fontWeight:'bold',fontSize:'13px',marginBottom:'6px',textAlign:'left'}},'\ud83d\udcc4 All Drivers (one PDF)'),
             React.createElement('div',{style:{color:'#64748b',fontSize:'10px',padding:'4px 0 6px',textTransform:'uppercase',fontWeight:'600'}},'Individual Driver:'),
             activeDrivers.map(function(d){
-              var hasSchedule=dayNums.some(function(dn,i){return getDriverAvail(d.id,addDays(currentWeekOf,i))});
+              var hasLocked=dayNums.some(function(dn,i){var av=getDriverAvail(d.id,addDays(currentWeekOf,i));return av&&av.admin_confirmed});
+              var hasRequested=!hasLocked&&dayNums.some(function(dn,i){return getDriverAvail(d.id,addDays(currentWeekOf,i))});
               return React.createElement('button',{key:d.id,onClick:function(){exportDriverPDF(d.id);setShowExportMenu(false)},
-                style:{display:'block',width:'100%',padding:'8px 12px',background:'transparent',border:'1px solid '+(hasSchedule?'#334155':'#1e293b'),borderRadius:'6px',color:hasSchedule?'#e2e8f0':'#475569',cursor:'pointer',fontSize:'13px',marginBottom:'3px',textAlign:'left'}},
-                d.name+(hasSchedule?'':' (no schedule)'))}),
+                style:{display:'block',width:'100%',padding:'8px 12px',background:'transparent',border:'1px solid '+(hasLocked?'#059669':hasRequested?'#334155':'#1e293b'),borderRadius:'6px',color:hasLocked?'#4ade80':hasRequested?'#e2e8f0':'#475569',cursor:'pointer',fontSize:'13px',marginBottom:'3px',textAlign:'left'}},
+                d.name+(hasLocked?' 🔒':hasRequested?' (not locked)':' (no schedule)'))}),
             React.createElement('button',{onClick:function(){setShowExportMenu(false)},style:{display:'block',width:'100%',padding:'6px',background:'transparent',border:'none',color:'#64748b',cursor:'pointer',fontSize:'11px',marginTop:'4px'}},'Cancel'))),
         React.createElement('button',{onClick:function(){setShowDebug(!showDebug)},style:{...S.cancel,fontSize:'13px',padding:'8px 16px',background:showDebug?'rgba(239,68,68,0.2)':'transparent',border:'1px solid '+(showDebug?'#ef4444':'#475569')}},showDebug?'Hide Debug':'\ud83d\udd0d Debug'),
         viewWeek>=0&&React.createElement('button',{onClick:confirmAll,style:{...S.btn,background:'#059669',fontSize:'13px',padding:'8px 16px'}},'\ud83d\udd12 Confirm All This Week'),
@@ -1327,33 +1326,27 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
               React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:'#94a3b8',marginBottom:'4px'}},
                 React.createElement('input',{type:'checkbox',checked:editRoute.has_shifts,onChange:function(e){setEditRoute({...editRoute,has_shifts:e.target.checked})}}),
                 'AM/PM/Full Day shifts'),
-              React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:'#f59e0b',marginBottom:'6px'}},
-                React.createElement('input',{type:'checkbox',checked:editRoute.requires_clock_in,onChange:function(e){setEditRoute({...editRoute,requires_clock_in:e.target.checked})}}),
-                'Requires clock in/out'),
               React.createElement('div',{style:{display:'flex',gap:'4px',marginBottom:'6px',flexWrap:'wrap'}},
                 [1,2,3,4,5,6].map(function(d){var active=(editRoute.active_days||[]).indexOf(d)!==-1;
                   return React.createElement('button',{key:d,type:'button',onClick:function(){var nd=active?(editRoute.active_days||[]).filter(function(x){return x!==d}):(editRoute.active_days||[]).concat([d]).sort();setEditRoute({...editRoute,active_days:nd})},
                     style:{padding:'4px 8px',borderRadius:'4px',fontSize:'11px',border:active?'1px solid #3b82f6':'1px solid #475569',background:active?'rgba(59,130,246,0.3)':'transparent',color:active?'#fff':'#64748b',cursor:'pointer'}},dayLabels[d])})),
               React.createElement('div',{style:{display:'flex',gap:'4px'}},
-                React.createElement('button',{onClick:function(){updateRoute(editRoute.id,{name:editRoute.name,has_shifts:editRoute.has_shifts,requires_clock_in:editRoute.requires_clock_in,active_days:editRoute.active_days})},style:{...S.btn,fontSize:'11px',padding:'4px 8px'}},'Save'),
+                React.createElement('button',{onClick:function(){updateRoute(editRoute.id,{name:editRoute.name,has_shifts:editRoute.has_shifts,active_days:editRoute.active_days})},style:{...S.btn,fontSize:'11px',padding:'4px 8px'}},'Save'),
                 React.createElement('button',{onClick:function(){setEditRoute(null)},style:{...S.cancel,fontSize:'11px',padding:'4px 8px'}},'Cancel')))
             :React.createElement('div',null,
               React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
                 React.createElement('span',{style:{fontWeight:'bold',color:'#fff'}},r.name),
                 React.createElement('div',{style:{display:'flex',gap:'4px'}},
-                  React.createElement('button',{onClick:function(){setEditRoute({id:r.id,name:r.name,has_shifts:r.has_shifts,requires_clock_in:r.requires_clock_in||false,active_days:r.active_days||[]})},style:{background:'none',border:'none',color:'#60a5fa',cursor:'pointer',fontSize:'12px'}},'Edit'),
+                  React.createElement('button',{onClick:function(){setEditRoute({id:r.id,name:r.name,has_shifts:r.has_shifts,active_days:r.active_days||[]})},style:{background:'none',border:'none',color:'#60a5fa',cursor:'pointer',fontSize:'12px'}},'Edit'),
                   React.createElement('button',{onClick:function(){deactivateRoute(r.id)},style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'12px'}},'Remove'))),
               React.createElement('div',{style:{fontSize:'11px',color:'#94a3b8',marginTop:'4px'}},
-                'Days: '+days.map(function(d){return dayLabels[d]||d}).join(', ')+(r.has_shifts?' | \u23f0 Shifts':'')+(r.requires_clock_in?' | \u23f1\ufe0f Clock in/out':''))
+                'Days: '+days.map(function(d){return dayLabels[d]||d}).join(', ')+(r.has_shifts?' | \u23f0 Shifts':''))
             ))})),
       React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
         React.createElement('input',{value:newRouteName,onChange:function(e){setNewRouteName(e.target.value)},style:{...S.inp,flex:1,minWidth:'150px'},placeholder:'New route name...',onKeyPress:function(e){if(e.key==='Enter')addRoute()}}),
         React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#94a3b8',whiteSpace:'nowrap'}},
           React.createElement('input',{type:'checkbox',checked:newRouteShifts,onChange:function(e){setNewRouteShifts(e.target.checked)}}),
           'Shifts'),
-        React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#f59e0b',whiteSpace:'nowrap'}},
-          React.createElement('input',{type:'checkbox',checked:newRouteClockIn,onChange:function(e){setNewRouteClockIn(e.target.checked)}}),
-          'Clock in'),
         React.createElement('button',{onClick:addRoute,style:{...S.btn,whiteSpace:'nowrap'}},'+ Add Route'))),
 
     React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px',justifyContent:'center',flexWrap:'wrap'}},
@@ -1531,118 +1524,6 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
             React.createElement('button',{onClick:adminOverride,style:{...S.btn,flex:1,padding:'12px',background:'#f59e0b',opacity:overrideSelections.length>0?1:0.5}},'\ud83d\udd12 Assign & Confirm ('+overrideSelections.length+')'))))));
 }
 
-function TimePanel({drivers,routes,shifts,notify,onRefresh}){
-  const[entries,setEntries]=useState([]);const[ld,setLd]=useState(false);
-  const[start,setStart]=useState(new Date().toISOString().split('T')[0]);
-  const[end,setEnd]=useState(new Date().toISOString().split('T')[0]);
-  const[filterDriver,setFilterDriver]=useState('');
-  const[showManual,setShowManual]=useState(false);
-  const[clockDriverId,setClockDriverId]=useState('');const[clockRouteId,setClockRouteId]=useState('');const[clockShiftId,setClockShiftId]=useState('');
-  const[manualForm,setManualForm]=useState({driver_id:'',route_id:'',shift_id:'',work_date:'',clock_in:'',clock_out:'',break_minutes:0});
-  const[selected,setSelected]=useState([]);
-
-  const loadEntries=async()=>{setLd(true);try{
-    let url='/time/entries?start_date='+start+'&end_date='+end;
-    if(filterDriver)url+='&driver_id='+filterDriver;
-    const data=await api.get(url);setEntries(data)}catch(e){console.error(e)}setLd(false)};
-
-  useEffect(()=>{loadEntries()},[start,end,filterDriver]);
-
-  const clockIn=async()=>{if(!clockDriverId){alert('Select driver');return}
-    try{await api.post('/time/clock-in',{driver_id:parseInt(clockDriverId),route_id:clockRouteId?parseInt(clockRouteId):null,shift_id:clockShiftId?parseInt(clockShiftId):null});
-    notify('Clocked in!');loadEntries()}catch(e){alert(e.message)}};
-
-  const clockOut=async(entryId)=>{try{await api.post('/time/clock-out',{entry_id:entryId,break_minutes:0});
-    notify('Clocked out!');loadEntries()}catch(e){alert(e.message)}};
-
-  const saveManual=async(e)=>{e.preventDefault();
-    if(!manualForm.driver_id||!manualForm.work_date||!manualForm.clock_in||!manualForm.clock_out){alert('Fill all fields');return}
-    try{await api.post('/time/manual',{...manualForm,driver_id:parseInt(manualForm.driver_id),route_id:manualForm.route_id?parseInt(manualForm.route_id):null,shift_id:manualForm.shift_id?parseInt(manualForm.shift_id):null,break_minutes:parseInt(manualForm.break_minutes)||0});
-    notify('Entry added');setShowManual(false);setManualForm({driver_id:'',route_id:'',shift_id:'',work_date:'',clock_in:'',clock_out:'',break_minutes:0});loadEntries()}catch(e){alert(e.message)}};
-
-  const approveSelected=async()=>{if(selected.length===0){alert('Select entries');return}
-    try{await api.post('/time/approve',{entry_ids:selected});notify('Approved '+selected.length);setSelected([]);loadEntries()}catch(e){alert(e.message)}};
-
-  const toggleSelect=(id)=>setSelected(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);
-  const toggleAll=()=>{const pending=entries.filter(e=>e.status==='pending').map(e=>e.id);
-    setSelected(selected.length===pending.length?[]:pending)};
-
-  return React.createElement('div',null,
-    React.createElement('h2',{style:{marginBottom:'16px'}},'⏱ Time Tracking'),
-    React.createElement('div',{style:{...S.card,marginBottom:'16px'}},
-      React.createElement('h3',{style:{marginBottom:'12px'}},'Quick Clock In/Out'),
-      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px'}},
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Driver'),
-          React.createElement('select',{value:clockDriverId,onChange:e=>setClockDriverId(e.target.value),style:S.inp},
-            React.createElement('option',{value:''},'Select...'),drivers.filter(d=>d.status==='active').map(d=>React.createElement('option',{key:d.id,value:d.id},d.name)))),
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Route'),
-          React.createElement('select',{value:clockRouteId,onChange:e=>setClockRouteId(e.target.value),style:S.inp},
-            React.createElement('option',{value:''},'Optional'),routes.map(r=>React.createElement('option',{key:r.id,value:r.id},r.name)))),
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Shift'),
-          React.createElement('select',{value:clockShiftId,onChange:e=>setClockShiftId(e.target.value),style:S.inp},
-            React.createElement('option',{value:''},'Optional'),shifts.map(s=>React.createElement('option',{key:s.id,value:s.id},s.name)))),
-        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),
-          React.createElement('button',{onClick:clockIn,style:{...S.btn,width:'100%',background:'#22c55e',fontSize:'16px'}},'🕐 Clock In')))),
-    React.createElement('div',{style:{...S.card,marginBottom:'16px'}},
-      React.createElement('div',{style:{display:'flex',gap:'12px',marginBottom:'12px',flexWrap:'wrap',alignItems:'flex-end'}},
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Start'),React.createElement('input',{type:'date',value:start,onChange:e=>setStart(e.target.value),style:S.inp})),
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'End'),React.createElement('input',{type:'date',value:end,onChange:e=>setEnd(e.target.value),style:S.inp})),
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Driver'),
-          React.createElement('select',{value:filterDriver,onChange:e=>setFilterDriver(e.target.value),style:S.inp},
-            React.createElement('option',{value:''},'All'),drivers.map(d=>React.createElement('option',{key:d.id,value:d.id},d.name)))),
-        React.createElement('button',{onClick:()=>setShowManual(true),style:{...S.btn,background:'#0ea5e9'}},'+ Manual Entry'),
-        selected.length>0&&React.createElement('button',{onClick:approveSelected,style:{...S.btn,background:'#22c55e'}},'✓ Approve ('+selected.length+')'))),
-    entries.length>0&&React.createElement('div',{style:S.card},
-      React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
-        React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
-          React.createElement('th',{style:{padding:'8px',width:'30px'}},React.createElement('input',{type:'checkbox',onChange:toggleAll,checked:selected.length>0&&selected.length===entries.filter(e=>e.status==='pending').length})),
-          React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Driver'),
-          React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Date'),
-          React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Clock In'),
-          React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Clock Out'),
-          React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},'Hours'),
-          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Status'),
-          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Action'))),
-        React.createElement('tbody',null,entries.map(en=>{
-          const driver=drivers.find(d=>d.id===en.driver_id);
-          return React.createElement('tr',{key:en.id,style:{borderBottom:'1px solid #334155'}},
-            React.createElement('td',{style:{padding:'8px'}},en.status==='pending'&&React.createElement('input',{type:'checkbox',checked:selected.includes(en.id),onChange:()=>toggleSelect(en.id)})),
-            React.createElement('td',{style:{padding:'8px'}},driver?.name||'?'),
-            React.createElement('td',{style:{padding:'8px'}},fmtD(en.work_date)),
-            React.createElement('td',{style:{padding:'8px'}},en.clock_in?fmtTime(en.clock_in):'—'),
-            React.createElement('td',{style:{padding:'8px'}},en.clock_out?fmtTime(en.clock_out):React.createElement('button',{onClick:()=>clockOut(en.id),style:{...S.btn,padding:'4px 12px',fontSize:'12px',background:'#ef4444'}},'Clock Out')),
-            React.createElement('td',{style:{padding:'8px',textAlign:'right',fontWeight:'bold'}},en.total_hours?parseFloat(en.total_hours).toFixed(2):'—'),
-            React.createElement('td',{style:{padding:'8px',textAlign:'center'}},React.createElement('span',{style:{padding:'2px 8px',borderRadius:'4px',fontSize:'11px',background:en.status==='approved'?'#065f46':en.status==='pending'?'#78350f':'#7f1d1d'}},en.status)),
-            React.createElement('td',{style:{padding:'8px',textAlign:'center'}}))
-        })))),
-    entries.length===0&&!ld&&React.createElement('div',{style:{...S.card,textAlign:'center',color:'#64748b'}},'No time entries for selected range'),
-    showManual&&React.createElement('div',{style:S.modal},
-      React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'450px',border:'1px solid #334155'}},
-        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},
-          React.createElement('h3',{style:{margin:0}},'Manual Time Entry'),
-          React.createElement('button',{onClick:()=>setShowManual(false),style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'×')),
-        React.createElement('form',{onSubmit:saveManual,style:{padding:'16px'}},
-          React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},'Driver *'),
-            React.createElement('select',{value:manualForm.driver_id,onChange:e=>setManualForm({...manualForm,driver_id:e.target.value}),style:S.inp},
-              React.createElement('option',{value:''},'Select...'),drivers.filter(d=>d.status==='active').map(d=>React.createElement('option',{key:d.id,value:d.id},d.name)))),
-          React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},'Date *'),
-            React.createElement('input',{type:'date',value:manualForm.work_date,onChange:e=>setManualForm({...manualForm,work_date:e.target.value}),style:S.inp})),
-          React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}},
-            React.createElement('div',null,React.createElement('label',{style:S.lbl},'Clock In *'),React.createElement('input',{type:'time',value:manualForm.clock_in,onChange:e=>setManualForm({...manualForm,clock_in:e.target.value}),style:S.inp})),
-            React.createElement('div',null,React.createElement('label',{style:S.lbl},'Clock Out *'),React.createElement('input',{type:'time',value:manualForm.clock_out,onChange:e=>setManualForm({...manualForm,clock_out:e.target.value}),style:S.inp}))),
-          React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},'Break (minutes)'),
-            React.createElement('input',{type:'number',value:manualForm.break_minutes,onChange:e=>setManualForm({...manualForm,break_minutes:e.target.value}),style:S.inp})),
-          React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'16px'}},
-            React.createElement('div',null,React.createElement('label',{style:S.lbl},'Route'),
-              React.createElement('select',{value:manualForm.route_id,onChange:e=>setManualForm({...manualForm,route_id:e.target.value}),style:S.inp},
-                React.createElement('option',{value:''},'Optional'),routes.map(r=>React.createElement('option',{key:r.id,value:r.id},r.name)))),
-            React.createElement('div',null,React.createElement('label',{style:S.lbl},'Shift'),
-              React.createElement('select',{value:manualForm.shift_id,onChange:e=>setManualForm({...manualForm,shift_id:e.target.value}),style:S.inp},
-                React.createElement('option',{value:''},'Optional'),shifts.map(s=>React.createElement('option',{key:s.id,value:s.id},s.name))))),
-          React.createElement('div',{style:{display:'flex',gap:'12px',justifyContent:'flex-end'}},
-            React.createElement('button',{type:'button',onClick:()=>setShowManual(false),style:S.cancel},'Cancel'),
-            React.createElement('button',{type:'submit',style:S.btn},'Add Entry'))))));
-}
 
 function PayrollPanel({drivers,notify}){
   const[periods,setPeriods]=useState([]);const[current,setCurrent]=useState(null);const[records,setRecords]=useState([]);
@@ -2015,109 +1896,6 @@ function MySchedulePanel({schedData,weekOf,setWeekOf,addDays,dayNames,dayNums,ro
               React.createElement('button',{onClick:function(e){e.stopPropagation();submitFinal()},style:{...S.btn,flex:1,padding:'14px',fontSize:'16px',background:'#22c55e'}},'\u2705 CONFIRM')))))));
 }
 
-function DriverClockPanel({routes,myDriverId,notify}){
-  const[status,setStatus]=useState(null);const[todayEntries,setTodayEntries]=useState([]);
-  const[ld,setLd]=useState(false);const[elapsed,setElapsed]=useState('');
-  const[todayRoutes,setTodayRoutes]=useState([]);
-
-  var loadStatus=async function(){if(!myDriverId)return;setLd(true);
-    try{
-      var today=new Date().toISOString().split('T')[0];
-      var entries=await api.get('/time/entries?driver_id='+myDriverId+'&start_date='+today+'&end_date='+today);
-      setTodayEntries(entries);
-      var open=entries.find(function(e){return !e.clock_out});
-      setStatus(open||null);
-      var avail=await api.get('/availability?driver_id='+myDriverId+'&start_date='+today+'&end_date='+today);
-      var clockRoutes=[];
-      avail.forEach(function(a){
-        if(a.admin_confirmed){
-          var sels=(a.route_selections)||[];
-          if(typeof sels==='string')try{sels=JSON.parse(sels)}catch(e){sels=[]}
-          sels.forEach(function(sel){
-            var r=routes.find(function(rt){return parseInt(rt.id)===parseInt(sel.route_id)});
-            if(r&&r.requires_clock_in&&!clockRoutes.find(function(cr){return cr.id===r.id}))clockRoutes.push(r);
-          });
-          if(sels.length===0&&a.preferred_route_id){
-            var r=routes.find(function(rt){return parseInt(rt.id)===parseInt(a.preferred_route_id)});
-            if(r&&r.requires_clock_in)clockRoutes.push(r);
-          }
-        }
-      });
-      setTodayRoutes(clockRoutes);
-    }catch(e){console.error(e)}setLd(false)};
-
-  useEffect(function(){loadStatus()},[myDriverId]);
-  useEffect(function(){if(!status)return;
-    var iv=setInterval(function(){
-      var now=new Date();var start=new Date(status.clock_in);
-      var diff=Math.floor((now-start)/1000);
-      var h=Math.floor(diff/3600);var m=Math.floor((diff%3600)/60);var s=diff%60;
-      setElapsed((h<10?'0'+h:h)+':'+(m<10?'0'+m:m)+':'+(s<10?'0'+s:s));
-    },1000);return function(){clearInterval(iv)}},[status]);
-
-  var clockIn=async function(routeId){setLd(true);
-    try{await api.post('/time/clock-in',{driver_id:myDriverId,route_id:routeId});
-    notify('Clocked in!');loadStatus()}catch(e){alert(e.message)}setLd(false)};
-
-  var clockOut=async function(){setLd(true);
-    try{await api.post('/time/clock-out',{driver_id:myDriverId});
-    notify('Clocked out!');setStatus(null);setElapsed('');loadStatus()}catch(e){alert(e.message)}setLd(false)};
-
-  var getRouteName=function(id){var r=routes.find(function(rt){return rt.id===id});return r?r.name:'Route #'+id};
-  var getRouteColor=function(name){var n=(name||'').toLowerCase();if(n.includes('east'))return'#3b82f6';if(n.includes('west'))return'#8b5cf6';if(n.includes('laundry'))return'#06b6d4';if(n.includes('school'))return'#f59e0b';if(n.includes('sleepy'))return'#ec4899';if(n.includes('panda'))return'#22c55e';return'#64748b'};
-
-  if(!myDriverId)return React.createElement('div',{style:{...S.card,textAlign:'center',color:'#ef4444'}},'Your account is not linked to a driver profile.');
-
-  return React.createElement('div',{style:{maxWidth:'500px',margin:'0 auto'}},
-    React.createElement('h2',{style:{textAlign:'center',marginBottom:'24px'}},'\u23f1\ufe0f Clock In / Out'),
-
-    status?React.createElement('div',{style:{textAlign:'center'}},
-      React.createElement('div',{style:{...S.card,marginBottom:'24px',background:'rgba(34,197,94,0.1)',border:'2px solid #22c55e'}},
-        React.createElement('div',{style:{fontSize:'14px',color:'#94a3b8',marginBottom:'4px'}},'Currently clocked in to:'),
-        React.createElement('div',{style:{fontSize:'22px',fontWeight:'bold',color:'#22c55e',marginBottom:'8px'}},getRouteName(status.route_id)),
-        React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8',marginBottom:'12px'}},'Since: '+new Date(status.clock_in).toLocaleTimeString()),
-        React.createElement('div',{style:{fontSize:'48px',fontWeight:'bold',color:'#fff',fontFamily:'monospace',letterSpacing:'2px'}},elapsed)),
-      React.createElement('button',{onClick:clockOut,disabled:ld,style:{
-        width:'100%',padding:'28px 40px',fontSize:'26px',fontWeight:'bold',
-        background:'linear-gradient(135deg,#dc2626,#ef4444)',color:'#fff',
-        border:'none',borderRadius:'16px',cursor:'pointer',
-        boxShadow:'0 8px 25px rgba(239,68,68,0.4)',
-        transform:'scale(1)',transition:'transform 0.1s'}},
-        '\u23f9 CLOCK OUT'))
-
-    :React.createElement('div',null,
-      todayRoutes.length>0?React.createElement('div',null,
-        React.createElement('div',{style:{textAlign:'center',color:'#94a3b8',marginBottom:'16px',fontSize:'14px'}},'Select a route to clock in:'),
-        todayRoutes.map(function(r){
-          var alreadyDone=todayEntries.find(function(e){return e.route_id===r.id&&e.clock_out});
-          return React.createElement('button',{key:r.id,onClick:function(){if(!alreadyDone)clockIn(r.id)},disabled:ld||!!alreadyDone,style:{
-            width:'100%',padding:'28px 40px',fontSize:'26px',fontWeight:'bold',marginBottom:'16px',
-            background:alreadyDone?'rgba(100,116,139,0.2)':'linear-gradient(135deg,#059669,#22c55e)',
-            color:alreadyDone?'#64748b':'#fff',
-            border:'none',borderRadius:'16px',cursor:alreadyDone?'not-allowed':'pointer',
-            boxShadow:alreadyDone?'none':'0 8px 25px rgba(34,197,94,0.4)',
-            transition:'transform 0.1s'}},
-            alreadyDone?'\u2705 '+r.name+' (Done)':'\u25b6 Clock In \u2014 '+r.name)}))
-      :React.createElement('div',{style:{textAlign:'center'}},
-        React.createElement('div',{style:{...S.card,background:'rgba(100,116,139,0.1)',padding:'40px 20px'}},
-          React.createElement('div',{style:{fontSize:'48px',marginBottom:'12px'}},'\ud83d\udcc5'),
-          React.createElement('div',{style:{fontSize:'16px',color:'#94a3b8'}},'No clock-in routes assigned for today.'),
-          React.createElement('div',{style:{fontSize:'13px',color:'#64748b',marginTop:'8px'}},'Only routes marked as clock-in/out will appear here.')))),
-
-    todayEntries.length>0&&React.createElement('div',{style:{...S.card,marginTop:'24px'}},
-      React.createElement('div',{style:{fontWeight:'bold',marginBottom:'12px',color:'#94a3b8',fontSize:'13px'}},'Today\'s Log'),
-      todayEntries.map(function(e){
-        var rName=getRouteName(e.route_id);var rClr=getRouteColor(rName);
-        return React.createElement('div',{key:e.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:'1px solid #334155'}},
-          React.createElement('div',null,
-            React.createElement('span',{style:{padding:'3px 8px',borderRadius:'6px',fontSize:'11px',background:rClr+'33',color:rClr,fontWeight:'bold',marginRight:'8px'}},rName),
-            React.createElement('span',{style:{fontSize:'13px',color:'#e2e8f0'}},new Date(e.clock_in).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}))),
-          React.createElement('div',null,
-            e.clock_out?React.createElement('span',{style:{fontSize:'13px'}},
-              React.createElement('span',{style:{color:'#e2e8f0'}},new Date(e.clock_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})),
-              React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold',marginLeft:'8px'}},parseFloat(e.total_hours||0).toFixed(1)+'h'))
-            :React.createElement('span',{style:{color:'#22c55e',fontWeight:'bold',fontSize:'12px',animation:'pulse 2s infinite'}},'\\u23f3 Active')))})));
-}
 
 function DriverProfilePanel({notify}){
   const[profile,setProfile]=useState(null);const[ld,setLd]=useState(true);const[sav,setSav]=useState(false);
