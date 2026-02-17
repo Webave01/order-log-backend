@@ -950,6 +950,7 @@ function Schedule({isAdmin,notify,t,user}){
 
 function DriversPanel({drivers,notify,onRefresh}){
   const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[tab,setTab]=useState('basic');const[expand,setExpand]=useState(null);
+  const[showRates,setShowRates]=useState(false);
   const emptyF={name:'',phone:'',hourly_rate:16.50,day_rate:200,pay_type:'hourly',payment_method:'cash',
     worker_type:'1099',legal_name:'',dob:'',address:'',dl_number:'',tax_id:'',tax_id_type:'ssn',zelle_handle:'',status:'active',notes:''};
   const[f,setF]=useState({...emptyF});
@@ -974,9 +975,16 @@ function DriversPanel({drivers,notify,onRefresh}){
   const maskSSN=(v)=>v?'***-**-'+v.slice(-4):'Not set';
 
   return React.createElement('div',null,
-    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px'}},
       React.createElement('h2',{style:{margin:0}},'\ud83d\ude97 Drivers'),
-      React.createElement('button',{onClick:()=>{setEd(null);setF({...emptyF});setTab('basic');setShow(true)},style:S.btn},'+ Add Driver')),
+      React.createElement('div',{style:{display:'flex',gap:'8px'}},
+        React.createElement('button',{onClick:function(){setShowRates(!showRates)},style:{background:'none',border:'1px solid #475569',borderRadius:'8px',padding:'6px 14px',cursor:'pointer',color:showRates?'#4ade80':'#64748b',fontSize:'13px'}},showRates?'\ud83d\udc41\ufe0f Hide Pay':'\ud83d\udc41\ufe0f Show Pay'),
+        React.createElement('button',{onClick:()=>{setEd(null);setF({...emptyF});setTab('basic');setShow(true)},style:S.btn},'+ Add Driver'),
+        !drivers.some(function(d){return d.name.toLowerCase().includes('manager')})&&
+          React.createElement('button',{onClick:async function(){
+            try{await api.post('/drivers',{name:'Manager (Admin)',phone:'',pay_type:'flat_day',day_rate:0,payment_method:'cash',worker_type:'1099',status:'active',notes:'Admin driver - no login needed. Assign routes directly from schedule.'});
+            notify('Manager driver added');await onRefresh()}catch(e){alert(e.message)}},
+            style:{...S.btn,background:'#f59e0b',fontSize:'12px'}},'\ud83d\udc51 Add Manager'))),
 
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))',gap:'12px'}},
       drivers.map(d=>React.createElement('div',{key:d.id,style:{...S.card,borderLeft:d.status==='active'?'4px solid #22c55e':'4px solid #64748b',cursor:'pointer'},onClick:()=>setExpand(expand===d.id?null:d.id)},
@@ -986,7 +994,7 @@ function DriversPanel({drivers,notify,onRefresh}){
             React.createElement('div',{style:{color:'#94a3b8',fontSize:'13px'}},d.phone||'No phone')),
           React.createElement('div',{style:{textAlign:'right'}},
             React.createElement('div',{style:{fontSize:'20px',color:'#4ade80',fontWeight:'bold'}},
-              d.pay_type==='flat_day'?fmt$(d.day_rate)+'/day':fmt$(d.hourly_rate)+'/hr'),
+              showRates?(d.pay_type==='flat_day'?fmt$(d.day_rate)+'/day':fmt$(d.hourly_rate)+'/hr'):'••••'),
             React.createElement('div',{style:{display:'flex',gap:'4px',justifyContent:'flex-end',marginTop:'4px'}},
               React.createElement('span',{style:{padding:'2px 8px',borderRadius:'4px',fontSize:'10px',fontWeight:'bold',background:payColors[d.payment_method]||'#475569',color:'#fff'}},
                 (d.payment_method||'cash').toUpperCase()),
@@ -1148,7 +1156,7 @@ function ScheduleGrid({drivers,routes,shifts,schedData,weekOf,setWeekOf,addDays,
 function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh}){
   const[avail,setAvail]=useState([]);const[assignments,setAssignments]=useState([]);const[ld,setLd]=useState(false);
   const[viewWeek,setViewWeek]=useState(0);const[showRouteManager,setShowRouteManager]=useState(false);
-  const[newRouteName,setNewRouteName]=useState('');const[newRouteShifts,setNewRouteShifts]=useState(false);
+  const[newRouteName,setNewRouteName]=useState('');const[newRouteShifts,setNewRouteShifts]=useState(false);const[newRouteDays,setNewRouteDays]=useState([1,2,3,4,5,6]);
   const[editRoute,setEditRoute]=useState(null);
   const[overrideModal,setOverrideModal]=useState(null);const[overrideSelections,setOverrideSelections]=useState([]);const[overrideNotes,setOverrideNotes]=useState('');
   const[showDebug,setShowDebug]=useState(false);const[loadError,setLoadError]=useState(null);const[lastLoad,setLastLoad]=useState(null);
@@ -1213,8 +1221,9 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
     setOverrideSelections(overrideSelections.map(function(s){return parseInt(s.route_id)===parseInt(routeId)?{...s,shift:shift}:s}))};
 
   var addRoute=async function(){if(!newRouteName.trim()){alert('Route name required');return}
-    try{await api.post('/routes',{name:newRouteName.trim(),has_shifts:newRouteShifts});setNewRouteName('');setNewRouteShifts(false);notify('Route added');onRefresh()}catch(e){alert(e.message)}};
-  var updateRoute=async function(id,data){try{await api.put('/routes/'+id,data);notify('Route updated');onRefresh();setEditRoute(null)}catch(e){alert(e.message)}};
+    if(newRouteDays.length===0){alert('Select at least one active day');return}
+    try{await api.post('/routes',{name:newRouteName.trim(),has_shifts:newRouteShifts,active_days:newRouteDays});setNewRouteName('');setNewRouteShifts(false);setNewRouteDays([1,2,3,4,5,6]);notify('Route added');onRefresh()}catch(e){alert(e.message)}};
+  var updateRoute=async function(id,data){try{await api.put('/routes/'+id,data);notify('Saved');onRefresh()}catch(e){alert(e.message)}};
   var deactivateRoute=async function(id){if(!confirm('Deactivate this route?'))return;try{await api.put('/routes/'+id,{status:'inactive'});notify('Route deactivated');onRefresh()}catch(e){alert(e.message)}};
 
   var exportDriverPDF=function(driverFilter){
@@ -1322,17 +1331,18 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
           var dayLabels={1:'M',2:'Tu',3:'W',4:'Th',5:'F',6:'Sa'};
           return React.createElement('div',{key:r.id,style:{background:'rgba(255,255,255,0.05)',borderRadius:'8px',padding:'12px',borderLeft:'4px solid '+clr}},
             editRoute&&editRoute.id===r.id?React.createElement('div',null,
-              React.createElement('input',{value:editRoute.name,onChange:function(e){setEditRoute({...editRoute,name:e.target.value})},style:{...S.inp,marginBottom:'6px',fontSize:'13px'}}),
+              React.createElement('input',{value:editRoute.name,onChange:function(e){setEditRoute({...editRoute,name:e.target.value})},
+                onBlur:function(){if(editRoute.name.trim()&&editRoute.name!==r.name)updateRoute(editRoute.id,{name:editRoute.name})},
+                onKeyPress:function(e){if(e.key==='Enter'){e.target.blur()}},
+                style:{...S.inp,marginBottom:'6px',fontSize:'13px'}}),
               React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:'#94a3b8',marginBottom:'4px'}},
-                React.createElement('input',{type:'checkbox',checked:editRoute.has_shifts,onChange:function(e){setEditRoute({...editRoute,has_shifts:e.target.checked})}}),
+                React.createElement('input',{type:'checkbox',checked:editRoute.has_shifts,onChange:function(e){var v=e.target.checked;setEditRoute({...editRoute,has_shifts:v});updateRoute(editRoute.id,{has_shifts:v})}}),
                 'AM/PM/Full Day shifts'),
               React.createElement('div',{style:{display:'flex',gap:'4px',marginBottom:'6px',flexWrap:'wrap'}},
                 [1,2,3,4,5,6].map(function(d){var active=(editRoute.active_days||[]).indexOf(d)!==-1;
-                  return React.createElement('button',{key:d,type:'button',onClick:function(){var nd=active?(editRoute.active_days||[]).filter(function(x){return x!==d}):(editRoute.active_days||[]).concat([d]).sort();setEditRoute({...editRoute,active_days:nd})},
+                  return React.createElement('button',{key:d,type:'button',onClick:function(){var nd=active?(editRoute.active_days||[]).filter(function(x){return x!==d}):(editRoute.active_days||[]).concat([d]).sort();setEditRoute({...editRoute,active_days:nd});updateRoute(editRoute.id,{active_days:nd})},
                     style:{padding:'4px 8px',borderRadius:'4px',fontSize:'11px',border:active?'1px solid #3b82f6':'1px solid #475569',background:active?'rgba(59,130,246,0.3)':'transparent',color:active?'#fff':'#64748b',cursor:'pointer'}},dayLabels[d])})),
-              React.createElement('div',{style:{display:'flex',gap:'4px'}},
-                React.createElement('button',{onClick:function(){updateRoute(editRoute.id,{name:editRoute.name,has_shifts:editRoute.has_shifts,active_days:editRoute.active_days})},style:{...S.btn,fontSize:'11px',padding:'4px 8px'}},'Save'),
-                React.createElement('button',{onClick:function(){setEditRoute(null)},style:{...S.cancel,fontSize:'11px',padding:'4px 8px'}},'Cancel')))
+              React.createElement('button',{onClick:function(){setEditRoute(null)},style:{...S.cancel,fontSize:'11px',padding:'4px 8px'}},'Done'))
             :React.createElement('div',null,
               React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
                 React.createElement('span',{style:{fontWeight:'bold',color:'#fff'}},r.name),
@@ -1342,12 +1352,19 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
               React.createElement('div',{style:{fontSize:'11px',color:'#94a3b8',marginTop:'4px'}},
                 'Days: '+days.map(function(d){return dayLabels[d]||d}).join(', ')+(r.has_shifts?' | \u23f0 Shifts':''))
             ))})),
-      React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
-        React.createElement('input',{value:newRouteName,onChange:function(e){setNewRouteName(e.target.value)},style:{...S.inp,flex:1,minWidth:'150px'},placeholder:'New route name...',onKeyPress:function(e){if(e.key==='Enter')addRoute()}}),
-        React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#94a3b8',whiteSpace:'nowrap'}},
-          React.createElement('input',{type:'checkbox',checked:newRouteShifts,onChange:function(e){setNewRouteShifts(e.target.checked)}}),
-          'Shifts'),
-        React.createElement('button',{onClick:addRoute,style:{...S.btn,whiteSpace:'nowrap'}},'+ Add Route'))),
+      React.createElement('div',{style:{background:'rgba(255,255,255,0.03)',borderRadius:'8px',padding:'12px',marginBottom:'8px'}},
+        React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap',marginBottom:'8px'}},
+          React.createElement('input',{value:newRouteName,onChange:function(e){setNewRouteName(e.target.value)},style:{...S.inp,flex:1,minWidth:'150px'},placeholder:'New route name...',onKeyPress:function(e){if(e.key==='Enter')addRoute()}}),
+          React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#94a3b8',whiteSpace:'nowrap'}},
+            React.createElement('input',{type:'checkbox',checked:newRouteShifts,onChange:function(e){setNewRouteShifts(e.target.checked)}}),
+            'AM/PM Shifts'),
+          React.createElement('button',{onClick:addRoute,style:{...S.btn,whiteSpace:'nowrap'}},'+ Add Route')),
+        React.createElement('div',{style:{display:'flex',gap:'4px',alignItems:'center',flexWrap:'wrap'}},
+          React.createElement('span',{style:{fontSize:'11px',color:'#94a3b8',marginRight:'4px'}},'Days:'),
+          [{d:1,l:'M'},{d:2,l:'Tu'},{d:3,l:'W'},{d:4,l:'Th'},{d:5,l:'F'},{d:6,l:'Sa'}].map(function(x){
+            var active=newRouteDays.indexOf(x.d)!==-1;
+            return React.createElement('button',{key:x.d,type:'button',onClick:function(){setNewRouteDays(active?newRouteDays.filter(function(v){return v!==x.d}):newRouteDays.concat([x.d]).sort())},
+              style:{padding:'4px 10px',borderRadius:'4px',fontSize:'12px',fontWeight:'bold',border:active?'1px solid #3b82f6':'1px solid #475569',background:active?'rgba(59,130,246,0.3)':'transparent',color:active?'#fff':'#64748b',cursor:'pointer'}},x.l)})))),
 
     React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px',justifyContent:'center',flexWrap:'wrap'}},
       React.createElement('button',{onClick:function(){setViewWeek(viewWeek-1)},style:{...S.cancel,padding:'8px 16px'}},'\u2190 Prev'),
