@@ -284,7 +284,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
   });
   const save=async d=>{try{if(editing){await api.put('/orders/'+d.id,d);notify('Updated')}else{await api.post('/orders',d);notify('Added')}await loadData();setSearchResults(null);setSearch('');setShowForm(false);setEditing(null)}catch(e){alert(e.message)}};
   const del=async id=>{if(!confirm(t.delete+'?'))return;try{await api.del('/orders/'+id);notify('Deleted');await loadData();if(search)doSearch(search)}catch(e){alert(e.message)}};
-  const exp=async()=>{try{const d=await api.get('/orders/export');const rows=d.orders.map(o=>({'Order #':o.order_num,Cleaner:o.cleaner_name,Route:o.route,Weight:o.weight,'Rate/lb':o.rate_per_lb,Service:o.service_type,'Pickup Date':fmtDF(o.pickup_date),Created:o.created_at?fmtD(o.created_at)+' '+fmtTime(o.created_at):'','Bag Color':o.bag_color,Extras:o.extras,'Extras $':o.extras_total,Total:o.total,Notes:o.notes,'Entered By':o.staff_name}));const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Orders');XLSX.writeFile(wb,'orders_'+new Date().toISOString().split('T')[0]+'.xlsx');notify('Exported')}catch(e){alert(e.message)}};
+  const exp=async()=>{try{const d=await api.get('/orders/export');const rows=d.orders.map(o=>({'Order #':o.order_num,Cleaner:o.cleaner_name,'Customer Address':o.customer_address||'',Route:o.route,Weight:o.weight,'Rate/lb':o.rate_per_lb,Service:o.service_type,'Pickup Date':fmtDF(o.pickup_date),Created:o.created_at?fmtD(o.created_at)+' '+fmtTime(o.created_at):'','Bag Color':o.bag_color,Extras:o.extras,'Extras $':o.extras_total,Total:o.total,Notes:o.notes,'Entered By':o.staff_name}));const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Orders');XLSX.writeFile(wb,'orders_'+new Date().toISOString().split('T')[0]+'.xlsx');notify('Exported')}catch(e){alert(e.message)}};
   const addStaff=async()=>{if(!newStaffName.trim())return;try{await api.post('/staff-names',{name:newStaffName.trim()});const sn=await api.get('/staff-names');setStaffNames(sn);setNewStaffName('');notify('Added')}catch(e){alert(e.message||'Error')}};
   const delStaff=async(id,name)=>{if(!confirm('Delete '+name+'?'))return;try{await api.del('/staff-names/'+id);const sn=await api.get('/staff-names');setStaffNames(sn);notify('Deleted')}catch(e){alert(e.message)}};
   const handleNew=()=>{if(!staffName){alert('Select name first');return}setEditing(null);setShowForm(true)};
@@ -327,6 +327,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
                 React.createElement('div',null,React.createElement('span',{style:{fontWeight:'bold',fontSize:'18px',marginRight:'10px'}},'#'+o.order_num),React.createElement('span',{style:{background:o.service_type==='same-day'?'#f59e0b':'#3b82f6',padding:'4px 12px',borderRadius:'10px',fontSize:'13px',fontWeight:'bold'}},o.service_type==='same-day'?t.sameDay:t.hour24)),
                 React.createElement('div',{style:{textAlign:'right'}},canEditPrices&&React.createElement('div',{style:{fontWeight:'bold',color:'#4ade80',fontSize:'16px'}},fmt$(total)),o.staff_name&&React.createElement('span',{style:{color:'#94a3b8',fontSize:'12px'}},'👤 '+o.staff_name))),
               React.createElement('div',{style:{fontWeight:'600',marginBottom:'8px',fontSize:'16px'}},c?.name||'Unknown'),
+              o.customer_address&&React.createElement('div',{style:{color:'#c4b5fd',fontSize:'13px',marginBottom:'6px'}},'\ud83c\udfe0 '+o.customer_address),
               React.createElement('div',{style:{color:'#e2e8f0',fontSize:'16px',display:'flex',gap:'20px',flexWrap:'wrap',fontWeight:'500'}},React.createElement('span',null,'⚖️ '+o.weight+' lbs'),React.createElement('span',null,'📅 '+fmtD(o.pickup_date)+(o.created_at?' @ '+fmtTime(o.created_at):'')),React.createElement('span',null,'🎨 '+o.bag_color)),
               Object.keys(groups).length>0&&React.createElement('div',{style:{marginTop:'10px'}},Object.entries(groups).map(([cat,items])=>React.createElement('div',{key:cat,style:{fontSize:'14px',color:'#94a3b8',marginBottom:'4px'}},React.createElement('span',{style:{color:'#f59e0b'}},cat+': '),items.join(', ')))),
               o.notes&&React.createElement('div',{style:{marginTop:'10px',color:'#94a3b8',fontSize:'14px',fontStyle:'italic'}},'📝 '+o.notes),
@@ -338,15 +339,28 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
 
 function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave,onClose,lang,t}){
   const getDefaultPickupDate=()=>{const now=new Date();const hour=now.getHours();const target=hour>=6&&hour<9?new Date(now.setDate(now.getDate()-1)):now;const y=target.getFullYear();const m=String(target.getMonth()+1).padStart(2,'0');const d=String(target.getDate()).padStart(2,'0');return y+'-'+m+'-'+d};
-  const[d,setD]=useState({order_num:order?.order_num||'',weight:order?.weight||'',service_type:order?.service_type||'same-day',pickup_date:order?.pickup_date?.split('T')[0]||getDefaultPickupDate(),bag_color:order?.bag_color||'Blue',cleaner_id:order?.cleaner_id||'',extras:order?.extras||[],notes:order?.notes||'',staff_name:order?.staff_name||staffName,price_adjustment:order?.price_adjustment||'',id:order?.id||null});
+  const[d,setD]=useState({order_num:order?.order_num||'',weight:order?.weight||'',service_type:order?.service_type||'same-day',pickup_date:order?.pickup_date?.split('T')[0]||getDefaultPickupDate(),bag_color:order?.bag_color||'Blue',cleaner_id:order?.cleaner_id||'',extras:order?.extras||[],notes:order?.notes||'',staff_name:order?.staff_name||staffName,price_adjustment:order?.price_adjustment||'',customer_address:order?.customer_address||'',id:order?.id||null});
   const[saving,setSaving]=useState(false);const[dupWarn,setDupWarn]=useState(null);const[seqWarn,setSeqWarn]=useState(null);const[cleanerSearch,setCleanerSearch]=useState('');const[highlightIdx,setHighlightIdx]=useState(0);
+  const[addrList,setAddrList]=useState([]);const[addrSearch,setAddrSearch]=useState('');const[addrHighlight,setAddrHighlight]=useState(0);const[showAddrDrop,setShowAddrDrop]=useState(false);
+
+  const selectedCleaner=cleaners.find(c=>c.id===d.cleaner_id);
+  const isAddrCleaner=selectedCleaner&&selectedCleaner.has_addresses;
+
+  useEffect(()=>{
+    if(isAddrCleaner){api.get('/cleaner-addresses/'+d.cleaner_id).then(setAddrList).catch(()=>setAddrList([]))}
+    else{setAddrList([])}
+  },[d.cleaner_id]);
+
+  useEffect(()=>{
+    if(isAddrCleaner&&d.bag_color!=='Black'){setD(prev=>({...prev,bag_color:'Black'}))}
+  },[isAddrCleaner]);
 
   useEffect(()=>{
     const check=async()=>{if(d.order_num&&d.cleaner_id){try{const dup=await api.get('/orders/check-duplicate?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id+(d.id?'&exclude_id='+d.id:''));setDupWarn(dup.isDuplicate?'REPEAT: #'+d.order_num+' exists ('+fmtD(dup.existingOrder.pickup_date)+')':null);const seq=await api.get('/orders/check-sequence?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id);setSeqWarn(seq.isOutOfSequence?'Check # - last was #'+seq.lastOrderNum+' (diff: '+seq.difference+')':null)}catch(e){}}else{setDupWarn(null);setSeqWarn(null)}};
     const tm=setTimeout(check,300);return()=>clearTimeout(tm);
   },[d.order_num,d.cleaner_id,d.id]);
 
-  const sub=async e=>{e.preventDefault();if(!d.order_num||!d.cleaner_id){alert('Fill required fields');return}if(!d.weight&&d.extras.length===0){alert('Enter weight or select extras');return}if(dupWarn&&!confirm(dupWarn+'\n\nSave anyway?'))return;if(seqWarn&&!confirm(seqWarn+'\n\nSave anyway?'))return;setSaving(true);await onSave({...d,weight:d.weight||0});setSaving(false)};
+  const sub=async e=>{e.preventDefault();if(!d.order_num||!d.cleaner_id){alert('Fill required fields');return}if(!d.weight&&d.extras.length===0){alert('Enter weight or select extras');return}if(isAddrCleaner&&!d.customer_address){alert('Select a customer address');return}if(dupWarn&&!confirm(dupWarn+'\n\nSave anyway?'))return;if(seqWarn&&!confirm(seqWarn+'\n\nSave anyway?'))return;setSaving(true);await onSave({...d,weight:d.weight||0});setSaving(false)};
   
   const getQty=(id)=>d.extras.filter(x=>x===id).length;
   const addOne=(id)=>setD({...d,extras:[...d.extras,id]});
@@ -355,33 +369,46 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
   const grouped={};extras.forEach(ex=>{const cat=ex.category||'Other';if(!grouped[cat])grouped[cat]=[];grouped[cat].push(ex)});
   
   const filteredCleaners=cleanerSearch?cleaners.filter(c=>c.name.toLowerCase().includes(cleanerSearch.toLowerCase())):cleaners;
-  const selectedCleaner=cleaners.find(c=>c.id===d.cleaner_id);
+  const filteredAddrs=addrSearch?addrList.filter(function(a){var full=(a.address+(a.apt?' Apt '+a.apt:'')).toLowerCase();return full.includes(addrSearch.toLowerCase())}):addrList;
 
   return React.createElement('div',{style:S.modal},
     React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'500px',maxHeight:'90vh',overflow:'auto',border:'1px solid #334155'}},
       React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},
         React.createElement('h3',{style:{margin:0}},(order?t.edit:t.add)+' '+t.orders),
-        React.createElement('button',{onClick:onClose,style:{background:'#ef4444',border:'none',color:'#fff',fontSize:'28px',cursor:'pointer',width:'44px',height:'44px',borderRadius:'8px',fontWeight:'bold'}},'✕')),
+        React.createElement('button',{onClick:onClose,style:{background:'#ef4444',border:'none',color:'#fff',fontSize:'28px',cursor:'pointer',width:'44px',height:'44px',borderRadius:'8px',fontWeight:'bold'}},'\u2715')),
       React.createElement('form',{onSubmit:sub,style:{padding:'16px'}},
-        d.staff_name&&React.createElement('div',{style:{background:'#065f46',padding:'8px 12px',borderRadius:'6px',marginBottom:'12px',fontSize:'13px'}},'👤 '+d.staff_name),
-        dupWarn&&React.createElement('div',{style:{background:'#7f1d1d',border:'2px solid #ef4444',color:'#fecaca',padding:'12px',borderRadius:'8px',marginBottom:'12px',fontSize:'14px',fontWeight:'bold'}},'⚠️ '+dupWarn),
-        seqWarn&&React.createElement('div',{style:{background:'#78350f',border:'2px solid #f59e0b',color:'#fef3c7',padding:'12px',borderRadius:'8px',marginBottom:'12px',fontSize:'14px',fontWeight:'bold'}},'⚠️ '+seqWarn),
+        d.staff_name&&React.createElement('div',{style:{background:'#065f46',padding:'8px 12px',borderRadius:'6px',marginBottom:'12px',fontSize:'13px'}},'\ud83d\udc64 '+d.staff_name),
+        dupWarn&&React.createElement('div',{style:{background:'#7f1d1d',border:'2px solid #ef4444',color:'#fecaca',padding:'12px',borderRadius:'8px',marginBottom:'12px',fontSize:'14px',fontWeight:'bold'}},'\u26a0\ufe0f '+dupWarn),
+        seqWarn&&React.createElement('div',{style:{background:'#78350f',border:'2px solid #f59e0b',color:'#fef3c7',padding:'12px',borderRadius:'8px',marginBottom:'12px',fontSize:'14px',fontWeight:'bold'}},'\u26a0\ufe0f '+seqWarn),
         React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}},
           React.createElement('div',null,React.createElement('label',{style:S.lbl},t.cleaner+' *'),
-            React.createElement('input',{type:'text',placeholder:selectedCleaner?selectedCleaner.name:t.searchCleaner,value:cleanerSearch,onChange:e=>{setCleanerSearch(e.target.value);setHighlightIdx(0);if(!e.target.value)setD({...d,cleaner_id:''})},onKeyDown:e=>{if(!cleanerSearch||filteredCleaners.length===0)return;if(e.key==='ArrowDown'){e.preventDefault();setHighlightIdx(i=>(i+1)%filteredCleaners.length)}else if(e.key==='ArrowUp'){e.preventDefault();setHighlightIdx(i=>(i-1+filteredCleaners.length)%filteredCleaners.length)}else if(e.key==='Enter'&&filteredCleaners.length>0){e.preventDefault();setD({...d,cleaner_id:filteredCleaners[highlightIdx].id});setCleanerSearch('')}},style:{...S.inp,fontSize:'16px',padding:'12px',marginBottom:cleanerSearch?'4px':'0'}}),
-            cleanerSearch&&React.createElement('div',{style:{background:'#0f172a',border:'1px solid #475569',borderRadius:'6px',maxHeight:'150px',overflow:'auto'}},filteredCleaners.length>0?filteredCleaners.map((c,idx)=>React.createElement('div',{key:c.id,onClick:function(){setD({...d,cleaner_id:c.id});setCleanerSearch('');},style:{padding:'10px 12px',cursor:'pointer',borderBottom:'1px solid #334155',fontSize:'14px',background:idx===highlightIdx?'#3b82f6':'transparent',color:idx===highlightIdx?'#fff':'#e2e8f0'}},c.name)):React.createElement('div',{style:{padding:'10px 12px',color:'#94a3b8',fontSize:'14px'}},'No matches'))),
-          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.orderNum+' *'),React.createElement('input',{value:d.order_num,onChange:e=>setD({...d,order_num:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}})),
+            React.createElement('input',{type:'text',placeholder:selectedCleaner?selectedCleaner.name:t.searchCleaner,value:cleanerSearch,onChange:e=>{setCleanerSearch(e.target.value);setHighlightIdx(0);if(!e.target.value)setD({...d,cleaner_id:'',customer_address:''})},onKeyDown:e=>{if(!cleanerSearch||filteredCleaners.length===0)return;if(e.key==='ArrowDown'){e.preventDefault();setHighlightIdx(i=>(i+1)%filteredCleaners.length)}else if(e.key==='ArrowUp'){e.preventDefault();setHighlightIdx(i=>(i-1+filteredCleaners.length)%filteredCleaners.length)}else if(e.key==='Enter'&&filteredCleaners.length>0){e.preventDefault();var sel=filteredCleaners[highlightIdx];setD({...d,cleaner_id:sel.id,customer_address:'',bag_color:sel.has_addresses?'Black':d.bag_color});setCleanerSearch('')}},style:{...S.inp,fontSize:'16px',padding:'12px',marginBottom:cleanerSearch?'4px':'0'}}),
+            cleanerSearch&&React.createElement('div',{style:{background:'#0f172a',border:'1px solid #475569',borderRadius:'6px',maxHeight:'150px',overflow:'auto'}},filteredCleaners.length>0?filteredCleaners.map((c,idx)=>React.createElement('div',{key:c.id,onClick:function(){setD({...d,cleaner_id:c.id,customer_address:'',bag_color:c.has_addresses?'Black':d.bag_color});setCleanerSearch('');},style:{padding:'10px 12px',cursor:'pointer',borderBottom:'1px solid #334155',fontSize:'14px',background:idx===highlightIdx?'#3b82f6':'transparent',color:idx===highlightIdx?'#fff':'#e2e8f0'}},c.name+(c.has_addresses?' \ud83c\udfe0':''))):React.createElement('div',{style:{padding:'10px 12px',color:'#94a3b8',fontSize:'14px'}},'No matches'))),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.orderNum+' *'),React.createElement('input',{value:d.order_num,onChange:e=>setD({...d,order_num:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}}))),
+
+        isAddrCleaner&&React.createElement('div',{style:{marginTop:'12px',padding:'12px',background:'rgba(139,92,246,0.1)',border:'1px solid #8b5cf6',borderRadius:'8px'}},
+          React.createElement('label',{style:{...S.lbl,color:'#c4b5fd'}},'\ud83c\udfe0 Customer Address *'),
+          React.createElement('div',{style:{position:'relative'}},
+            React.createElement('input',{type:'text',value:d.customer_address||addrSearch,onChange:function(e){setAddrSearch(e.target.value);setShowAddrDrop(true);setAddrHighlight(0);if(!e.target.value)setD({...d,customer_address:''})},onFocus:function(){setShowAddrDrop(true);setAddrSearch('')},onKeyDown:function(e){if(!showAddrDrop||filteredAddrs.length===0)return;if(e.key==='ArrowDown'){e.preventDefault();setAddrHighlight(function(i){return(i+1)%filteredAddrs.length})}else if(e.key==='ArrowUp'){e.preventDefault();setAddrHighlight(function(i){return(i-1+filteredAddrs.length)%filteredAddrs.length})}else if(e.key==='Enter'&&filteredAddrs.length>0){e.preventDefault();var a=filteredAddrs[addrHighlight];var full=a.address+(a.apt?' Apt '+a.apt:'');setD({...d,customer_address:full});setAddrSearch('');setShowAddrDrop(false)}},placeholder:'Start typing address...',style:{...S.inp,fontSize:'16px',padding:'12px'}}),
+            showAddrDrop&&(addrSearch||!d.customer_address)&&React.createElement('div',{style:{position:'absolute',top:'100%',left:0,right:0,background:'#0f172a',border:'1px solid #475569',borderRadius:'6px',maxHeight:'180px',overflow:'auto',zIndex:20}},
+              filteredAddrs.length>0?filteredAddrs.map(function(a,idx){var full=a.address+(a.apt?' Apt '+a.apt:'');return React.createElement('div',{key:a.id,onClick:function(){setD({...d,customer_address:full});setAddrSearch('');setShowAddrDrop(false)},style:{padding:'10px 12px',cursor:'pointer',borderBottom:'1px solid #334155',fontSize:'13px',background:idx===addrHighlight?'#8b5cf6':'transparent',color:idx===addrHighlight?'#fff':'#e2e8f0'}},full)}):React.createElement('div',{style:{padding:'10px',color:'#94a3b8',fontSize:'13px'}},'No addresses found'))),
+          d.customer_address&&React.createElement('div',{style:{marginTop:'6px',padding:'6px 10px',background:'rgba(139,92,246,0.2)',borderRadius:'4px',color:'#c4b5fd',fontSize:'13px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            React.createElement('span',null,'\ud83d\udccd '+d.customer_address),
+            React.createElement('button',{type:'button',onClick:function(){setD({...d,customer_address:''});setAddrSearch('')},style:{background:'none',border:'none',color:'#f87171',cursor:'pointer',fontSize:'14px'}},'\u2715'))),
+
+        React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginTop:'12px'}},
           React.createElement('div',null,React.createElement('label',{style:S.lbl},t.weight),
             React.createElement('div',{style:{display:'flex',gap:'6px'}},
               React.createElement('input',{type:'number',step:'0.1',value:d.weight,onChange:e=>{var v=e.target.value;setD({...d,weight:v===''?'':parseFloat(v)})},placeholder:t.extrasOnlyHint,style:{...S.inp,fontSize:'18px',padding:'12px',fontWeight:'bold',flex:1,borderColor:d.weight===0?'#8b5cf6':'#475569'}}),
-              React.createElement('button',{type:'button',onClick:function(){setD({...d,weight:d.weight===0?'':0})},style:{padding:'8px 12px',borderRadius:'8px',border:d.weight===0?'2px solid #8b5cf6':'1px solid #475569',background:d.weight===0?'rgba(139,92,246,0.2)':'transparent',color:d.weight===0?'#c4b5fd':'#94a3b8',cursor:'pointer',fontSize:'11px',fontWeight:'bold',whiteSpace:'nowrap'}},d.weight===0?'✓ Extras Only':'Extras Only')),
-            d.weight===0&&React.createElement('div',{style:{color:'#a78bfa',fontSize:'11px',marginTop:'4px',fontWeight:'600'}},'No weight charge — extras pricing only')),
+              React.createElement('button',{type:'button',onClick:function(){setD({...d,weight:d.weight===0?'':0})},style:{padding:'8px 12px',borderRadius:'8px',border:d.weight===0?'2px solid #8b5cf6':'1px solid #475569',background:d.weight===0?'rgba(139,92,246,0.2)':'transparent',color:d.weight===0?'#c4b5fd':'#94a3b8',cursor:'pointer',fontSize:'11px',fontWeight:'bold',whiteSpace:'nowrap'}},d.weight===0?'\u2713 Extras Only':'Extras Only')),
+            d.weight===0&&React.createElement('div',{style:{color:'#a78bfa',fontSize:'11px',marginTop:'4px',fontWeight:'600'}},'No weight charge \u2014 extras pricing only')),
           React.createElement('div',null,React.createElement('label',{style:S.lbl},t.service),React.createElement('select',{value:d.service_type,onChange:e=>setD({...d,service_type:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}},React.createElement('option',{value:'same-day'},t.sameDay),React.createElement('option',{value:'24-hour'},t.hour24))),
           React.createElement('div',null,React.createElement('label',{style:S.lbl},t.pickupDate),React.createElement('input',{type:'date',value:d.pickup_date,onChange:e=>setD({...d,pickup_date:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}})),
-          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.bagColor),React.createElement('select',{value:d.bag_color,onChange:e=>setD({...d,bag_color:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}},COLORS.map(c=>React.createElement('option',{key:c,value:c},lang==='es'?COLOR_ES[c]||c:c))))),
+          !isAddrCleaner?React.createElement('div',null,React.createElement('label',{style:S.lbl},t.bagColor),React.createElement('select',{value:d.bag_color,onChange:e=>setD({...d,bag_color:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}},COLORS.map(c=>React.createElement('option',{key:c,value:c},lang==='es'?COLOR_ES[c]||c:c)))):
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.bagColor),React.createElement('div',{style:{...S.inp,fontSize:'16px',padding:'12px',background:'#0f172a',color:'#94a3b8'}},'Black (auto)'))),
         React.createElement('div',{style:{marginTop:'16px'}},React.createElement('label',{style:S.lbl},t.notes),React.createElement('textarea',{value:d.notes,onChange:e=>setD({...d,notes:e.target.value}),style:{...S.inp,minHeight:'60px',resize:'vertical',fontSize:'16px'}})),
         isAdmin&&React.createElement('div',{style:{marginTop:'16px',padding:'12px',background:'rgba(59,130,246,0.1)',border:'1px solid #3b82f6',borderRadius:'8px'}},
-          React.createElement('label',{style:{...S.lbl,color:'#60a5fa'}},'💲 Price Adjustment (Admin)'),
+          React.createElement('label',{style:{...S.lbl,color:'#60a5fa'}},'\ud83d\udcb2 Price Adjustment (Admin)'),
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
             React.createElement('input',{type:'number',step:'0.01',value:d.price_adjustment,onChange:e=>setD({...d,price_adjustment:parseFloat(e.target.value)||''}),placeholder:'0.00 (+ or -)',style:{...S.inp,fontSize:'16px',padding:'12px',flex:1}}),
             d.price_adjustment&&React.createElement('span',{style:{color:parseFloat(d.price_adjustment)>0?'#4ade80':'#ef4444',fontWeight:'bold',fontSize:'16px'}},parseFloat(d.price_adjustment)>0?'+':'',(parseFloat(d.price_adjustment)||0).toFixed(2)))),
@@ -399,8 +426,7 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
                 React.createElement('span',{style:{fontSize:'18px',fontWeight:'bold',minWidth:'30px',textAlign:'center'}},qty),
                 React.createElement('button',{type:'button',onClick:function(){addOne(ex.id);},style:{width:'32px',height:'32px',borderRadius:'6px',border:'none',background:'#22c55e',color:'white',fontSize:'18px',cursor:'pointer'}},'+')));
             })));
-          })))));
-}
+          })))));}
 
 function ImportModal({cleaners,staffName,onClose,onImport,notify,t}){
   const[file,setFile]=useState(null);const[prev,setPrev]=useState([]);const[imp,setImp]=useState(false);const[res,setRes]=useState(null);
@@ -505,27 +531,33 @@ function Reports({t}){
 }
 
 function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
-  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5});const[showPrices,setShowPrices]=useState(null);
-  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setF({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5})}catch(e){alert(e.message)}};
+  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false});const[showPrices,setShowPrices]=useState(null);
+  const[showAddrs,setShowAddrs]=useState(null);const[addrList,setAddrList]=useState([]);const[newAddr,setNewAddr]=useState('');const[newApt,setNewApt]=useState('');const[editAddr,setEditAddr]=useState(null);
+  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setF({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false})}catch(e){alert(e.message)}};
   const del=async id=>{if(!confirm(t.delete+'?'))return;try{await api.del('/cleaners/'+id);notify('Deleted');await loadData()}catch(e){alert(e.message)}};
+  const loadAddrs=async(cid)=>{try{const a=await api.get('/cleaner-addresses/'+cid);setAddrList(a)}catch(e){setAddrList([])}};
+  const addAddr=async()=>{if(!newAddr.trim()){alert('Enter address');return}try{await api.post('/cleaner-addresses',{cleaner_id:showAddrs.id,address:newAddr.trim(),apt:newApt.trim()});setNewAddr('');setNewApt('');loadAddrs(showAddrs.id);notify('Address added')}catch(e){alert(e.message)}};
+  const delAddr=async(id)=>{if(!confirm('Delete this address?'))return;try{await api.del('/cleaner-addresses/'+id);loadAddrs(showAddrs.id);notify('Deleted')}catch(e){alert(e.message)}};
+  const saveAddr=async()=>{if(!editAddr)return;try{await api.put('/cleaner-addresses/'+editAddr.id,{address:editAddr.address,apt:editAddr.apt});setEditAddr(null);loadAddrs(showAddrs.id);notify('Updated')}catch(e){alert(e.message)}};
 
   return React.createElement('div',null,
-    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5});setShow(true)},style:S.btn},t.addCleaner)),
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false});setShow(true)},style:S.btn},t.addCleaner)),
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
       cleaners.map(c=>React.createElement('div',{key:c.id,style:S.card},
-        React.createElement('div',{style:{fontWeight:'bold',marginBottom:'4px'}},c.name),
+        React.createElement('div',{style:{fontWeight:'bold',marginBottom:'4px'}},c.name,c.has_addresses&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#a78bfa'}},'\ud83c\udfe0 Addresses')),
         React.createElement('div',{style:{fontSize:'24px',color:'#4ade80',fontWeight:'bold'}},fmt$(c.rate)+'/lb'),
         React.createElement('div',{style:{color:'#94a3b8',fontSize:'12px',marginTop:'4px'}},'Min: '+(c.min_weight||10)+' lbs'),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'8px',flexWrap:'wrap'}},
-          React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:c.route==='east'?'#3b82f6':'#f59e0b'}},c.route==='east'?'🗽 East':'🌆 West'),
-          c.congestion_zone&&React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#dc2626'}},'🚗 Congestion $'+parseFloat(c.congestion_rate||5).toFixed(2)+'/day')),
+          React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:c.route==='east'?'#3b82f6':'#f59e0b'}},c.route==='east'?'\ud83d\uddfd East':'\ud83c\udf06 West'),
+          c.congestion_zone&&React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#dc2626'}},'\ud83d\ude97 Congestion $'+parseFloat(c.congestion_rate||5).toFixed(2)+'/day')),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',flexWrap:'wrap'}},
-          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5});setShow(true)},style:S.edit},t.edit),
+          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false});setShow(true)},style:S.edit},t.edit),
           React.createElement('button',{onClick:()=>setShowPrices(c),style:{...S.edit,borderColor:'#f59e0b',color:'#f59e0b'}},t.customPrices),
+          c.has_addresses&&React.createElement('button',{onClick:()=>{setShowAddrs(c);loadAddrs(c.id)},style:{...S.edit,borderColor:'#8b5cf6',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),
           React.createElement('button',{onClick:()=>del(c.id),style:S.del},t.delete))))),
     show&&React.createElement('div',{style:S.modal},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'400px',border:'1px solid #334155'}},
-        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},React.createElement('h3',{style:{margin:0}},(ed?t.edit:t.add)+' '+t.cleaners),React.createElement('button',{onClick:()=>setShow(false),style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'×')),
+        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},React.createElement('h3',{style:{margin:0}},(ed?t.edit:t.add)+' '+t.cleaners),React.createElement('button',{onClick:()=>setShow(false),style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'\u00d7')),
         React.createElement('form',{onSubmit:save,style:{padding:'16px'}},
           React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.name+' *'),React.createElement('input',{value:f.name,onChange:e=>setF({...f,name:e.target.value}),style:S.inp})),
           React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.rateLb+' *'),React.createElement('input',{type:'number',step:'0.01',value:f.rate,onChange:e=>setF({...f,rate:parseFloat(e.target.value)}),style:S.inp})),
@@ -534,10 +566,41 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
           React.createElement('div',{style:{marginBottom:'12px',padding:'12px',background:'#0f172a',borderRadius:'8px',border:'1px solid #334155'}},
             React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'8px'}},
               React.createElement('input',{type:'checkbox',id:'congestion',checked:f.congestion_zone,onChange:e=>setF({...f,congestion_zone:e.target.checked}),style:{width:'20px',height:'20px'}}),
-              React.createElement('label',{htmlFor:'congestion',style:{color:'#f87171',fontWeight:'bold',cursor:'pointer'}},'🚗 Congestion Zone')),
+              React.createElement('label',{htmlFor:'congestion',style:{color:'#f87171',fontWeight:'bold',cursor:'pointer'}},'\ud83d\ude97 Congestion Zone')),
             f.congestion_zone&&React.createElement('div',{style:{marginTop:'8px'}},React.createElement('label',{style:S.lbl},'Rate per Pickup Day ($)'),React.createElement('input',{type:'number',step:'0.01',value:f.congestion_rate,onChange:e=>setF({...f,congestion_rate:parseFloat(e.target.value)||5}),style:S.inp}))),
+          React.createElement('div',{style:{marginBottom:'12px',padding:'12px',background:'#0f172a',borderRadius:'8px',border:'1px solid #334155'}},
+            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
+              React.createElement('input',{type:'checkbox',id:'hasAddr',checked:f.has_addresses,onChange:e=>setF({...f,has_addresses:e.target.checked}),style:{width:'20px',height:'20px'}}),
+              React.createElement('label',{htmlFor:'hasAddr',style:{color:'#a78bfa',fontWeight:'bold',cursor:'pointer'}},'\ud83c\udfe0 Individual Addresses (Doorman/Residential)')),
+            f.has_addresses&&React.createElement('div',{style:{marginTop:'6px',color:'#94a3b8',fontSize:'11px'}},'Staff will pick customer address from a list when entering orders. Bag color auto-set to Black.')),
           React.createElement('div',{style:{display:'flex',gap:'12px',justifyContent:'flex-end'}},React.createElement('button',{type:'button',onClick:()=>setShow(false),style:S.cancel},t.cancel),React.createElement('button',{type:'submit',style:S.btn},ed?t.update:t.add))))),
-    showPrices&&React.createElement(CleanerPricesModal,{cleaner:showPrices,extras,cleanerExtras,onClose:()=>setShowPrices(null),onSave:loadData,notify,t}));
+    showPrices&&React.createElement(CleanerPricesModal,{cleaner:showPrices,extras,cleanerExtras,onClose:()=>setShowPrices(null),onSave:loadData,notify,t}),
+    showAddrs&&React.createElement('div',{style:S.modal},
+      React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'550px',maxHeight:'90vh',overflow:'auto',border:'1px solid #8b5cf6'}},
+        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},
+          React.createElement('h3',{style:{margin:0,color:'#c4b5fd'}},'\ud83c\udfe0 Addresses for '+showAddrs.name),
+          React.createElement('button',{onClick:()=>{setShowAddrs(null);setEditAddr(null)},style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'\u00d7')),
+        React.createElement('div',{style:{padding:'16px'}},
+          React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px'}},
+            React.createElement('input',{value:newAddr,onChange:e=>setNewAddr(e.target.value),placeholder:'Address (e.g. 14 West 103 St)',style:{...S.inp,flex:2},onKeyPress:e=>e.key==='Enter'&&(e.preventDefault(),addAddr())}),
+            React.createElement('input',{value:newApt,onChange:e=>setNewApt(e.target.value),placeholder:'Apt #',style:{...S.inp,flex:1},onKeyPress:e=>e.key==='Enter'&&(e.preventDefault(),addAddr())}),
+            React.createElement('button',{type:'button',onClick:addAddr,style:{...S.btn,whiteSpace:'nowrap'}},'+Add')),
+          React.createElement('div',{style:{color:'#94a3b8',fontSize:'12px',marginBottom:'12px'}},addrList.length+' addresses'),
+          React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'4px'}},
+            addrList.map(function(a){
+              if(editAddr&&editAddr.id===a.id){
+                return React.createElement('div',{key:a.id,style:{display:'flex',gap:'6px',alignItems:'center',padding:'6px 8px',background:'rgba(139,92,246,0.15)',borderRadius:'6px',border:'1px solid #8b5cf6'}},
+                  React.createElement('input',{value:editAddr.address,onChange:function(e){setEditAddr({...editAddr,address:e.target.value})},style:{...S.inp,flex:2,padding:'6px 8px',fontSize:'13px'}}),
+                  React.createElement('input',{value:editAddr.apt||'',onChange:function(e){setEditAddr({...editAddr,apt:e.target.value})},placeholder:'Apt',style:{...S.inp,flex:1,padding:'6px 8px',fontSize:'13px'}}),
+                  React.createElement('button',{type:'button',onClick:saveAddr,style:{...S.btn,padding:'4px 10px',fontSize:'11px'}},'\u2713'),
+                  React.createElement('button',{type:'button',onClick:function(){setEditAddr(null)},style:{...S.cancel,padding:'4px 10px',fontSize:'11px'}},'\u2715'));
+              }
+              return React.createElement('div',{key:a.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',background:'rgba(255,255,255,0.03)',borderRadius:'6px',borderLeft:'3px solid #8b5cf6'}},
+                React.createElement('span',{style:{fontSize:'13px'}},a.address+(a.apt?' Apt '+a.apt:'')),
+                React.createElement('div',{style:{display:'flex',gap:'4px'}},
+                  React.createElement('button',{type:'button',onClick:function(){setEditAddr({...a})},style:{background:'none',border:'1px solid #475569',color:'#60a5fa',padding:'2px 8px',borderRadius:'4px',cursor:'pointer',fontSize:'11px'}},'\u270f'),
+                  React.createElement('button',{type:'button',onClick:function(){delAddr(a.id)},style:{background:'none',border:'1px solid #ef4444',color:'#fca5a5',padding:'2px 8px',borderRadius:'4px',cursor:'pointer',fontSize:'11px'}},'\u2715')));
+            }))))));
 }
 
 function CleanerPricesModal({cleaner,extras,cleanerExtras,onClose,onSave,notify,t}){
@@ -963,6 +1026,24 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
       onSave:saveOrder,onClose:function(){setEditOrder(null)},lang:'en',t:t}));
 }
 
+function StaffNameManager({notify}){
+  const[names,setNames]=useState([]);const[newName,setNewName]=useState('');const[ld,setLd]=useState(false);
+  const load=async()=>{try{const sn=await api.get('/staff-names');setNames(sn)}catch(e){}};
+  useEffect(()=>{load()},[]);
+  const add=async()=>{if(!newName.trim())return;try{await api.post('/staff-names',{name:newName.trim()});setNewName('');load();notify('Added')}catch(e){alert(e.message)}};
+  const del=async(id,name)=>{if(!confirm('Delete '+name+'?'))return;try{await api.del('/staff-names/'+id);load();notify('Deleted')}catch(e){alert(e.message)}};
+  return React.createElement('div',null,
+    React.createElement('h3',{style:{margin:'0 0 12px 0',color:'#a5b4fc'}},'\ud83d\udc64 Staff Names'),
+    React.createElement('p',{style:{color:'#94a3b8',fontSize:'12px',marginBottom:'12px'}},'Staff who enter orders will select their name from this list. Anyone not listed can use "Other".'),
+    React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'12px'}},
+      React.createElement('input',{value:newName,onChange:e=>setNewName(e.target.value),placeholder:'New staff name...',style:{...S.inp,flex:1},onKeyPress:e=>e.key==='Enter'&&add()}),
+      React.createElement('button',{type:'button',onClick:add,style:{...S.btn,padding:'10px 20px'}},'Add')),
+    React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
+      names.map(s=>React.createElement('div',{key:s.id,style:{display:'flex',alignItems:'center',gap:'6px',background:'#1e293b',padding:'8px 12px',borderRadius:'6px',border:'1px solid #475569'}},
+        React.createElement('span',null,s.name),
+        React.createElement('button',{onClick:()=>del(s.id,s.name),style:{background:'#ef4444',border:'none',color:'#fff',width:'20px',height:'20px',borderRadius:'4px',cursor:'pointer',fontSize:'12px',lineHeight:'1'}},'\u2715')))));
+}
+
 function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t}){
   const[f,setF]=useState({...settings,companyName:settings.companyName||'WEBSTER AVE LAUNDROMAT',companyAddress:settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',storePhone:settings.storePhone||'929-263-1560',managerPhone:settings.managerPhone||'347-632-2024'});
   const[sav,setSav]=useState(false);const[clr,setClr]=useState(false);const[conf,setConf]=useState('');const[exp,setExp]=useState(false);
@@ -988,6 +1069,8 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
           React.createElement('div',null,React.createElement('label',{style:S.lbl},'Store Phone'),React.createElement('input',{value:f.storePhone,onChange:e=>setF({...f,storePhone:e.target.value}),style:S.inp})),
           React.createElement('div',null,React.createElement('label',{style:S.lbl},'Manager Phone'),React.createElement('input',{value:f.managerPhone,onChange:e=>setF({...f,managerPhone:e.target.value}),style:S.inp})))),
       React.createElement('button',{type:'submit',disabled:sav,style:{...S.btn,width:'100%',opacity:sav?0.6:1,marginTop:'16px'}},sav?'...':t.saveSettings)),
+    React.createElement('div',{style:{...S.card,maxWidth:'500px',marginBottom:'20px',border:'1px solid #6366f1'}},
+      React.createElement(StaffNameManager,{notify})),
     React.createElement('div',{style:{...S.card,maxWidth:'500px',marginBottom:'20px',border:'1px solid #059669'}},
       React.createElement('h3',{style:{color:'#4ade80',marginBottom:'12px'}},'💾 Database Backup'),
       React.createElement('p',{style:{color:'#94a3b8',fontSize:'14px',marginBottom:'16px'}},'Download all data (orders, cleaners, extras, payments) as Excel file.'),
