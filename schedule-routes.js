@@ -250,7 +250,7 @@ module.exports = function(pool, authenticate, adminOnly) {
   router.get('/users', authenticate, adminOnly, async (req, res) => {
     try {
       const { rows } = await pool.query(
-        'SELECT id, username, role, plain_password, created_at FROM users ORDER BY username'
+        'SELECT id, username, role, plain_password, permissions, created_at FROM users ORDER BY username'
       );
       res.json(rows);
     } catch (err) {
@@ -262,14 +262,15 @@ module.exports = function(pool, authenticate, adminOnly) {
   // Create user (admin only)
   router.post('/users', authenticate, adminOnly, async (req, res) => {
     try {
-      const { username, password, role, driver_id } = req.body;
+      const { username, password, role, driver_id, permissions } = req.body;
       if (!username || !password) return res.status(400).json({ error: 'username and password required' });
       const validRoles = ['admin', 'attendant', 'driver'];
       const userRole = validRoles.includes(role) ? role : 'attendant';
       const hash = await bcrypt.hash(password, 10);
+      const userPerms = JSON.stringify(permissions || ['orders']);
       const { rows } = await pool.query(
-        'INSERT INTO users (username, password, role, plain_password) VALUES ($1, $2, $3, $4) RETURNING id, username, role, created_at',
-        [username.toLowerCase(), hash, userRole, password]
+        'INSERT INTO users (username, password, role, plain_password, permissions) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, role, permissions, created_at',
+        [username.toLowerCase(), hash, userRole, password, userPerms]
       );
       // Link to driver profile if driver_id provided
       if (userRole === 'driver' && driver_id) {
@@ -286,39 +287,40 @@ module.exports = function(pool, authenticate, adminOnly) {
   // Update user (admin only)
   router.put('/users/:id', authenticate, adminOnly, async (req, res) => {
     try {
-      const { username, password, role, driver_id } = req.body;
+      const { username, password, role, driver_id, permissions } = req.body;
       const validRoles = ['admin', 'attendant', 'driver'];
       const userId = req.params.id;
+      const userPerms = permissions ? JSON.stringify(permissions) : undefined;
+
+      let rows;
       if (password) {
         const hash = await bcrypt.hash(password, 10);
-        const { rows } = await pool.query(
-          'UPDATE users SET username = COALESCE($1, username), password = $2, role = COALESCE($3, role), plain_password = $4 WHERE id = $5 RETURNING id, username, role, created_at',
-          [username ? username.toLowerCase() : undefined, hash, validRoles.includes(role) ? role : undefined, password, userId]
+        const result = await pool.query(
+          `UPDATE users SET username = COALESCE($1, username), password = $2, role = COALESCE($3, role), 
+           plain_password = $4, permissions = COALESCE($5::jsonb, permissions) WHERE id = $6 
+           RETURNING id, username, role, permissions, created_at`,
+          [username ? username.toLowerCase() : undefined, hash, validRoles.includes(role) ? role : undefined, password, userPerms || null, userId]
         );
-        if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
-        // Update driver linking
-        if (role === 'driver' && driver_id) {
-          await pool.query('UPDATE drivers SET user_id = NULL WHERE user_id = $1', [userId]);
-          await pool.query('UPDATE drivers SET user_id = $1 WHERE id = $2', [userId, driver_id]);
-        } else if (role !== 'driver') {
-          await pool.query('UPDATE drivers SET user_id = NULL WHERE user_id = $1', [userId]);
-        }
-        res.json(rows[0]);
+        rows = result.rows;
       } else {
-        const { rows } = await pool.query(
-          'UPDATE users SET username = COALESCE($1, username), role = COALESCE($2, role) WHERE id = $3 RETURNING id, username, role, created_at',
-          [username ? username.toLowerCase() : undefined, validRoles.includes(role) ? role : undefined, userId]
+        const result = await pool.query(
+          `UPDATE users SET username = COALESCE($1, username), role = COALESCE($2, role),
+           permissions = COALESCE($3::jsonb, permissions) WHERE id = $4 
+           RETURNING id, username, role, permissions, created_at`,
+          [username ? username.toLowerCase() : undefined, validRoles.includes(role) ? role : undefined, userPerms || null, userId]
         );
-        if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
-        // Update driver linking
-        if (role === 'driver' && driver_id) {
-          await pool.query('UPDATE drivers SET user_id = NULL WHERE user_id = $1', [userId]);
-          await pool.query('UPDATE drivers SET user_id = $1 WHERE id = $2', [userId, driver_id]);
-        } else if (role !== 'driver') {
-          await pool.query('UPDATE drivers SET user_id = NULL WHERE user_id = $1', [userId]);
-        }
-        res.json(rows[0]);
+        rows = result.rows;
       }
+
+      if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+      // Update driver linking
+      if (role === 'driver' && driver_id) {
+        await pool.query('UPDATE drivers SET user_id = NULL WHERE user_id = $1', [userId]);
+        await pool.query('UPDATE drivers SET user_id = $1 WHERE id = $2', [userId, driver_id]);
+      } else if (role !== 'driver') {
+        await pool.query('UPDATE drivers SET user_id = NULL WHERE user_id = $1', [userId]);
+      }
+      res.json(rows[0]);
     } catch (err) {
       if (err.code === '23505') return res.status(400).json({ error: 'Username already exists' });
       console.error('Update user error:', err);

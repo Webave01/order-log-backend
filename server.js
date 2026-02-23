@@ -38,6 +38,19 @@ const adminOnly = (req, res, next) => {
   next();
 };
 
+// Permission-based access: admin always allowed, others checked against permissions array
+const requirePerm = (perm) => async (req, res, next) => {
+  if (req.user.role === 'admin') return next();
+  try {
+    const result = await pool.query('SELECT permissions FROM users WHERE id = $1', [req.user.id]);
+    const perms = result.rows[0]?.permissions || [];
+    if (perms.includes(perm)) return next();
+    return res.status(403).json({ error: 'Access denied - missing permission: ' + perm });
+  } catch(e) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+};
+
 async function initDB() {
   const client = await pool.connect();
   try {
@@ -331,6 +344,8 @@ async function initDB() {
     `); } catch(e) {}
     // Migration: add plain_password to users for admin visibility
     try { await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password VARCHAR(255)"); } catch(e) {}
+    // Migration: add permissions JSONB to users for granular access control
+    try { await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb"); } catch(e) {}
 
     // =============================================
     // END DRIVER SCHEDULING TABLES
@@ -374,7 +389,13 @@ app.post('/api/login', async (req, res) => {
       const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [user.id]);
       if (dResult.rows.length > 0) driver_id = dResult.rows[0].id;
     }
-    res.json({ token, user: { id: user.id, username: user.username, role: user.role, driver_id } });
+    // Build permissions: admin=all, driver=schedule, others=stored permissions
+    const ALL_PERMS = ['orders','cleaners','extras','invoices','payments','reports','errors','schedule','settings'];
+    let perms;
+    if (user.role === 'admin') perms = ALL_PERMS;
+    else if (user.role === 'driver') perms = ['schedule'];
+    else perms = user.permissions || ['orders'];
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role, driver_id, permissions: perms } });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -383,12 +404,19 @@ app.post('/api/login', async (req, res) => {
 
 app.get('/api/me', authenticate, async (req, res) => {
   try {
+    const userResult = await pool.query('SELECT id, username, role, permissions FROM users WHERE id = $1', [req.user.id]);
+    const user = userResult.rows[0] || req.user;
     let driver_id = null;
-    if (req.user.role === 'driver') {
-      const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [req.user.id]);
+    if (user.role === 'driver') {
+      const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [user.id]);
       if (dResult.rows.length > 0) driver_id = dResult.rows[0].id;
     }
-    res.json({ user: { ...req.user, driver_id } });
+    const ALL_PERMS = ['orders','cleaners','extras','invoices','payments','reports','errors','schedule','settings'];
+    let perms;
+    if (user.role === 'admin') perms = ALL_PERMS;
+    else if (user.role === 'driver') perms = ['schedule'];
+    else perms = user.permissions || ['orders'];
+    res.json({ user: { id: user.id, username: user.username, role: user.role, driver_id, permissions: perms } });
   } catch(e) {
     res.json({ user: req.user });
   }
@@ -505,7 +533,7 @@ app.delete('/api/orders/clear-all', authenticate, adminOnly, async (req, res) =>
   }
 });
 
-app.get('/api/orders/export', authenticate, adminOnly, async (req, res) => {
+app.get('/api/orders/export', authenticate, requirePerm('orders'), async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT o.*, c.name as cleaner_name, c.rate as rate_per_lb, c.route 
@@ -550,7 +578,7 @@ app.get('/api/cleaners', authenticate, async (req, res) => {
   }
 });
 
-app.post('/api/cleaners', authenticate, adminOnly, async (req, res) => {
+app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { name, address, rate, route, min_weight, congestion_zone, congestion_rate } = req.body;
   try {
     const result = await pool.query(
@@ -563,7 +591,7 @@ app.post('/api/cleaners', authenticate, adminOnly, async (req, res) => {
   }
 });
 
-app.put('/api/cleaners/:id', authenticate, adminOnly, async (req, res) => {
+app.put('/api/cleaners/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { id } = req.params;
   const { name, address, rate, route, min_weight, congestion_zone, congestion_rate } = req.body;
   try {
@@ -578,7 +606,7 @@ app.put('/api/cleaners/:id', authenticate, adminOnly, async (req, res) => {
   }
 });
 
-app.delete('/api/cleaners/:id', authenticate, adminOnly, async (req, res) => {
+app.delete('/api/cleaners/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
   try {
     const orderCheck = await pool.query('SELECT COUNT(*) FROM orders WHERE cleaner_id = $1', [req.params.id]);
     if (parseInt(orderCheck.rows[0].count) > 0) return res.status(400).json({ error: 'Cannot delete cleaner with existing orders' });
@@ -609,7 +637,7 @@ app.get('/api/cleaners/:cleaner_id/extras', authenticate, async (req, res) => {
   }
 });
 
-app.post('/api/cleaners/:cleaner_id/extras', authenticate, adminOnly, async (req, res) => {
+app.post('/api/cleaners/:cleaner_id/extras', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { extra_id, custom_price } = req.body;
   try {
     const result = await pool.query(
@@ -622,7 +650,7 @@ app.post('/api/cleaners/:cleaner_id/extras', authenticate, adminOnly, async (req
   }
 });
 
-app.delete('/api/cleaners/:cleaner_id/extras/:extra_id', authenticate, adminOnly, async (req, res) => {
+app.delete('/api/cleaners/:cleaner_id/extras/:extra_id', authenticate, requirePerm('cleaners'), async (req, res) => {
   try {
     await pool.query('DELETE FROM cleaner_extras WHERE cleaner_id = $1 AND extra_id = $2', [req.params.cleaner_id, req.params.extra_id]);
     res.json({ success: true });
@@ -631,7 +659,7 @@ app.delete('/api/cleaners/:cleaner_id/extras/:extra_id', authenticate, adminOnly
   }
 });
 
-app.post('/api/cleaner-extras', authenticate, adminOnly, async (req, res) => {
+app.post('/api/cleaner-extras', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { cleaner_id, extra_id, custom_price } = req.body;
   try {
     const result = await pool.query(
@@ -644,7 +672,7 @@ app.post('/api/cleaner-extras', authenticate, adminOnly, async (req, res) => {
   }
 });
 
-app.delete('/api/cleaner-extras/:cleaner_id/:extra_id', authenticate, adminOnly, async (req, res) => {
+app.delete('/api/cleaner-extras/:cleaner_id/:extra_id', authenticate, requirePerm('cleaners'), async (req, res) => {
   try {
     await pool.query('DELETE FROM cleaner_extras WHERE cleaner_id = $1 AND extra_id = $2', [req.params.cleaner_id, req.params.extra_id]);
     res.json({ success: true });
@@ -663,7 +691,7 @@ app.get('/api/extras', authenticate, async (req, res) => {
   }
 });
 
-app.post('/api/extras', authenticate, adminOnly, async (req, res) => {
+app.post('/api/extras', authenticate, requirePerm('extras'), async (req, res) => {
   const { name, price, category } = req.body;
   try {
     const result = await pool.query('INSERT INTO extras (name, price, category) VALUES ($1, $2, $3) RETURNING *', [name, price, category || 'Other']);
@@ -673,7 +701,7 @@ app.post('/api/extras', authenticate, adminOnly, async (req, res) => {
   }
 });
 
-app.put('/api/extras/:id', authenticate, adminOnly, async (req, res) => {
+app.put('/api/extras/:id', authenticate, requirePerm('extras'), async (req, res) => {
   const { name, price, category } = req.body;
   try {
     const result = await pool.query('UPDATE extras SET name=$1, price=$2, category=$3 WHERE id=$4 RETURNING *', [name, price, category, req.params.id]);
@@ -684,7 +712,7 @@ app.put('/api/extras/:id', authenticate, adminOnly, async (req, res) => {
   }
 });
 
-app.delete('/api/extras/:id', authenticate, adminOnly, async (req, res) => {
+app.delete('/api/extras/:id', authenticate, requirePerm('extras'), async (req, res) => {
   try {
     await pool.query('DELETE FROM extras WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -728,7 +756,7 @@ app.put('/api/settings', authenticate, adminOnly, async (req, res) => {
 });
 
 // Reports routes
-app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
+app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (req, res) => {
   const { cleaner_id, start_date, end_date } = req.query;
   if (!cleaner_id || !start_date || !end_date) return res.status(400).json({ error: 'cleaner_id, start_date, and end_date required' });
 
@@ -736,11 +764,22 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
     const cleanerResult = await pool.query('SELECT * FROM cleaners WHERE id = $1', [cleaner_id]);
     const cleaner = cleanerResult.rows[0];
     
+    // If end_date is a Saturday, include following Sunday's orders in this week's invoice
+    // (Sunday orders are data entry mistakes and belong to the prior Mon-Sat week)
+    const endDate = new Date(end_date + 'T12:00:00');
+    const endDay = endDate.getDay(); // 0=Sun,6=Sat
+    let adjustedEnd = end_date;
+    if (endDay === 6) { // Saturday - include Sunday
+      const sun = new Date(endDate);
+      sun.setDate(sun.getDate() + 1);
+      adjustedEnd = sun.toISOString().split('T')[0];
+    }
+
     const ordersResult = await pool.query(
       `SELECT o.*, c.name as cleaner_name, c.rate as cleaner_rate, c.min_weight, c.congestion_zone, c.congestion_rate
        FROM orders o JOIN cleaners c ON o.cleaner_id = c.id 
        WHERE o.cleaner_id = $1 AND o.pickup_date >= $2 AND o.pickup_date <= $3 ORDER BY o.pickup_date, o.order_num`,
-      [cleaner_id, start_date, end_date]
+      [cleaner_id, start_date, adjustedEnd]
     );
 
     const extrasResult = await pool.query('SELECT * FROM extras');
@@ -820,7 +859,7 @@ app.get('/api/reports/invoice', authenticate, adminOnly, async (req, res) => {
   }
 });
 
-app.get('/api/reports/invoices-all', authenticate, adminOnly, async (req, res) => {
+app.get('/api/reports/invoices-all', authenticate, requirePerm('invoices'), async (req, res) => {
   const { start_date, end_date } = req.query;
   if (!start_date || !end_date) return res.status(400).json({ error: 'start_date and end_date required' });
 
@@ -843,10 +882,20 @@ app.get('/api/reports/invoices-all', authenticate, adminOnly, async (req, res) =
 
     const invoices = [];
 
+    // If end_date is Saturday, include following Sunday (Sunday orders belong to prior week)
+    const endDate2 = new Date(end_date + 'T12:00:00');
+    const endDay2 = endDate2.getDay();
+    let adjustedEnd2 = end_date;
+    if (endDay2 === 6) {
+      const sun = new Date(endDate2);
+      sun.setDate(sun.getDate() + 1);
+      adjustedEnd2 = sun.toISOString().split('T')[0];
+    }
+
     for (const cleaner of cleanersResult.rows) {
       const ordersResult = await pool.query(
         `SELECT * FROM orders WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 ORDER BY pickup_date, order_num`,
-        [cleaner.id, start_date, end_date]
+        [cleaner.id, start_date, adjustedEnd2]
       );
 
       if (ordersResult.rows.length === 0) continue;
@@ -911,7 +960,7 @@ app.get('/api/reports/invoices-all', authenticate, adminOnly, async (req, res) =
   }
 });
 
-app.get('/api/reports/daily', authenticate, adminOnly, async (req, res) => {
+app.get('/api/reports/daily', authenticate, requirePerm('reports'), async (req, res) => {
   const { start_date, end_date } = req.query;
   try {
     const result = await pool.query(`
@@ -926,7 +975,7 @@ app.get('/api/reports/daily', authenticate, adminOnly, async (req, res) => {
   }
 });
 
-app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) => {
+app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async (req, res) => {
   const { start_date, end_date } = req.query;
   try {
     const cleaners = await pool.query('SELECT * FROM cleaners');
@@ -1034,7 +1083,7 @@ app.get('/api/reports/daily-stats', authenticate, adminOnly, async (req, res) =>
 });
 
 // Invoice tracking routes
-app.get('/api/invoice-tracking', authenticate, adminOnly, async (req, res) => {
+app.get('/api/invoice-tracking', authenticate, requirePerm('invoices'), async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT it.*, c.name as cleaner_name, c.route 
@@ -1047,7 +1096,7 @@ app.get('/api/invoice-tracking', authenticate, adminOnly, async (req, res) => {
   }
 });
 
-app.get('/api/invoice-tracking/summary', authenticate, adminOnly, async (req, res) => {
+app.get('/api/invoice-tracking/summary', authenticate, requirePerm('invoices'), async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT c.name as cleaner_name, c.route,
@@ -1067,7 +1116,7 @@ app.get('/api/invoice-tracking/summary', authenticate, adminOnly, async (req, re
   }
 });
 
-app.post('/api/invoice-tracking/generate-week', authenticate, adminOnly, async (req, res) => {
+app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoices'), async (req, res) => {
   const { week_start, week_end } = req.body;
   try {
     const cleaners = await pool.query('SELECT * FROM cleaners');
@@ -1132,7 +1181,7 @@ app.post('/api/invoice-tracking/generate-week', authenticate, adminOnly, async (
   }
 });
 
-app.put('/api/invoice-tracking/:id', authenticate, adminOnly, async (req, res) => {
+app.put('/api/invoice-tracking/:id', authenticate, requirePerm('invoices'), async (req, res) => {
   const { amount_paid, paid_date, status, notes } = req.body;
   try {
     const result = await pool.query(
@@ -1145,7 +1194,7 @@ app.put('/api/invoice-tracking/:id', authenticate, adminOnly, async (req, res) =
   }
 });
 
-app.delete('/api/invoice-tracking/:id', authenticate, adminOnly, async (req, res) => {
+app.delete('/api/invoice-tracking/:id', authenticate, requirePerm('invoices'), async (req, res) => {
   try {
     await pool.query('DELETE FROM invoice_tracking WHERE id = $1', [req.params.id]);
     res.json({ success: true });
