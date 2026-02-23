@@ -351,6 +351,56 @@ async function initDB() {
     try { await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password VARCHAR(255)"); } catch(e) {}
     // Migration: add permissions JSONB to users for granular access control
     try { await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb"); } catch(e) {}
+    // Migration: add has_addresses flag to cleaners (for doorman/individual address customers)
+    try { await client.query("ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS has_addresses BOOLEAN DEFAULT false"); } catch(e) {}
+    // Migration: add customer_address to orders
+    try { await client.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_address TEXT"); } catch(e) {}
+    // Create cleaner_addresses table
+    try { await client.query(`
+      CREATE TABLE IF NOT EXISTS cleaner_addresses (
+        id SERIAL PRIMARY KEY,
+        cleaner_id INTEGER NOT NULL REFERENCES cleaners(id) ON DELETE CASCADE,
+        address TEXT NOT NULL,
+        apt VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `); } catch(e) {}
+
+    // Seed: enable has_addresses on Laundry Day and add default addresses
+    try {
+      const ldCheck = await client.query("SELECT id FROM cleaners WHERE LOWER(name) LIKE '%laundry day%' AND has_addresses = false");
+      if (ldCheck.rows.length > 0) {
+        const ldId = ldCheck.rows[0].id;
+        await client.query("UPDATE cleaners SET has_addresses = true WHERE id = $1", [ldId]);
+        const addrCheck = await client.query("SELECT COUNT(*) FROM cleaner_addresses WHERE cleaner_id = $1", [ldId]);
+        if (parseInt(addrCheck.rows[0].count) === 0) {
+          const addrs = [
+            '214 West 102','14 West 103rd','121 East 97th','309 East 61st','71 West 12th',
+            '101 Clinton Street','96 5th Ave','525 East 13th Street','1073 First Ave','185 Avenue C',
+            '311 East 25th','234 Mulberry Street','190 West 10th','257 East 61st','8 Jones Street',
+            '226 East 36th','219 East 69th','174 Thompson','165 East 35','145 East 16th',
+            '228 East 36th','42 Clinton','93 Clinton','712 9th Ave','309 East 9th',
+            '145 4th Ave','178 Thompson','176 Thompson','3 Clinton St','162 East 55th Street',
+            '145 West 55th','161 East 55th','157 East 57th','340 East 53rd','25 Thompson St',
+            '234 West 13th','137 East 38th','345 East 65th','101 West 25th','141 West 80th St',
+            '219 East 88th','222 East 85th','320 East 93rd St','205 West 80th','165 East 87th',
+            '240 East 82','346 East 76th','330 East 90th','43 East 74th','328 East 93rd',
+            '188 East 93rd','163 East 92','332 East 93rd','212 East 85th St','415 East 73rd',
+            '55 East 95th','320 East 73rd','304 East 90th','1654 3rd Ave','226 East 87th',
+            '120 West 86th','400 East 89th','1435 1st Ave','209 West 80th','232 East 74th',
+            '207 West 80th','211 West 80th','265 East 78th','318 East 93rd','106 East 81st',
+            '428 East 89th','315 East 84th','54 West 106th','55 West 105th','4 West 103rd',
+            '77 Christopher St','234 East 14th St','101 Thompson','392 East 10th','234 East 52nd',
+            '300 East 49th','337 East 49th Street','91 Clinton','137 Sullivan','86 East 4th',
+            '1069 First Ave','222 East 51st','61 East 66th'
+          ];
+          for (const addr of addrs) {
+            await client.query("INSERT INTO cleaner_addresses (cleaner_id, address) VALUES ($1, $2)", [ldId, addr]);
+          }
+          console.log('Seeded ' + addrs.length + ' addresses for Laundry Day');
+        }
+      }
+    } catch(e) { console.error('Laundry Day seed error:', e.message); }
 
     // =============================================
     // END DRIVER SCHEDULING TABLES
@@ -480,12 +530,12 @@ app.get('/api/orders', authenticate, async (req, res) => {
 });
 
 app.post('/api/orders', authenticate, async (req, res) => {
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-      [order_num, cleaner_id, weight || 0, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes, staff_name, price_adjustment || 0]
+      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      [order_num, cleaner_id, weight || 0, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes, staff_name, price_adjustment || 0, customer_address || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -511,11 +561,11 @@ app.post('/api/orders/import', authenticate, async (req, res) => {
 
 app.put('/api/orders/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, updated_at=CURRENT_TIMESTAMP WHERE id=$11 RETURNING *`,
-      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, id]
+      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, customer_address=$11, updated_at=CURRENT_TIMESTAMP WHERE id=$12 RETURNING *`,
+      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, customer_address || null, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     res.json(result.rows[0]);
@@ -590,11 +640,11 @@ app.get('/api/cleaners', authenticate, async (req, res) => {
 });
 
 app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00]
+      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, has_addresses || false]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -604,11 +654,11 @@ app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res
 
 app.put('/api/cleaners/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { id } = req.params;
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses } = req.body;
   try {
     const result = await pool.query(
-      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7 WHERE id=$8 RETURNING *',
-      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, id]
+      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, has_addresses=$8 WHERE id=$9 RETURNING *',
+      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Cleaner not found' });
     res.json(result.rows[0]);
@@ -721,6 +771,52 @@ app.delete('/api/staff-names/:id', authenticate, adminOnly, async (req, res) => 
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Cleaner Addresses routes
+app.get('/api/cleaner-addresses/:cleaner_id', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM cleaner_addresses WHERE cleaner_id = $1 ORDER BY address', [req.params.cleaner_id]);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/cleaner-addresses', authenticate, requirePerm('cleaners'), async (req, res) => {
+  const { cleaner_id, address, apt } = req.body;
+  if (!cleaner_id || !address) return res.status(400).json({ error: 'cleaner_id and address required' });
+  try {
+    const result = await pool.query('INSERT INTO cleaner_addresses (cleaner_id, address, apt) VALUES ($1, $2, $3) RETURNING *', [cleaner_id, address.trim(), (apt||'').trim()]);
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/cleaner-addresses/bulk', authenticate, requirePerm('cleaners'), async (req, res) => {
+  const { cleaner_id, addresses } = req.body;
+  if (!cleaner_id || !addresses || !addresses.length) return res.status(400).json({ error: 'cleaner_id and addresses required' });
+  try {
+    const added = [];
+    for (const a of addresses) {
+      const result = await pool.query('INSERT INTO cleaner_addresses (cleaner_id, address, apt) VALUES ($1, $2, $3) RETURNING *', [cleaner_id, (a.address||'').trim(), (a.apt||'').trim()]);
+      added.push(result.rows[0]);
+    }
+    res.json(added);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.put('/api/cleaner-addresses/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
+  const { address, apt } = req.body;
+  try {
+    const result = await pool.query('UPDATE cleaner_addresses SET address=$1, apt=$2 WHERE id=$3 RETURNING *', [address.trim(), (apt||'').trim(), req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/cleaner-addresses/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM cleaner_addresses WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 // Extras routes
