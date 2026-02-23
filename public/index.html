@@ -180,8 +180,11 @@ function App(){
 
   const isAdmin=user&&user.role==='admin';
   const isDriver=user&&user.role==='driver';
-  const tabs=isAdmin?['orders','cleaners','extras','invoices','payments','reports','errors','schedule','settings']:isDriver?['schedule']:['orders'];
-  useEffect(()=>{if(isDriver&&view==='orders')setView('schedule')},[user]);
+  const userPerms=(user&&user.permissions)||[];
+  const hasPerm=function(p){return isAdmin||userPerms.indexOf(p)!==-1};
+  const allTabs=['orders','cleaners','extras','invoices','payments','reports','errors','schedule','settings'];
+  const tabs=isAdmin?allTabs:isDriver?['schedule']:allTabs.filter(function(t){return hasPerm(t)});
+  useEffect(()=>{if(isDriver&&view==='orders')setView('schedule');if(!isAdmin&&!isDriver&&tabs.length>0&&tabs.indexOf(view)===-1)setView(tabs[0])},[user]);
 
   if(loading)return React.createElement('div',{style:{minHeight:'100vh',background:'#0f172a',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',flexDirection:'column',gap:'16px'}},
     React.createElement('div',{style:{fontSize:'24px',fontWeight:'bold'}},'Order Log'),
@@ -199,15 +202,15 @@ function App(){
       tabs.map(tab=>React.createElement('button',{key:tab,onClick:()=>setView(tab),style:{padding:'10px 16px',borderRadius:'8px',border:'none',cursor:'pointer',background:view===tab?'linear-gradient(90deg,#3b82f6,#8b5cf6)':'transparent',color:view===tab?'#fff':'#94a3b8',fontWeight:'500'}},t[tab]))),
     toast&&React.createElement('div',{style:{position:'fixed',top:20,right:20,background:'#065f46',color:'#fff',padding:'12px 20px',borderRadius:'8px',zIndex:999}},toast),
     React.createElement('div',{style:{maxWidth:'1000px',margin:'0 auto',padding:'20px'}},
-      view==='orders'&&React.createElement(Orders,{orders,cleaners,extras,settings,cleanerExtras,notify,loadData,isAdmin,user,staffName,setStaffName,calcTotal,lang,t}),
-      view==='cleaners'&&isAdmin&&React.createElement(Cleaners,{cleaners,extras,cleanerExtras,notify,loadData,t}),
-      view==='extras'&&isAdmin&&React.createElement(Extras,{extras,notify,loadData,t}),
-      view==='invoices'&&isAdmin&&React.createElement(Invoices,{cleaners,extras,cleanerExtras,settings,t}),
-      view==='payments'&&isAdmin&&React.createElement(Payments,{cleaners,settings,t}),
-      view==='reports'&&isAdmin&&React.createElement(Reports,{t}),
-      view==='errors'&&isAdmin&&React.createElement(Errors,{cleaners,t}),
+      view==='orders'&&React.createElement(Orders,{orders,cleaners,extras,settings,cleanerExtras,notify,loadData,isAdmin,hasPerm,user,staffName,setStaffName,calcTotal,lang,t}),
+      view==='cleaners'&&hasPerm('cleaners')&&React.createElement(Cleaners,{cleaners,extras,cleanerExtras,notify,loadData,t}),
+      view==='extras'&&hasPerm('extras')&&React.createElement(Extras,{extras,notify,loadData,t}),
+      view==='invoices'&&hasPerm('invoices')&&React.createElement(Invoices,{cleaners,extras,cleanerExtras,settings,t}),
+      view==='payments'&&hasPerm('payments')&&React.createElement(Payments,{cleaners,settings,t}),
+      view==='reports'&&hasPerm('reports')&&React.createElement(Reports,{t}),
+      view==='errors'&&hasPerm('errors')&&React.createElement(Errors,{cleaners,extras,cleanerExtras,settings,notify,loadData,calcTotal,t}),
       view==='schedule'&&React.createElement(Schedule,{isAdmin,notify,t,user}),
-      view==='settings'&&isAdmin&&React.createElement(Settings,{settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})));
+      view==='settings'&&hasPerm('settings')&&React.createElement(Settings,{settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})));
 }
 
 function Login({onLogin,lang,setLang,t}){
@@ -251,7 +254,8 @@ function StaffSelector({staffName,setStaffName,t}){
       React.createElement('button',{onClick:()=>other.trim()&&setStaffName(other.trim()),style:{...S.btn,padding:'10px 20px'}},'OK')));
 }
 
-function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,isAdmin,user,staffName,setStaffName,calcTotal,lang,t}){
+function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,isAdmin,hasPerm,user,staffName,setStaffName,calcTotal,lang,t}){
+  const canEditPrices=isAdmin||(hasPerm&&hasPerm('orders'));
   const[showForm,setShowForm]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState('');const[showImport,setShowImport]=useState(false);
   const[searchResults,setSearchResults]=useState(null);const[searching,setSearching]=useState(false);const[filterCleaner,setFilterCleaner]=useState('');
   
@@ -287,7 +291,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
     user&&user.role==='driver'?React.createElement('div',{style:{background:'#065f46',padding:'12px 16px',borderRadius:'8px',marginBottom:'16px'}},'👤 Logged in as: ',React.createElement('strong',null,user.username)):React.createElement(StaffSelector,{staffName,setStaffName,t}),
     React.createElement('div',{style:{textAlign:'center',marginBottom:'24px'}},
       React.createElement('button',{onClick:handleNew,style:{...S.btn,padding:'20px 60px',fontSize:'22px',fontWeight:'bold',opacity:staffName?1:0.5,boxShadow:'0 4px 15px rgba(59,130,246,0.4)'}},t.newOrder)),
-    isAdmin&&React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
+    canEditPrices&&React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
       React.createElement('h2',{style:{margin:0,fontSize:'22px'}},t.orders),
       React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
         React.createElement('button',{onClick:()=>setShowImport(true),style:{...S.btn,background:'#059669'}},t.import),
@@ -307,14 +311,14 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
             return React.createElement('div',{key:o.id,style:S.card},
               React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'8px'}},
                 React.createElement('div',null,React.createElement('span',{style:{fontWeight:'bold',fontSize:'18px',marginRight:'10px'}},'#'+o.order_num),React.createElement('span',{style:{background:o.service_type==='same-day'?'#f59e0b':'#3b82f6',padding:'4px 12px',borderRadius:'10px',fontSize:'13px',fontWeight:'bold'}},o.service_type==='same-day'?t.sameDay:t.hour24)),
-                React.createElement('div',{style:{textAlign:'right'}},isAdmin&&React.createElement('div',{style:{fontWeight:'bold',color:'#4ade80',fontSize:'16px'}},fmt$(total)),o.staff_name&&React.createElement('span',{style:{color:'#94a3b8',fontSize:'12px'}},'👤 '+o.staff_name))),
+                React.createElement('div',{style:{textAlign:'right'}},canEditPrices&&React.createElement('div',{style:{fontWeight:'bold',color:'#4ade80',fontSize:'16px'}},fmt$(total)),o.staff_name&&React.createElement('span',{style:{color:'#94a3b8',fontSize:'12px'}},'👤 '+o.staff_name))),
               React.createElement('div',{style:{fontWeight:'600',marginBottom:'8px',fontSize:'16px'}},c?.name||'Unknown'),
               React.createElement('div',{style:{color:'#e2e8f0',fontSize:'16px',display:'flex',gap:'20px',flexWrap:'wrap',fontWeight:'500'}},React.createElement('span',null,'⚖️ '+o.weight+' lbs'),React.createElement('span',null,'📅 '+fmtD(o.pickup_date)+(o.created_at?' @ '+fmtTime(o.created_at):'')),React.createElement('span',null,'🎨 '+o.bag_color)),
               Object.keys(groups).length>0&&React.createElement('div',{style:{marginTop:'10px'}},Object.entries(groups).map(([cat,items])=>React.createElement('div',{key:cat,style:{fontSize:'14px',color:'#94a3b8',marginBottom:'4px'}},React.createElement('span',{style:{color:'#f59e0b'}},cat+': '),items.join(', ')))),
               o.notes&&React.createElement('div',{style:{marginTop:'10px',color:'#94a3b8',fontSize:'14px',fontStyle:'italic'}},'📝 '+o.notes),
-              isAdmin&&parseFloat(o.price_adjustment)!==0&&React.createElement('div',{style:{marginTop:'6px',color:parseFloat(o.price_adjustment)>0?'#4ade80':'#ef4444',fontSize:'14px',fontWeight:'bold'}},'💲 Adj: '+(parseFloat(o.price_adjustment)>0?'+':'')+fmt$(o.price_adjustment)),
+              canEditPrices&&parseFloat(o.price_adjustment)!==0&&React.createElement('div',{style:{marginTop:'6px',color:parseFloat(o.price_adjustment)>0?'#4ade80':'#ef4444',fontSize:'14px',fontWeight:'bold'}},'💲 Adj: '+(parseFloat(o.price_adjustment)>0?'+':'')+fmt$(o.price_adjustment)),
               React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #334155'}},React.createElement('button',{onClick:()=>{setEditing(o);setShowForm(true)},style:S.edit},t.edit),React.createElement('button',{onClick:()=>del(o.id),style:S.del},t.delete)))})),
-    showForm&&React.createElement(OrderForm,{order:editing,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave:save,onClose:()=>{setShowForm(false);setEditing(null)},lang,t}),
+    showForm&&React.createElement(OrderForm,{order:editing,cleaners,extras,cleanerExtras,staffName,isAdmin:canEditPrices,onSave:save,onClose:()=>{setShowForm(false);setEditing(null)},lang,t}),
     showImport&&React.createElement(ImportModal,{cleaners,staffName,onClose:()=>setShowImport(false),onImport:loadData,notify,t}));
 }
 
@@ -375,7 +379,7 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
           Object.entries(grouped).map(function([cat,items]){return React.createElement('div',{key:cat,style:{marginBottom:'12px'}},
             React.createElement('div',{style:{color:'#f59e0b',fontSize:'14px',marginBottom:'8px',fontWeight:'bold'}},cat),
             React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},items.map(function(ex){var cp=d.cleaner_id&&cleanerExtras[d.cleaner_id]?cleanerExtras[d.cleaner_id][ex.id]:undefined;var price=cp!==undefined?cp:ex.price;var qty=getQty(ex.id);return React.createElement('div',{key:ex.id,style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderRadius:'8px',border:qty>0?'2px solid #3b82f6':'1px solid #475569',background:qty>0?'rgba(59,130,246,0.2)':'#0f172a'}},
-              React.createElement('span',{style:{fontSize:'14px'}},ex.name+(isAdmin?' '+fmt$(price):'')),
+              React.createElement('span',{style:{fontSize:'14px'}},ex.name+(canEditPrices?' '+fmt$(price):'')),
               React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
                 React.createElement('button',{type:'button',onClick:function(){removeOne(ex.id);},style:{width:'32px',height:'32px',borderRadius:'6px',border:'none',background:'#ef4444',color:'white',fontSize:'18px',cursor:'pointer',opacity:qty>0?1:0.3}},'-'),
                 React.createElement('span',{style:{fontSize:'18px',fontWeight:'bold',minWidth:'30px',textAlign:'center'}},qty),
@@ -407,8 +411,8 @@ function Reports({t}){
   const[start,setStart]=useState('');const[end,setEnd]=useState('');const[data,setData]=useState(null);const[ld,setLd]=useState(false);
   const gen=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{setData(await api.get('/reports/daily-stats?start_date='+start+'&end_date='+end))}catch(e){alert(e.message)}setLd(false)};
   const setToday=()=>{const n=new Date();const y=n.getFullYear();const m=String(n.getMonth()+1).padStart(2,'0');const d=String(n.getDate()).padStart(2,'0');const today=y+'-'+m+'-'+d;setStart(today);setEnd(today)};
-  const setLW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay()-7);const e=new Date(s);e.setDate(s.getDate()+6);setStart(s.toISOString().split('T')[0]);setEnd(e.toISOString().split('T')[0])};
-  const setTW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay());setStart(s.toISOString().split('T')[0]);setEnd(n.toISOString().split('T')[0])};
+  const setLW=()=>{const n=new Date();const dow=n.getDay();const daysSinceSat=dow===0?1:dow+1;const sat=new Date(n);sat.setDate(n.getDate()-daysSinceSat);const mon=new Date(sat);mon.setDate(sat.getDate()-5);setStart(mon.toISOString().split('T')[0]);setEnd(sat.toISOString().split('T')[0])};
+  const setTW=()=>{const n=new Date();const dow=n.getDay();const daysToMon=dow===0?6:dow-1;const mon=new Date(n);mon.setDate(n.getDate()-daysToMon);setStart(mon.toISOString().split('T')[0]);setEnd(n.toISOString().split('T')[0])};
   const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   
   const exportExcel=()=>{if(!data)return;const wb=XLSX.utils.book_new();
@@ -561,7 +565,7 @@ function Extras({extras,notify,loadData,t}){
 function Invoices({cleaners,extras,cleanerExtras,settings,t}){
   const[cid,setCid]=useState('');const[start,setStart]=useState('');const[end,setEnd]=useState('');const[inv,setInv]=useState(null);const[dups,setDups]=useState([]);const[seqWarns,setSeqWarns]=useState([]);const[ld,setLd]=useState(false);
   const gen=async()=>{if(!cid||!start||!end){alert('Select all');return}setLd(true);try{const d=await api.get('/reports/invoice?cleaner_id='+cid+'&start_date='+start+'&end_date='+end);const dupRes=await api.get('/orders/find-duplicates?cleaner_id='+cid+'&start_date='+start+'&end_date='+end);setDups(dupRes);setSeqWarns(d.sequenceWarnings||[]);setInv({cleaner:cleaners.find(c=>c.id===parseInt(cid)),start,end,orders:d.orders,ordersTotal:d.ordersTotal,congestionZone:d.congestionZone,congestionRate:d.congestionRate,congestionDays:d.congestionDays,congestionSurcharge:d.congestionSurcharge,total:d.grandTotal})}catch(e){alert(e.message)}setLd(false)};
-  const setLW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay()-7);const e=new Date(s);e.setDate(s.getDate()+6);setStart(s.toISOString().split('T')[0]);setEnd(e.toISOString().split('T')[0])};
+  const setLW=()=>{const n=new Date();const dow=n.getDay();const daysSinceSat=dow===0?1:dow+1;const sat=new Date(n);sat.setDate(n.getDate()-daysSinceSat);const mon=new Date(sat);mon.setDate(sat.getDate()-5);setStart(mon.toISOString().split('T')[0]);setEnd(sat.toISOString().split('T')[0])};
 
   const exportPDF=()=>{if(!inv)return;const{jsPDF}=window.jspdf;const doc=new jsPDF();const weekNum=Math.ceil((new Date(inv.start).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);const clnIdx=cleaners.findIndex(c=>c.id===inv.cleaner.id)+1;const invoiceId=10000+(weekNum*100)+clnIdx;const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});const cleanerName=invoiceName(inv.cleaner.name);let isFirstPage=true;doc.setFontSize(10);doc.text(settings.companyName||'WEBSTER AVE LAUNDROMAT',14,18);doc.text(settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',14,24);doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Store: '+(settings.storePhone||'929-263-1560'),14,30);doc.setFontSize(10);doc.setFont(undefined,'normal');doc.text('Manager: '+(settings.managerPhone||'347-632-2024'),75,30);doc.setFontSize(12);doc.text('Invoice #: '+invoiceId,150,18);doc.setFontSize(24);doc.setFont(undefined,'bold');doc.text(cleanerName,14,48);doc.setFont(undefined,'normal');doc.setFontSize(12);doc.text('Period: '+fmtD(inv.start)+' - '+fmtD(inv.end),14,56);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(inv.total),150,48);doc.setFont(undefined,'normal');const rows=inv.orders.map((o,i)=>[i+1,fmtD(o.pickup_date),fmtC(o.total),o.order_num,o.weight,o.extras_formatted||'',o.notes||'']);doc.autoTable({startY:64,head:[['#','Date','Amount','Order #','Weight','Extras','Notes']],body:rows,columnStyles:{0:{cellWidth:10},1:{cellWidth:22},2:{cellWidth:22},3:{cellWidth:22},4:{cellWidth:18},5:{cellWidth:44},6:{cellWidth:44}},styles:{fontSize:10,textColor:[0,0,0],lineColor:[200,200,200],lineWidth:0.1,overflow:'linebreak'},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold',lineWidth:0.5,lineColor:[0,0,0]},alternateRowStyles:{fillColor:[255,255,255]},bodyStyles:{fillColor:[255,255,255]},margin:{top:25},didDrawPage:function(){if(!isFirstPage){doc.setFontSize(11);doc.setFont(undefined,'normal');doc.text(cleanerName+' (continued)',14,15)}isFirstPage=false}});let fy=doc.lastAutoTable.finalY;doc.setFontSize(11);if(inv.congestionZone&&inv.congestionSurcharge>0){doc.text('Congestion Charge = '+fmtC(inv.congestionSurcharge)+' ('+inv.congestionDays+' days)',14,fy+8);fy+=6}fy+=2;doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(inv.total),14,fy+8);doc.setFont(undefined,'normal');doc.setFontSize(11);doc.setFont(undefined,'italic');doc.text('Thank you for your business!',14,fy+18);doc.save(cleanerName.replace(/\s/g,'_')+'_'+inv.start+'_to_'+inv.end+'.pdf')};
 
@@ -587,6 +591,9 @@ function Invoices({cleaners,extras,cleanerExtras,settings,t}){
         React.createElement('div',null,React.createElement('h2',{style:{color:'#1e40af',margin:0,fontSize:'18px'}},settings.companyName||'WEBSTER AVE LAUNDROMAT'),React.createElement('div',{style:{fontSize:'12px',color:'#64748b'}},settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456'),React.createElement('div',{style:{fontSize:'12px',color:'#64748b'}},'Store: '+(settings.storePhone||'929-263-1560')+' | Manager: '+(settings.managerPhone||'347-632-2024'))),
         React.createElement('div',{style:{textAlign:'right'}},React.createElement('h3',{style:{color:'#1e40af',margin:0}},t.invoice),React.createElement('div',{style:{fontSize:'24px',fontWeight:'bold',color:'#1e293b',marginTop:'4px'}},invoiceName(inv.cleaner.name)),React.createElement('div',{style:{fontSize:'12px'}},React.createElement('b',null,t.period),' ',fmtD(inv.start),' - ',fmtD(inv.end)))),
       React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px'}},React.createElement('button',{onClick:exportPDF,style:{...S.btn,padding:'8px 16px',fontSize:'13px'}},t.exportPDF),React.createElement('button',{onClick:exportExcel,style:{...S.btn,padding:'8px 16px',fontSize:'13px',background:'#059669'}},t.exportExcel)),
+      inv.orders.some(function(o){return new Date(o.pickup_date).getUTCDay()===0})&&React.createElement('div',{style:{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:'8px',padding:'10px 14px',marginBottom:'12px',display:'flex',alignItems:'center',gap:'8px'}},
+        React.createElement('span',{style:{fontSize:'16px'}},'⚠️'),
+        React.createElement('span',{style:{color:'#dc2626',fontSize:'13px',fontWeight:'600'}},'Sunday orders detected - these were entered by mistake and are included in this week\u2019s invoice. Rows highlighted in red.')),
       inv.orders.length===0?React.createElement('p',{style:{textAlign:'center',color:'#64748b'}},t.noOrders):
         React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'14px'}},
           React.createElement('thead',null,React.createElement('tr',{style:{background:'#f1f5f9'}},
@@ -597,14 +604,14 @@ function Invoices({cleaners,extras,cleanerExtras,settings,t}){
             React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},t.weight),
             React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},t.extrasLabel),
             React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},t.notes))),
-          React.createElement('tbody',null,inv.orders.map((o,i)=>React.createElement('tr',{key:o.id,style:{borderBottom:'1px solid #e2e8f0'}},
+          React.createElement('tbody',null,inv.orders.map((o,i)=>{var isSun=new Date(o.pickup_date).getUTCDay()===0;return React.createElement('tr',{key:o.id,style:{borderBottom:'1px solid #e2e8f0',background:isSun?'#fef2f2':'transparent'}},
             React.createElement('td',{style:{padding:'8px'}},i+1),
-            React.createElement('td',{style:{padding:'8px'}},fmtD(o.pickup_date)),
+            React.createElement('td',{style:{padding:'8px',color:isSun?'#dc2626':'inherit',fontWeight:isSun?'bold':'normal'}},fmtD(o.pickup_date)+(isSun?' ⚠️ SUN':'')),
             React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmt$(o.total)),
             React.createElement('td',{style:{padding:'8px'}},o.order_num),
             React.createElement('td',{style:{padding:'8px',textAlign:'right'}},o.weight),
             React.createElement('td',{style:{padding:'8px',fontSize:'12px'}},o.extras_formatted||'-'),
-            React.createElement('td',{style:{padding:'8px',fontSize:'12px'}},o.notes||'-')))),
+            React.createElement('td',{style:{padding:'8px',fontSize:'12px'}},o.notes||'-'))})),
           React.createElement('tfoot',null,
             inv.congestionZone&&inv.congestionSurcharge>0&&React.createElement('tr',null,
               React.createElement('td',{colSpan:'2',style:{padding:'8px',textAlign:'right',borderTop:'1px solid #e2e8f0'}},'Congestion Charge ('+inv.congestionDays+' days)'),
@@ -627,8 +634,8 @@ function Payments({cleaners,settings,t}){
   const load=async()=>{setLd(true);try{const[tracking,sum]=await Promise.all([api.get('/invoice-tracking'),api.get('/invoice-tracking/summary')]);setData(tracking);setSummary(sum)}catch(e){console.error(e)}setLd(false)};
   useEffect(()=>{load()},[]);
   
-  const setLW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay()-7);const e=new Date(s);e.setDate(s.getDate()+6);setStart(s.toISOString().split('T')[0]);setEnd(e.toISOString().split('T')[0])};
-  const setTW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay());setStart(s.toISOString().split('T')[0]);setEnd(n.toISOString().split('T')[0])};
+  const setLW=()=>{const n=new Date();const dow=n.getDay();const daysSinceSat=dow===0?1:dow+1;const sat=new Date(n);sat.setDate(n.getDate()-daysSinceSat);const mon=new Date(sat);mon.setDate(sat.getDate()-5);setStart(mon.toISOString().split('T')[0]);setEnd(sat.toISOString().split('T')[0])};
+  const setTW=()=>{const n=new Date();const dow=n.getDay();const daysToMon=dow===0?6:dow-1;const mon=new Date(n);mon.setDate(n.getDate()-daysToMon);setStart(mon.toISOString().split('T')[0]);setEnd(n.toISOString().split('T')[0])};
   
   const generateWeek=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{await api.post('/invoice-tracking/generate-week',{week_start:start,week_end:end});await load()}catch(e){alert(e.message)}setLd(false)};
   
@@ -789,32 +796,56 @@ function Payments({cleaners,settings,t}){
             React.createElement('button',{onClick:()=>setViewInv(null),style:{...S.cancel,padding:'10px 20px'}},'Close'))))));
 }
 
-function Errors({cleaners,t}){
+function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTotal,t}){
   const[duplicates,setDuplicates]=useState([]);const[seqErrors,setSeqErrors]=useState([]);const[ld,setLd]=useState(false);
   const[start,setStart]=useState('');const[end,setEnd]=useState('');const[cleanerId,setCleanerId]=useState('');
+  const[editOrder,setEditOrder]=useState(null);const[sundayOrders,setSundayOrders]=useState([]);
   
-  const setLW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay()-7);const e=new Date(s);e.setDate(s.getDate()+6);setStart(s.toISOString().split('T')[0]);setEnd(e.toISOString().split('T')[0])};
-  const setTW=()=>{const n=new Date(),s=new Date(n);s.setDate(n.getDate()-n.getDay());setStart(s.toISOString().split('T')[0]);setEnd(n.toISOString().split('T')[0])};
+  const setLW=()=>{const n=new Date();const dow=n.getDay();const daysSinceSat=dow===0?1:dow+1;const sat=new Date(n);sat.setDate(n.getDate()-daysSinceSat);const mon=new Date(sat);mon.setDate(sat.getDate()-5);setStart(mon.toISOString().split('T')[0]);setEnd(sat.toISOString().split('T')[0])};
+  const setTW=()=>{const n=new Date();const dow=n.getDay();const daysToMon=dow===0?6:dow-1;const mon=new Date(n);mon.setDate(n.getDate()-daysToMon);setStart(mon.toISOString().split('T')[0]);setEnd(n.toISOString().split('T')[0])};
   
   const scan=async()=>{
     if(!start||!end){alert('Select dates');return}
     setLd(true);
     try{
-      const allDups=[];const allSeq=[];
+      const allDups=[];const allSeq=[];const allSunday=[];
       const cleanersToCheck=cleanerId?cleaners.filter(c=>c.id===parseInt(cleanerId)):cleaners;
       for(const c of cleanersToCheck){
+        // Get duplicates with full order details
         const dups=await api.get('/orders/find-duplicates?cleaner_id='+c.id+'&start_date='+start+'&end_date='+end);
-        if(dups.length>0)allDups.push({cleaner:c.name,duplicates:dups});
+        if(dups.length>0){
+          // Fetch actual orders for each duplicate order_num
+          const dupOrders=[];
+          for(const dup of dups){
+            const orders=await api.get('/orders?cleaner_id='+c.id+'&start_date='+start+'&end_date='+end+'&search='+encodeURIComponent(dup.order_num));
+            const matching=orders.filter(function(o){return o.order_num===dup.order_num});
+            dupOrders.push({order_num:dup.order_num,count:dup.count,orders:matching});
+          }
+          allDups.push({cleaner:c,duplicates:dupOrders});
+        }
+        // Get sequence warnings
         const inv=await api.get('/reports/invoice?cleaner_id='+c.id+'&start_date='+start+'&end_date='+end);
         if(inv.sequenceWarnings&&inv.sequenceWarnings.length>0)allSeq.push({cleaner:c.name,warnings:inv.sequenceWarnings});
+        // Find Sunday orders
+        inv.orders&&inv.orders.forEach(function(o){
+          var d=new Date(o.pickup_date);
+          if(d.getUTCDay()===0)allSunday.push({...o,cleaner_name:c.name,cleaner_id:c.id});
+        });
       }
-      setDuplicates(allDups);setSeqErrors(allSeq);
+      setDuplicates(allDups);setSeqErrors(allSeq);setSundayOrders(allSunday);
     }catch(e){console.error(e);alert(e.message)}
     setLd(false);
   };
+
+  const saveOrder=async(data)=>{
+    try{if(editOrder&&editOrder.id){await api.put('/orders/'+editOrder.id,data);notify('Order updated')}
+    setEditOrder(null);scan()}catch(e){alert(e.message)}};
+
+  const delOrder=async(id)=>{if(!confirm('Delete this order?'))return;
+    try{await api.del('/orders/'+id);notify('Order deleted');scan()}catch(e){alert(e.message)}};
   
   const exportPDF=()=>{
-    if(duplicates.length===0&&seqErrors.length===0){alert('No errors to export');return}
+    if(duplicates.length===0&&seqErrors.length===0&&sundayOrders.length===0){alert('No errors to export');return}
     const{jsPDF}=window.jspdf;const doc=new jsPDF();
     doc.setFontSize(18);doc.setFont(undefined,'bold');doc.text('Error Report',14,20);
     doc.setFontSize(12);doc.setFont(undefined,'normal');doc.text('Period: '+fmtD(start)+' - '+fmtD(end),14,28);
@@ -824,10 +855,16 @@ function Errors({cleaners,t}){
       doc.setFontSize(14);doc.setFont(undefined,'bold');doc.setTextColor(220,38,38);doc.text('Duplicate Orders',14,y);y+=10;
       doc.setFontSize(11);doc.setFont(undefined,'normal');doc.setTextColor(0,0,0);
       duplicates.forEach(d=>{
-        doc.setFont(undefined,'bold');doc.text(d.cleaner,14,y);y+=7;doc.setFont(undefined,'normal');
+        doc.setFont(undefined,'bold');doc.text(d.cleaner.name,14,y);y+=7;doc.setFont(undefined,'normal');
         d.duplicates.forEach(dup=>{doc.text('  Order #'+dup.order_num+' appears '+dup.count+' times',14,y);y+=6;if(y>270){doc.addPage();y=20}});
         y+=4;
       });
+      y+=10;
+    }
+    if(sundayOrders.length>0){
+      doc.setFontSize(14);doc.setFont(undefined,'bold');doc.setTextColor(147,51,234);doc.text('Sunday Orders (Data Entry Errors)',14,y);y+=10;
+      doc.setFontSize(11);doc.setFont(undefined,'normal');doc.setTextColor(0,0,0);
+      sundayOrders.forEach(o=>{doc.text('  '+o.cleaner_name+' - Order #'+o.order_num+' on '+fmtD(o.pickup_date),14,y);y+=6;if(y>270){doc.addPage();y=20}});
       y+=10;
     }
     if(seqErrors.length>0){
@@ -842,10 +879,24 @@ function Errors({cleaners,t}){
     doc.save('error_report_'+start+'_to_'+end+'.pdf');
   };
 
+  var orderRow=function(o,showCleaner){
+    var total=calcTotal(o,o.cleaner_id);
+    return React.createElement('div',{key:o.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',background:'rgba(255,255,255,0.05)',borderRadius:'6px',marginBottom:'4px',gap:'8px',flexWrap:'wrap'}},
+      React.createElement('div',{style:{flex:1,minWidth:'180px'}},
+        showCleaner&&React.createElement('span',{style:{color:'#94a3b8',fontSize:'11px',marginRight:'8px'}},o.cleaner_name||''),
+        React.createElement('span',{style:{fontWeight:'bold',marginRight:'8px'}},'#'+o.order_num),
+        React.createElement('span',{style:{color:'#94a3b8',fontSize:'12px'}},fmtD(o.pickup_date)),
+        React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold',marginLeft:'8px'}},fmt$(total)),
+        React.createElement('span',{style:{color:'#64748b',fontSize:'12px',marginLeft:'8px'}},o.weight+'lb')),
+      React.createElement('div',{style:{display:'flex',gap:'6px'}},
+        React.createElement('button',{onClick:function(){setEditOrder(o)},style:{padding:'4px 10px',borderRadius:'4px',border:'1px solid #3b82f6',background:'rgba(59,130,246,0.2)',color:'#60a5fa',cursor:'pointer',fontSize:'11px',fontWeight:'bold'}},'✏️ Edit'),
+        React.createElement('button',{onClick:function(){delOrder(o.id)},style:{padding:'4px 10px',borderRadius:'4px',border:'1px solid #ef4444',background:'rgba(239,68,68,0.2)',color:'#fca5a5',cursor:'pointer',fontSize:'11px',fontWeight:'bold'}},'🗑 Delete')));
+  };
+
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px'}},
       React.createElement('h2',{style:{margin:0}},t.errors),
-      (duplicates.length>0||seqErrors.length>0)&&React.createElement('button',{onClick:exportPDF,style:{...S.btn,background:'#dc2626'}},'Export PDF')),
+      (duplicates.length>0||seqErrors.length>0||sundayOrders.length>0)&&React.createElement('button',{onClick:exportPDF,style:{...S.btn,background:'#dc2626'}},'Export PDF')),
     React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
       React.createElement('h3',{style:{marginBottom:'12px'}},'Scan for Errors'),
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'12px',marginBottom:'12px'}},
@@ -859,18 +910,28 @@ function Errors({cleaners,t}){
     duplicates.length>0&&React.createElement('div',{style:{...S.card,marginBottom:'20px',background:'#7f1d1d',border:'2px solid #ef4444'}},
       React.createElement('h3',{style:{color:'#fecaca',marginBottom:'12px'}},'⚠️ Duplicate Orders Found'),
       duplicates.map((d,i)=>React.createElement('div',{key:i,style:{marginBottom:'16px'}},
-        React.createElement('div',{style:{fontWeight:'bold',color:'#fecaca',marginBottom:'8px'}},d.cleaner),
-        d.duplicates.map((dup,j)=>React.createElement('div',{key:j,style:{color:'#fca5a5',fontSize:'14px',marginLeft:'16px'}},'Order #'+dup.order_num+' appears '+dup.count+' times'))))),
-    
+        React.createElement('div',{style:{fontWeight:'bold',color:'#fecaca',marginBottom:'8px',fontSize:'15px'}},d.cleaner.name),
+        d.duplicates.map((dup,j)=>React.createElement('div',{key:j,style:{marginBottom:'10px',paddingLeft:'8px',borderLeft:'3px solid #ef4444'}},
+          React.createElement('div',{style:{color:'#fca5a5',fontSize:'13px',marginBottom:'6px',fontWeight:'bold'}},'Order #'+dup.order_num+' appears '+dup.count+' times:'),
+          dup.orders.map(function(o){return orderRow(o,false)})))))),
+
+    sundayOrders.length>0&&React.createElement('div',{style:{...S.card,marginBottom:'20px',background:'rgba(147,51,234,0.15)',border:'2px solid #a855f7'}},
+      React.createElement('h3',{style:{color:'#e9d5ff',marginBottom:'4px'}},'⚠️ Sunday Orders Found'),
+      React.createElement('div',{style:{color:'#c4b5fd',fontSize:'12px',marginBottom:'12px'}},'These orders were entered on a Sunday. Fix the date or they will be included in the prior week invoice automatically.'),
+      sundayOrders.map(function(o){return orderRow(o,true)})),
+
     seqErrors.length>0&&React.createElement('div',{style:{...S.card,marginBottom:'20px',background:'#78350f',border:'2px solid #f59e0b'}},
       React.createElement('h3',{style:{color:'#fef3c7',marginBottom:'12px'}},'⚠️ Sequence Gaps Detected'),
       seqErrors.map((s,i)=>React.createElement('div',{key:i,style:{marginBottom:'16px'}},
         React.createElement('div',{style:{fontWeight:'bold',color:'#fef3c7',marginBottom:'8px'}},s.cleaner),
         s.warnings.map((w,j)=>React.createElement('div',{key:j,style:{color:'#fde68a',fontSize:'14px',marginLeft:'16px'}},'Gap of '+w.gap+' between #'+w.from+' and #'+w.to))))),
     
-    duplicates.length===0&&seqErrors.length===0&&(start||end)&&!ld&&React.createElement('div',{style:{...S.card,background:'#065f46',border:'2px solid #10b981',textAlign:'center'}},
+    duplicates.length===0&&seqErrors.length===0&&sundayOrders.length===0&&(start||end)&&!ld&&React.createElement('div',{style:{...S.card,background:'#065f46',border:'2px solid #10b981',textAlign:'center'}},
       React.createElement('div',{style:{fontSize:'24px',marginBottom:'8px'}},'✓'),
-      React.createElement('div',{style:{color:'#a7f3d0'}},'No errors found for selected date range')));
+      React.createElement('div',{style:{color:'#a7f3d0'}},'No errors found for selected date range')),
+
+    editOrder&&React.createElement(OrderForm,{order:editOrder,cleaners:cleaners,extras:extras,cleanerExtras:cleanerExtras,staffName:'admin',isAdmin:true,
+      onSave:saveOrder,onClose:function(){setEditOrder(null)},lang:'en',t:t}));
 }
 
 function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t}){
@@ -1633,7 +1694,7 @@ function PayrollPanel({drivers,notify}){
 function UsersPanel({notify}){
   const[users,setUsers]=useState([]);const[driversList,setDriversList]=useState([]);
   const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[ld,setLd]=useState(false);
-  const[f,setF]=useState({username:'',password:'',role:'attendant',driver_id:''});const[showPw,setShowPw]=useState(false);
+  const[f,setF]=useState({username:'',password:'',role:'attendant',driver_id:'',permissions:['orders']});const[showPw,setShowPw]=useState(false);
 
   const load=async()=>{setLd(true);try{const[u,d]=await Promise.all([api.get('/users'),api.get('/drivers')]);setUsers(u);setDriversList(d)}catch(e){console.error(e)}setLd(false)};
   useEffect(()=>{load()},[]);
@@ -1647,11 +1708,11 @@ function UsersPanel({notify}){
     if(!ed&&!f.password){alert('Password required for new user');return}
     try{
       let userData;
-      if(ed){const body={username:f.username,role:f.role};if(f.password)body.password=f.password;if(f.role==='driver'&&f.driver_id)body.driver_id=parseInt(f.driver_id);
+      if(ed){const body={username:f.username,role:f.role,permissions:f.permissions};if(f.password)body.password=f.password;if(f.role==='driver'&&f.driver_id)body.driver_id=parseInt(f.driver_id);
         userData=await api.put('/users/'+ed.id,body)}
       else{const body={...f};if(f.role==='driver'&&f.driver_id)body.driver_id=parseInt(f.driver_id);
         userData=await api.post('/users',body)}
-      notify(ed?'User updated':'User created');await load();setShow(false);setEd(null);setF({username:'',password:'',role:'attendant',driver_id:''});
+      notify(ed?'User updated':'User created');await load();setShow(false);setEd(null);setF({username:'',password:'',role:'attendant',driver_id:'',permissions:['orders']});
     }catch(e){alert(e.message)}};
 
   const del=async(id)=>{if(!confirm('Delete this user? They will no longer be able to log in.'))return;
@@ -1665,24 +1726,26 @@ function UsersPanel({notify}){
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px'}},
       React.createElement('h2',{style:{margin:0}},'\ud83d\udc65 User Access Management'),
-      React.createElement('button',{onClick:()=>{setEd(null);setF({username:'',password:'',role:'attendant',driver_id:''});setShow(true)},style:S.btn},'+ Add User')),
+      React.createElement('button',{onClick:()=>{setEd(null);setF({username:'',password:'',role:'attendant',driver_id:'',permissions:['orders']});setShow(true)},style:S.btn},'+ Add User')),
     React.createElement('div',{style:{...S.card,marginBottom:'16px',background:'rgba(59,130,246,0.1)',border:'1px solid #3b82f6'}},
       React.createElement('div',{style:{fontSize:'14px',color:'#94a3b8'}},
-        React.createElement('span',{style:{color:'#3b82f6',fontWeight:'bold'}},'Staff'),' = orders tab only | ',
-        React.createElement('span',{style:{color:'#22c55e',fontWeight:'bold'}},'Driver'),' = own schedule + profile | ',
-        React.createElement('span',{style:{color:'#dc2626',fontWeight:'bold'}},'Admin'),' = full access (cannot be assigned here)')),
+        React.createElement('span',{style:{color:'#dc2626',fontWeight:'bold'}},'Admin'),' = full access | ',
+        React.createElement('span',{style:{color:'#3b82f6',fontWeight:'bold'}},'Staff'),' = custom permissions (set below) | ',
+        React.createElement('span',{style:{color:'#22c55e',fontWeight:'bold'}},'Driver'),' = own schedule + profile')),
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
       users.map(function(u){const linked=getLinkedDriver(u);return React.createElement('div',{key:u.id,style:{...S.card,borderLeft:'4px solid '+(roleColors[u.role]||'#475569')}},
         React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
           React.createElement('div',{style:{fontWeight:'bold',fontSize:'18px'}},u.username),
           React.createElement('span',{style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:roleColors[u.role]||'#475569',color:'#fff'}},roleLabels[u.role]||u.role)),
         linked&&React.createElement('div',{style:{fontSize:'13px',color:'#22c55e',marginBottom:'4px'}},'\ud83d\ude97 Linked to: '+linked.name),
+        u.role!=='admin'&&u.role!=='driver'&&u.permissions&&u.permissions.length>0&&React.createElement('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'4px'}},
+          u.permissions.map(function(p){return React.createElement('span',{key:p,style:{padding:'2px 6px',borderRadius:'4px',fontSize:'10px',background:'rgba(59,130,246,0.2)',color:'#60a5fa'}},p)})),
         React.createElement('div',{style:{color:'#64748b',fontSize:'12px'}},'Created: '+fmtD(u.created_at)),
         u.plain_password&&React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'6px',marginTop:'4px'}},
           React.createElement('span',{style:{color:'#94a3b8',fontSize:'12px'}},'Password: '),
           React.createElement('span',{style:{color:'#f59e0b',fontSize:'12px',fontFamily:'monospace',background:'rgba(245,158,11,0.1)',padding:'2px 6px',borderRadius:'4px'}},u.plain_password)),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px'}},
-          React.createElement('button',{onClick:function(){setEd(u);var linkedD=getLinkedDriver(u);setF({username:u.username,password:'',role:u.role,driver_id:linkedD?String(linkedD.id):''});setShow(true)},style:S.edit},'Edit'),
+          React.createElement('button',{onClick:function(){setEd(u);var linkedD=getLinkedDriver(u);setF({username:u.username,password:'',role:u.role,driver_id:linkedD?String(linkedD.id):'',permissions:u.permissions||['orders']});setShow(true)},style:S.edit},'Edit'),
           u.role!=='admin'&&React.createElement('button',{onClick:function(){del(u.id)},style:S.del},'Delete')))})),
     show&&React.createElement('div',{style:S.modal},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'400px',border:'1px solid #334155'}},
@@ -1699,7 +1762,7 @@ function UsersPanel({notify}){
           React.createElement('div',{style:{marginBottom:'16px'}},React.createElement('label',{style:S.lbl},'Role *'),
             ed&&ed.role==='admin'?React.createElement('div',{style:{padding:'12px',borderRadius:'8px',border:'2px solid #dc2626',background:'rgba(220,38,38,0.1)',color:'#dc2626',fontWeight:'bold',fontSize:'14px',textAlign:'center'}},'Admin (cannot change role)'):
             React.createElement('div',{style:{display:'flex',gap:'8px'}},
-              ['attendant','driver'].map(function(r){return React.createElement('button',{key:r,type:'button',onClick:function(){setF({...f,role:r,driver_id:''})},style:{flex:1,padding:'12px',borderRadius:'8px',border:f.role===r?'2px solid '+(roleColors[r]||'#fff'):'1px solid #475569',
+              ['attendant','driver'].map(function(r){return React.createElement('button',{key:r,type:'button',onClick:function(){setF({...f,role:r,driver_id:'',permissions:r==='driver'?['schedule']:r==='attendant'?(f.permissions&&f.permissions.length>0?f.permissions:['orders']):['orders']})},style:{flex:1,padding:'12px',borderRadius:'8px',border:f.role===r?'2px solid '+(roleColors[r]||'#fff'):'1px solid #475569',
                 background:f.role===r?'rgba(255,255,255,0.1)':'transparent',color:roleColors[r]||'#fff',cursor:'pointer',fontWeight:'bold',fontSize:'14px'}},roleLabels[r])}))),
           f.role==='driver'&&React.createElement('div',{style:{marginBottom:'16px'}},
             React.createElement('label',{style:S.lbl},'Link to Driver Profile *'),
@@ -1707,6 +1770,22 @@ function UsersPanel({notify}){
               React.createElement('option',{value:''},'Select driver...'),
               driversList.filter(function(d){return d.status==='active'&&(!linkedDriverIds.has(d.id)||(ed&&getLinkedDriver(ed)&&getLinkedDriver(ed).id===d.id))}).map(function(d){return React.createElement('option',{key:d.id,value:d.id},d.name)})),
             React.createElement('div',{style:{color:'#f59e0b',fontSize:'11px',marginTop:'4px'}},'Links this login to a driver profile so they see their schedule')),
+          f.role==='attendant'&&React.createElement('div',{style:{marginBottom:'16px'}},
+            React.createElement('label',{style:{...S.lbl,marginBottom:'8px'}},'Access Permissions'),
+            React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
+              [{k:'orders',l:'📦 Orders',c:'#3b82f6'},{k:'cleaners',l:'🏪 Cleaners',c:'#8b5cf6'},{k:'extras',l:'➕ Extras',c:'#06b6d4'},{k:'invoices',l:'📄 Invoices',c:'#f59e0b'},{k:'payments',l:'💳 Payments',c:'#22c55e'},{k:'reports',l:'📊 Reports',c:'#ec4899'},{k:'errors',l:'⚠️ Errors',c:'#ef4444'},{k:'schedule',l:'📅 Schedule',c:'#0ea5e9'},{k:'settings',l:'⚙️ Settings',c:'#64748b'}].map(function(p){
+                var checked=(f.permissions||[]).indexOf(p.k)!==-1;
+                return React.createElement('label',{key:p.k,style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',borderRadius:'6px',border:checked?'2px solid '+p.c:'1px solid #475569',background:checked?p.c+'22':'transparent',cursor:'pointer',fontSize:'13px',color:checked?'#fff':'#94a3b8',fontWeight:checked?'600':'400'}},
+                  React.createElement('input',{type:'checkbox',checked:checked,onChange:function(){
+                    var perms=f.permissions||[];
+                    setF({...f,permissions:checked?perms.filter(function(x){return x!==p.k}):perms.concat([p.k])})},
+                    style:{accentColor:p.c}}),
+                  p.l)})),
+            React.createElement('div',{style:{display:'flex',gap:'6px',marginTop:'8px'}},
+              React.createElement('button',{type:'button',onClick:function(){setF({...f,permissions:['orders','cleaners','extras','invoices','payments','reports','errors','schedule','settings']})},style:{...S.btn,fontSize:'11px',padding:'4px 10px'}},'Select All'),
+              React.createElement('button',{type:'button',onClick:function(){setF({...f,permissions:['orders']})},style:{...S.cancel,fontSize:'11px',padding:'4px 10px'}},'Orders Only'),
+              React.createElement('button',{type:'button',onClick:function(){setF({...f,permissions:['orders','invoices','payments','reports']})},style:{...S.cancel,fontSize:'11px',padding:'4px 10px',border:'1px solid #f59e0b',color:'#f59e0b'}},'📚 Bookkeeper'))),
+          ed&&ed.role==='admin'&&React.createElement('div',{style:{padding:'10px',borderRadius:'8px',background:'rgba(220,38,38,0.1)',border:'1px solid #dc2626',marginBottom:'16px',fontSize:'12px',color:'#fca5a5',textAlign:'center'}},'Admin has full access to all features'),
           React.createElement('div',{style:{display:'flex',gap:'12px',justifyContent:'flex-end'}},
             React.createElement('button',{type:'button',onClick:function(){setShow(false)},style:S.cancel},'Cancel'),
             React.createElement('button',{type:'submit',style:S.btn},ed?'Update':'Create'))))));
