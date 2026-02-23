@@ -355,6 +355,8 @@ async function initDB() {
     try { await client.query("ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS has_addresses BOOLEAN DEFAULT false"); } catch(e) {}
     // Migration: add customer_address to orders
     try { await client.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_address TEXT"); } catch(e) {}
+    // Migration: add customer_apt to orders (separate apartment field)
+    try { await client.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_apt VARCHAR(100)"); } catch(e) {}
     // Create cleaner_addresses table
     try { await client.query(`
       CREATE TABLE IF NOT EXISTS cleaner_addresses (
@@ -530,12 +532,12 @@ app.get('/api/orders', authenticate, async (req, res) => {
 });
 
 app.post('/api/orders', authenticate, async (req, res) => {
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-      [order_num, cleaner_id, weight || 0, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes, staff_name, price_adjustment || 0, customer_address || null]
+      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      [order_num, cleaner_id, weight || 0, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes, staff_name, price_adjustment || 0, customer_address || null, customer_apt || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -561,11 +563,11 @@ app.post('/api/orders/import', authenticate, async (req, res) => {
 
 app.put('/api/orders/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, customer_address=$11, updated_at=CURRENT_TIMESTAMP WHERE id=$12 RETURNING *`,
-      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, customer_address || null, id]
+      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, customer_address=$11, customer_apt=$12, updated_at=CURRENT_TIMESTAMP WHERE id=$13 RETURNING *`,
+      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, customer_address || null, customer_apt || null, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     res.json(result.rows[0]);
@@ -610,6 +612,31 @@ app.get('/api/orders/export', authenticate, requirePerm('orders'), async (req, r
       return { ...o, extras: (o.extras || []).map(id => extrasMap[id]?.name).join(', '), extras_total: extrasTotal, total: base + extrasTotal + parseFloat(o.price_adjustment || 0) };
     });
     res.json({ orders });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get next sequential order number for a cleaner (used by address-based cleaners)
+app.get('/api/orders/next-number/:cleaner_id', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT order_num FROM orders WHERE cleaner_id = $1 ORDER BY created_at DESC LIMIT 1",
+      [req.params.cleaner_id]
+    );
+    if (result.rows.length === 0) {
+      return res.json({ next: 'LD-0001' });
+    }
+    const last = result.rows[0].order_num;
+    // Try to extract numeric part from formats like "LD-0042" or just "42"
+    const match = last.match(/(\d+)$/);
+    if (match) {
+      const num = parseInt(match[1]) + 1;
+      const prefix = last.slice(0, last.length - match[1].length);
+      const padded = String(num).padStart(match[1].length, '0');
+      return res.json({ next: prefix + padded, last });
+    }
+    res.json({ next: 'LD-0001', last });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
