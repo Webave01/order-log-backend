@@ -625,7 +625,7 @@ app.get('/api/orders/next-number/:cleaner_id', authenticate, async (req, res) =>
       [req.params.cleaner_id]
     );
     if (result.rows.length === 0) {
-      return res.json({ next: 'LD-0001' });
+      return res.json({ next: '0550' });
     }
     const last = result.rows[0].order_num;
     // Try to extract numeric part from formats like "LD-0042" or just "42"
@@ -636,7 +636,7 @@ app.get('/api/orders/next-number/:cleaner_id', authenticate, async (req, res) =>
       const padded = String(num).padStart(match[1].length, '0');
       return res.json({ next: prefix + padded, last });
     }
-    res.json({ next: 'LD-0001', last });
+    res.json({ next: '0550', last });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
