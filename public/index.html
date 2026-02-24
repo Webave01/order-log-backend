@@ -287,20 +287,22 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
   const exp=async()=>{try{const d=await api.get('/orders/export');const rows=d.orders.map(o=>({'Order #':o.order_num,Cleaner:o.cleaner_name,'Customer Address':o.customer_address||'','Apt #':o.customer_apt||'',Route:o.route,Weight:o.weight,'Rate/lb':o.rate_per_lb,Service:o.service_type,'Pickup Date':fmtDF(o.pickup_date),Created:o.created_at?fmtD(o.created_at)+' '+fmtTime(o.created_at):'','Bag Color':o.bag_color,Extras:o.extras,'Extras $':o.extras_total,Total:o.total,Notes:o.notes,'Entered By':o.staff_name}));const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Orders');XLSX.writeFile(wb,'orders_'+new Date().toISOString().split('T')[0]+'.xlsx');notify('Exported')}catch(e){alert(e.message)}};
   const addStaff=async()=>{if(!newStaffName.trim())return;try{await api.post('/staff-names',{name:newStaffName.trim()});const sn=await api.get('/staff-names');setStaffNames(sn);setNewStaffName('');notify('Added')}catch(e){alert(e.message||'Error')}};
   const delStaff=async(id,name)=>{if(!confirm('Delete '+name+'?'))return;try{await api.del('/staff-names/'+id);const sn=await api.get('/staff-names');setStaffNames(sn);notify('Deleted')}catch(e){alert(e.message)}};
-  const handleNew=()=>{if(!staffName){alert('Select name first');return}setEditing(null);setShowForm(true)};
+  const[nameError,setNameError]=useState(false);
+  const handleNew=()=>{if(!staffName){setNameError(true);return}setNameError(false);setEditing(null);setShowForm(true)};
   const groupExtras=(extraIds)=>{const groups={};(extraIds||[]).forEach(id=>{const ex=extras.find(e=>e.id===id);if(ex){const cat=ex.category||'Other';if(!groups[cat])groups[cat]=[];groups[cat].push(ex.name)}});return groups};
 
   return React.createElement('div',null,
     React.createElement(DateTime),
-    user&&user.role==='driver'?React.createElement('div',{style:{background:'#065f46',padding:'12px 16px',borderRadius:'8px',marginBottom:'16px'}},'👤 Logged in as: ',React.createElement('strong',null,user.username)):React.createElement(StaffSelector,{staffName,setStaffName,staffNames,t}),
+    user&&user.role==='driver'?React.createElement('div',{style:{background:'#065f46',padding:'12px 16px',borderRadius:'8px',marginBottom:'16px'}},'👤 Logged in as: ',React.createElement('strong',null,user.username)):React.createElement(StaffSelector,{staffName,setStaffName:function(n){setStaffName(n);setNameError(false)},staffNames,t}),
     React.createElement('div',{style:{textAlign:'center',marginBottom:'24px'}},
+    nameError&&!staffName&&React.createElement('div',{style:{background:'#7f1d1d',border:'2px solid #ef4444',color:'#fecaca',padding:'14px 16px',borderRadius:'8px',marginBottom:'16px',textAlign:'center',fontSize:'16px',fontWeight:'bold'}},'\u26a0\ufe0f '+(lang==='es'?'Seleccione su nombre arriba':'Select your name above')),
       React.createElement('button',{onClick:handleNew,style:{...S.btn,padding:'20px 60px',fontSize:'22px',fontWeight:'bold',opacity:staffName?1:0.5,boxShadow:'0 4px 15px rgba(59,130,246,0.4)'}},t.newOrder)),
-    canEditPrices&&React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
       React.createElement('h2',{style:{margin:0,fontSize:'22px'}},t.orders),
       React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
         isAdmin&&React.createElement('button',{onClick:()=>setShowStaffMgmt(!showStaffMgmt),style:{...S.btn,background:showStaffMgmt?'#7c3aed':'#6366f1'}},'👤 Staff'),
-        React.createElement('button',{onClick:()=>setShowImport(true),style:{...S.btn,background:'#059669'}},t.import),
-        React.createElement('button',{onClick:exp,style:{...S.btn,background:'#0891b2'}},t.export))),
+        (isAdmin||hasPerm('invoices'))&&React.createElement('button',{onClick:()=>setShowImport(true),style:{...S.btn,background:'#059669'}},t.import),
+        (isAdmin||hasPerm('invoices'))&&React.createElement('button',{onClick:exp,style:{...S.btn,background:'#0891b2'}},t.export))),
     isAdmin&&showStaffMgmt&&React.createElement('div',{style:{...S.card,marginBottom:'20px',border:'1px solid #6366f1'}},
       React.createElement('h3',{style:{margin:'0 0 12px 0',color:'#a5b4fc'}},'👤 Manage Staff Names'),
       React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'12px'}},
@@ -325,15 +327,15 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
             return React.createElement('div',{key:o.id,style:S.card},
               React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'8px'}},
                 React.createElement('div',null,React.createElement('span',{style:{fontWeight:'bold',fontSize:'18px',marginRight:'10px'}},'#'+o.order_num),React.createElement('span',{style:{background:o.service_type==='same-day'?'#f59e0b':'#3b82f6',padding:'4px 12px',borderRadius:'10px',fontSize:'13px',fontWeight:'bold'}},o.service_type==='same-day'?t.sameDay:t.hour24)),
-                React.createElement('div',{style:{textAlign:'right'}},canEditPrices&&React.createElement('div',{style:{fontWeight:'bold',color:'#4ade80',fontSize:'16px'}},fmt$(total)),o.staff_name&&React.createElement('span',{style:{color:'#94a3b8',fontSize:'12px'}},'👤 '+o.staff_name))),
+                React.createElement('div',{style:{textAlign:'right'}},isAdmin&&React.createElement('div',{style:{fontWeight:'bold',color:'#4ade80',fontSize:'16px'}},fmt$(total)),o.staff_name&&React.createElement('span',{style:{color:'#94a3b8',fontSize:'12px'}},'👤 '+o.staff_name))),
               React.createElement('div',{style:{fontWeight:'600',marginBottom:'8px',fontSize:'16px'}},c?.name||'Unknown'),
               o.customer_address&&React.createElement('div',{style:{color:'#c4b5fd',fontSize:'13px',marginBottom:'6px'}},'\ud83c\udfe0 '+o.customer_address+(o.customer_apt?' \u2022 Apt '+o.customer_apt:'')),
               React.createElement('div',{style:{color:'#e2e8f0',fontSize:'16px',display:'flex',gap:'20px',flexWrap:'wrap',fontWeight:'500'}},React.createElement('span',null,'⚖️ '+o.weight+' lbs'),React.createElement('span',null,'📅 '+fmtD(o.pickup_date)+(o.created_at?' @ '+fmtTime(o.created_at):'')),React.createElement('span',null,'🎨 '+o.bag_color)),
               Object.keys(groups).length>0&&React.createElement('div',{style:{marginTop:'10px'}},Object.entries(groups).map(([cat,items])=>React.createElement('div',{key:cat,style:{fontSize:'14px',color:'#94a3b8',marginBottom:'4px'}},React.createElement('span',{style:{color:'#f59e0b'}},cat+': '),items.join(', ')))),
               o.notes&&React.createElement('div',{style:{marginTop:'10px',color:'#94a3b8',fontSize:'14px',fontStyle:'italic'}},'📝 '+o.notes),
-              canEditPrices&&parseFloat(o.price_adjustment)!==0&&React.createElement('div',{style:{marginTop:'6px',color:parseFloat(o.price_adjustment)>0?'#4ade80':'#ef4444',fontSize:'14px',fontWeight:'bold'}},'💲 Adj: '+(parseFloat(o.price_adjustment)>0?'+':'')+fmt$(o.price_adjustment)),
+              isAdmin&&parseFloat(o.price_adjustment)!==0&&React.createElement('div',{style:{marginTop:'6px',color:parseFloat(o.price_adjustment)>0?'#4ade80':'#ef4444',fontSize:'14px',fontWeight:'bold'}},'💲 Adj: '+(parseFloat(o.price_adjustment)>0?'+':'')+fmt$(o.price_adjustment)),
               React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #334155'}},React.createElement('button',{onClick:()=>{setEditing(o);setShowForm(true)},style:S.edit},t.edit),React.createElement('button',{onClick:()=>del(o.id),style:S.del},t.delete)))})),
-    showForm&&React.createElement(OrderForm,{order:editing,cleaners,extras,cleanerExtras,staffName,isAdmin:canEditPrices,onSave:save,onClose:()=>{setShowForm(false);setEditing(null)},lang,t}),
+    showForm&&React.createElement(OrderForm,{order:editing,cleaners,extras,cleanerExtras,staffName,isAdmin:isAdmin,onSave:save,onClose:()=>{setShowForm(false);setEditing(null)},lang,t}),
     showImport&&React.createElement(ImportModal,{cleaners,staffName,onClose:()=>setShowImport(false),onImport:loadData,notify,t}));
 }
 
