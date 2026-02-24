@@ -642,6 +642,41 @@ app.get('/api/orders/next-number/:cleaner_id', authenticate, async (req, res) =>
   }
 });
 
+app.get('/api/orders/check-duplicate', authenticate, async (req, res) => {
+  const { order_num, cleaner_id, exclude_id } = req.query;
+  try {
+    let query = 'SELECT * FROM orders WHERE order_num = $1 AND cleaner_id = $2';
+    const params = [order_num, cleaner_id];
+    if (exclude_id) { query += ' AND id != $3'; params.push(exclude_id); }
+    query += ' LIMIT 1';
+    const result = await pool.query(query, params);
+    if (result.rows.length > 0) {
+      res.json({ isDuplicate: true, existingOrder: result.rows[0] });
+    } else {
+      res.json({ isDuplicate: false });
+    }
+  } catch (err) { res.json({ isDuplicate: false }); }
+});
+
+app.get('/api/orders/check-sequence', authenticate, async (req, res) => {
+  const { order_num, cleaner_id } = req.query;
+  try {
+    const result = await pool.query(
+      'SELECT order_num FROM orders WHERE cleaner_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [cleaner_id]
+    );
+    if (result.rows.length === 0) return res.json({ isOutOfSequence: false });
+    const lastNum = parseInt(String(result.rows[0].order_num).replace(/\D/g, '')) || 0;
+    const currentNum = parseInt(String(order_num).replace(/\D/g, '')) || 0;
+    const diff = Math.abs(currentNum - lastNum);
+    if (diff > 5 && currentNum !== 0) {
+      res.json({ isOutOfSequence: true, lastOrderNum: result.rows[0].order_num, difference: diff });
+    } else {
+      res.json({ isOutOfSequence: false });
+    }
+  } catch (err) { res.json({ isOutOfSequence: false }); }
+});
+
 app.get('/api/orders/find-duplicates', authenticate, async (req, res) => {
   const { cleaner_id, start_date, end_date } = req.query;
   try {
