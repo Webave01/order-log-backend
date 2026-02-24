@@ -348,25 +348,21 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
 
   const selectedCleaner=cleaners.find(c=>c.id===d.cleaner_id);
   const isAddrCleaner=selectedCleaner&&selectedCleaner.has_addresses;
+  const filteredCleaners=cleanerSearch?cleaners.filter(c=>c.name.toLowerCase().includes(cleanerSearch.toLowerCase())):cleaners;
+  const filteredAddrs=addrSearch?addrList.filter(function(a){return a.address.toLowerCase().includes(addrSearch.toLowerCase())}):addrList;
 
-  // Load addresses when address-cleaner selected
   useEffect(()=>{
     if(isAddrCleaner){api.get('/cleaner-addresses/'+d.cleaner_id).then(setAddrList).catch(()=>setAddrList([]))}
     else{setAddrList([])}
   },[d.cleaner_id]);
 
-  // Auto-set bag to Black and fetch next order number when address-cleaner selected
   useEffect(()=>{
     if(isAddrCleaner){
       if(d.bag_color!=='Black')setD(prev=>({...prev,bag_color:'Black'}));
-      if(!d.id){
-        setAutoNum(true);
-        api.get('/orders/next-number/'+d.cleaner_id).then(function(r){setD(prev=>({...prev,order_num:r.next}))}).catch(()=>{});
-      }
+      if(!d.id){setAutoNum(true);api.get('/orders/next-number/'+d.cleaner_id).then(function(r){setD(prev=>({...prev,order_num:r.next}))}).catch(()=>{});}
     }else{setAutoNum(false)}
   },[d.cleaner_id,isAddrCleaner]);
 
-  // Clear apt error when apt is filled
   useEffect(()=>{if(d.customer_apt)setAptError(false)},[d.customer_apt]);
 
   useEffect(()=>{
@@ -378,22 +374,19 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
 
   const sub=async e=>{e.preventDefault();
     if(!isAddrCleaner&&!d.order_num){alert(t.orderNum+' required');return}
-    if(!d.cleaner_id){alert(t.cleaner+' required');return}
-    if(!d.weight&&d.extras.length===0){alert(t.weight+' or '+t.extrasLabel+' required');return}
-    if(isAddrCleaner&&!d.customer_address){alert(t.customerAddress+' required');return}
+    if(!d.cleaner_id){alert('Select cleaner');return}
+    if(!d.weight&&d.extras.length===0){alert('Enter weight or select extras');return}
+    if(isAddrCleaner&&!d.customer_address){alert('Address required');return}
     if(isAddrCleaner&&!d.customer_apt){setAptError(true);return}
-    if(dupWarn&&!confirm(dupWarn+'\n\n'+t.saving+'?'))return;
-    if(seqWarn&&!confirm(seqWarn+'\n\n'+t.saving+'?'))return;
+    if(dupWarn&&!confirm(dupWarn+'\n\nSave anyway?'))return;
+    if(seqWarn&&!confirm(seqWarn+'\n\nSave anyway?'))return;
     setSaving(true);await onSave({...d,weight:d.weight||0});setSaving(false)};
   
   const getQty=(id)=>d.extras.filter(x=>x===id).length;
   const addOne=(id)=>setD({...d,extras:[...d.extras,id]});
-  const removeOne=(id)=>{const idx=d.extras.indexOf(id);if(idx>-1){const ne=[...d.extras];ne.splice(idx,1);setD({...d,extras:ne})}};
+  const removeOne=(id)=>{const idx=d.extras.indexOf(id);if(idx>-1){const newExtras=[...d.extras];newExtras.splice(idx,1);setD({...d,extras:newExtras})}};
   
   const grouped={};extras.forEach(ex=>{const cat=ex.category||'Other';if(!grouped[cat])grouped[cat]=[];grouped[cat].push(ex)});
-  
-  const filteredCleaners=cleanerSearch?cleaners.filter(c=>c.name.toLowerCase().includes(cleanerSearch.toLowerCase())):cleaners;
-  const filteredAddrs=addrSearch?addrList.filter(function(a){return a.address.toLowerCase().includes(addrSearch.toLowerCase())}):addrList;
 
   return React.createElement('div',{style:S.modal},
     React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'500px',maxHeight:'90vh',overflow:'auto',border:'1px solid #334155'}},
@@ -408,24 +401,23 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
           React.createElement('div',null,React.createElement('label',{style:S.lbl},t.cleaner+' *'),
             React.createElement('input',{type:'text',placeholder:selectedCleaner?selectedCleaner.name:t.searchCleaner,value:cleanerSearch,onChange:e=>{setCleanerSearch(e.target.value);setHighlightIdx(0);if(!e.target.value)setD({...d,cleaner_id:'',customer_address:'',customer_apt:''})},onKeyDown:e=>{if(!cleanerSearch||filteredCleaners.length===0)return;if(e.key==='ArrowDown'){e.preventDefault();setHighlightIdx(i=>(i+1)%filteredCleaners.length)}else if(e.key==='ArrowUp'){e.preventDefault();setHighlightIdx(i=>(i-1+filteredCleaners.length)%filteredCleaners.length)}else if(e.key==='Enter'&&filteredCleaners.length>0){e.preventDefault();var sel=filteredCleaners[highlightIdx];setD({...d,cleaner_id:sel.id,customer_address:'',customer_apt:'',bag_color:sel.has_addresses?'Black':d.bag_color});setCleanerSearch('')}},style:{...S.inp,fontSize:'16px',padding:'12px',marginBottom:cleanerSearch?'4px':'0'}}),
             cleanerSearch&&React.createElement('div',{style:{background:'#0f172a',border:'1px solid #475569',borderRadius:'6px',maxHeight:'150px',overflow:'auto'}},filteredCleaners.length>0?filteredCleaners.map((c,idx)=>React.createElement('div',{key:c.id,onClick:function(){setD({...d,cleaner_id:c.id,customer_address:'',customer_apt:'',bag_color:c.has_addresses?'Black':d.bag_color});setCleanerSearch('');},style:{padding:'10px 12px',cursor:'pointer',borderBottom:'1px solid #334155',fontSize:'14px',background:idx===highlightIdx?'#3b82f6':'transparent',color:idx===highlightIdx?'#fff':'#e2e8f0'}},c.name+(c.has_addresses?' \ud83c\udfe0':''))):React.createElement('div',{style:{padding:'10px 12px',color:'#94a3b8',fontSize:'14px'}},'No matches'))),
-          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.orderNum+(isAddrCleaner&&!d.id?' (\u2714 '+t.autoAssigned+')':' *')),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.orderNum+(isAddrCleaner&&!d.id?' (\u2714 Auto)':' *')),
             isAddrCleaner&&!d.id?React.createElement('input',{value:d.order_num,readOnly:true,style:{...S.inp,fontSize:'16px',padding:'12px',background:'#0f172a',color:'#4ade80'}}):
             React.createElement('input',{value:d.order_num,onChange:e=>setD({...d,order_num:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}}))),
 
         isAddrCleaner&&React.createElement('div',{style:{marginTop:'12px',padding:'12px',background:'rgba(139,92,246,0.1)',border:'1px solid #8b5cf6',borderRadius:'8px'}},
-          React.createElement('label',{style:{...S.lbl,color:'#c4b5fd'}},'\ud83c\udfe0 '+t.customerAddress+' *'),
+          React.createElement('label',{style:{...S.lbl,color:'#c4b5fd'}},'\ud83c\udfe0 Address *'),
           React.createElement('div',{style:{position:'relative'}},
-            React.createElement('input',{type:'text',value:d.customer_address||addrSearch,onChange:function(e){setAddrSearch(e.target.value);setShowAddrDrop(true);setAddrHighlight(0);if(!e.target.value)setD({...d,customer_address:''})},onFocus:function(){setShowAddrDrop(true);setAddrSearch('')},onKeyDown:function(e){if(!showAddrDrop||filteredAddrs.length===0)return;if(e.key==='ArrowDown'){e.preventDefault();setAddrHighlight(function(i){return(i+1)%filteredAddrs.length})}else if(e.key==='ArrowUp'){e.preventDefault();setAddrHighlight(function(i){return(i-1+filteredAddrs.length)%filteredAddrs.length})}else if(e.key==='Enter'&&filteredAddrs.length>0){e.preventDefault();var a=filteredAddrs[addrHighlight];setD({...d,customer_address:a.address,customer_apt:a.apt||d.customer_apt});setAddrSearch('');setShowAddrDrop(false)}},placeholder:t.searchAddress,style:{...S.inp,fontSize:'16px',padding:'12px'}}),
+            React.createElement('input',{type:'text',value:d.customer_address||addrSearch,onChange:function(e){setAddrSearch(e.target.value);setShowAddrDrop(true);setAddrHighlight(0);if(!e.target.value)setD({...d,customer_address:''})},onFocus:function(){setShowAddrDrop(true);setAddrSearch('')},onKeyDown:function(e){if(!showAddrDrop||filteredAddrs.length===0)return;if(e.key==='ArrowDown'){e.preventDefault();setAddrHighlight(function(i){return(i+1)%filteredAddrs.length})}else if(e.key==='ArrowUp'){e.preventDefault();setAddrHighlight(function(i){return(i-1+filteredAddrs.length)%filteredAddrs.length})}else if(e.key==='Enter'&&filteredAddrs.length>0){e.preventDefault();var a=filteredAddrs[addrHighlight];setD({...d,customer_address:a.address,customer_apt:a.apt||d.customer_apt});setAddrSearch('');setShowAddrDrop(false)}},placeholder:'Type address...',style:{...S.inp,fontSize:'16px',padding:'12px'}}),
             showAddrDrop&&(addrSearch||!d.customer_address)&&React.createElement('div',{style:{position:'absolute',top:'100%',left:0,right:0,background:'#0f172a',border:'1px solid #475569',borderRadius:'6px',maxHeight:'180px',overflow:'auto',zIndex:20}},
-              filteredAddrs.length>0?filteredAddrs.map(function(a,idx){return React.createElement('div',{key:a.id,onClick:function(){setD({...d,customer_address:a.address,customer_apt:a.apt||d.customer_apt});setAddrSearch('');setShowAddrDrop(false)},style:{padding:'10px 12px',cursor:'pointer',borderBottom:'1px solid #334155',fontSize:'13px',background:idx===addrHighlight?'#8b5cf6':'transparent',color:idx===addrHighlight?'#fff':'#e2e8f0'}},a.address+(a.apt?' (Apt '+a.apt+')':''))}):React.createElement('div',{style:{padding:'10px',color:'#94a3b8',fontSize:'13px'}},t.noAddressesFound))),
+              filteredAddrs.length>0?filteredAddrs.map(function(a,idx){return React.createElement('div',{key:a.id,onClick:function(){setD({...d,customer_address:a.address,customer_apt:a.apt||d.customer_apt});setAddrSearch('');setShowAddrDrop(false)},style:{padding:'10px 12px',cursor:'pointer',borderBottom:'1px solid #334155',fontSize:'13px',background:idx===addrHighlight?'#8b5cf6':'transparent',color:idx===addrHighlight?'#fff':'#e2e8f0'}},a.address+(a.apt?' (Apt '+a.apt+')':''))}):React.createElement('div',{style:{padding:'10px',color:'#94a3b8',fontSize:'13px'}},'No addresses found'))),
           d.customer_address&&React.createElement('div',{style:{marginTop:'6px',padding:'6px 10px',background:'rgba(139,92,246,0.2)',borderRadius:'4px',color:'#c4b5fd',fontSize:'13px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
             React.createElement('span',null,'\ud83d\udccd '+d.customer_address),
             React.createElement('button',{type:'button',onClick:function(){setD({...d,customer_address:'',customer_apt:''});setAddrSearch('')},style:{background:'none',border:'none',color:'#f87171',cursor:'pointer',fontSize:'14px'}},'\u2715')),
-
           React.createElement('div',{style:{marginTop:'10px'}},
-            React.createElement('label',{style:{...S.lbl,color:aptError?'#fca5a5':'#c4b5fd'}},'\ud83d\udecf '+t.customerApt+' *'),
-            React.createElement('input',{value:d.customer_apt,onChange:function(e){setD({...d,customer_apt:e.target.value});if(e.target.value)setAptError(false)},placeholder:t.customerApt,style:{...S.inp,fontSize:'16px',padding:'12px',borderColor:aptError?'#ef4444':'#475569',background:aptError?'rgba(239,68,68,0.1)':'#0f172a'}}),
-            aptError&&React.createElement('div',{style:{color:'#fca5a5',fontSize:'13px',marginTop:'4px',fontWeight:'bold'}},'\u26a0\ufe0f '+t.aptRequired)))),
+            React.createElement('label',{style:{...S.lbl,color:aptError?'#fca5a5':'#c4b5fd'}},'Apt # *'),
+            React.createElement('input',{value:d.customer_apt,onChange:function(e){setD({...d,customer_apt:e.target.value});if(e.target.value)setAptError(false)},placeholder:'Apt #',style:{...S.inp,fontSize:'16px',padding:'12px',borderColor:aptError?'#ef4444':'#475569',background:aptError?'rgba(239,68,68,0.1)':'#0f172a'}}),
+            aptError&&React.createElement('div',{style:{color:'#fca5a5',fontSize:'13px',marginTop:'4px',fontWeight:'bold'}},'\u26a0\ufe0f Apartment # is required'))),
 
         React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginTop:'12px'}},
           React.createElement('div',null,React.createElement('label',{style:S.lbl},t.weight),
@@ -436,7 +428,7 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
           React.createElement('div',null,React.createElement('label',{style:S.lbl},t.service),React.createElement('select',{value:d.service_type,onChange:e=>setD({...d,service_type:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}},React.createElement('option',{value:'same-day'},t.sameDay),React.createElement('option',{value:'24-hour'},t.hour24))),
           React.createElement('div',null,React.createElement('label',{style:S.lbl},t.pickupDate),React.createElement('input',{type:'date',value:d.pickup_date,onChange:e=>setD({...d,pickup_date:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}})),
           !isAddrCleaner?React.createElement('div',null,React.createElement('label',{style:S.lbl},t.bagColor),React.createElement('select',{value:d.bag_color,onChange:e=>setD({...d,bag_color:e.target.value}),style:{...S.inp,fontSize:'16px',padding:'12px'}},COLORS.map(c=>React.createElement('option',{key:c,value:c},lang==='es'?COLOR_ES[c]||c:c)))):
-          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.bagColor),React.createElement('div',{style:{...S.inp,fontSize:'16px',padding:'12px',background:'#0f172a',color:'#94a3b8'}},t.bagColorAuto))),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},t.bagColor),React.createElement('div',{style:{...S.inp,fontSize:'16px',padding:'12px',background:'#0f172a',color:'#94a3b8'}},'Black (auto)'))),
         React.createElement('div',{style:{marginTop:'16px'}},React.createElement('label',{style:S.lbl},t.notes),React.createElement('textarea',{value:d.notes,onChange:e=>setD({...d,notes:e.target.value}),style:{...S.inp,minHeight:'60px',resize:'vertical',fontSize:'16px'}})),
         isAdmin&&React.createElement('div',{style:{marginTop:'16px',padding:'12px',background:'rgba(59,130,246,0.1)',border:'1px solid #3b82f6',borderRadius:'8px'}},
           React.createElement('label',{style:{...S.lbl,color:'#60a5fa'}},'\ud83d\udcb2 Price Adjustment (Admin)'),
@@ -457,10 +449,8 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
                 React.createElement('span',{style:{fontSize:'18px',fontWeight:'bold',minWidth:'30px',textAlign:'center'}},qty),
                 React.createElement('button',{type:'button',onClick:function(){addOne(ex.id);},style:{width:'32px',height:'32px',borderRadius:'6px',border:'none',background:'#22c55e',color:'white',fontSize:'18px',cursor:'pointer'}},'+')));
             })));
-          }))));}
-
-
-
+          })))));
+}
 function ImportModal({cleaners,staffName,onClose,onImport,notify,t}){
   const[file,setFile]=useState(null);const[prev,setPrev]=useState([]);const[imp,setImp]=useState(false);const[res,setRes]=useState(null);
   const hFile=e=>{const f=e.target.files[0];if(!f)return;setFile(f);const r=new FileReader();r.onload=ev=>{const wb=XLSX.read(ev.target.result,{type:'binary'});setPrev(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]).slice(0,5))};r.readAsBinaryString(f)};
