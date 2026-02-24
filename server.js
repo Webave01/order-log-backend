@@ -624,19 +624,19 @@ app.get('/api/orders/next-number/:cleaner_id', authenticate, async (req, res) =>
       "SELECT order_num FROM orders WHERE cleaner_id = $1 ORDER BY created_at DESC LIMIT 1",
       [req.params.cleaner_id]
     );
+    const MIN_START = 550;
     if (result.rows.length === 0) {
-      return res.json({ next: '0550' });
+      return res.json({ next: String(MIN_START).padStart(4, '0') });
     }
     const last = result.rows[0].order_num;
-    // Try to extract numeric part from formats like "LD-0042" or just "42"
     const match = last.match(/(\d+)$/);
     if (match) {
-      const num = parseInt(match[1]) + 1;
-      const prefix = last.slice(0, last.length - match[1].length);
-      const padded = String(num).padStart(match[1].length, '0');
-      return res.json({ next: prefix + padded, last });
+      const num = Math.max(parseInt(match[1]) + 1, MIN_START);
+      const padLen = Math.max(match[1].length, 4);
+      const padded = String(num).padStart(padLen, '0');
+      return res.json({ next: padded, last });
     }
-    res.json({ next: '0550', last });
+    res.json({ next: String(MIN_START).padStart(4, '0'), last });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
