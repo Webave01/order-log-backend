@@ -343,6 +343,7 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
   const getDefaultPickupDate=()=>{const now=new Date();const hour=now.getHours();const target=hour>=6&&hour<9?new Date(now.setDate(now.getDate()-1)):now;const y=target.getFullYear();const m=String(target.getMonth()+1).padStart(2,'0');const dd=String(target.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd};
   const[d,setD]=useState({order_num:order?.order_num||'',weight:order?.weight||'',service_type:order?.service_type||'same-day',pickup_date:order?.pickup_date?.split('T')[0]||getDefaultPickupDate(),bag_color:order?.bag_color||'Blue',cleaner_id:order?.cleaner_id||'',extras:order?.extras||[],notes:order?.notes||'',staff_name:order?.staff_name||staffName,price_adjustment:order?.price_adjustment||'',customer_address:order?.customer_address||'',customer_apt:order?.customer_apt||'',id:order?.id||null});
   const[saving,setSaving]=useState(false);const[dupWarn,setDupWarn]=useState(null);const[seqWarn,setSeqWarn]=useState(null);const[cleanerSearch,setCleanerSearch]=useState('');const[highlightIdx,setHighlightIdx]=useState(0);
+  const[confirmPopup,setConfirmPopup]=useState(null);
   const[addrList,setAddrList]=useState([]);const[addrSearch,setAddrSearch]=useState('');const[addrHighlight,setAddrHighlight]=useState(0);const[showAddrDrop,setShowAddrDrop]=useState(false);
   const[aptError,setAptError]=useState(false);const[autoNum,setAutoNum]=useState(false);
 
@@ -367,20 +368,26 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
 
   useEffect(()=>{
     if(!isAddrCleaner){
-      const check=async()=>{if(d.order_num&&d.cleaner_id){try{const dup=await api.get('/orders/check-duplicate?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id+(d.id?'&exclude_id='+d.id:''));setDupWarn(dup.isDuplicate?'REPEAT: #'+d.order_num+' exists ('+fmtD(dup.existingOrder.pickup_date)+')':null);const seq=await api.get('/orders/check-sequence?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id);setSeqWarn(seq.isOutOfSequence?'Check # - last was #'+seq.lastOrderNum+' (diff: '+seq.difference+')':null)}catch(e){}}else{setDupWarn(null);setSeqWarn(null)}};
+      const check=async()=>{if(d.order_num&&d.cleaner_id){try{const dup=await api.get('/orders/check-duplicate?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id+(d.id?'&exclude_id='+d.id:''));setDupWarn(dup.isDuplicate?'REPEAT: #'+d.order_num+' exists ('+fmtD(dup.existingOrder.pickup_date)+')':null);const seq=await api.get('/orders/check-sequence?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id);setSeqWarn(seq.isOutOfSequence?'CHECK ORDER # IS CORRECT - LAST ORDER WAS #'+seq.lastOrderNum:null)}catch(e){}}else{setDupWarn(null);setSeqWarn(null)}};
       const tm=setTimeout(check,300);return()=>clearTimeout(tm);
     }else{setDupWarn(null);setSeqWarn(null)}
   },[d.order_num,d.cleaner_id,d.id,isAddrCleaner]);
 
+  const doSave=async()=>{setSaving(true);await onSave({...d,weight:d.weight||0});setSaving(false)};
+  const showConfirm=(msg,cb)=>{setConfirmPopup({msg,cb})};
   const sub=async e=>{e.preventDefault();
     if(!isAddrCleaner&&!d.order_num){alert(t.orderNum+' required');return}
     if(!d.cleaner_id){alert('Select cleaner');return}
     if(!d.weight&&d.extras.length===0){alert('Enter weight or select extras');return}
     if(isAddrCleaner&&!d.customer_address){alert('Address required');return}
     if(isAddrCleaner&&!d.customer_apt){setAptError(true);return}
-    if(dupWarn&&!confirm(dupWarn+'\n\nSave anyway?'))return;
-    if(seqWarn&&!confirm(seqWarn+'\n\nSave anyway?'))return;
-    setSaving(true);await onSave({...d,weight:d.weight||0});setSaving(false)};
+    var warnings=[];
+    if(dupWarn)warnings.push(dupWarn);
+    if(seqWarn)warnings.push(seqWarn);
+    if(d.weight&&parseFloat(d.weight)>100)warnings.push('CHECK WEIGHT - '+parseFloat(d.weight)+' LBS SEEMS HIGH');
+    if(d.weight&&parseFloat(d.weight)<0)warnings.push('CHECK WEIGHT - CANNOT BE NEGATIVE');
+    if(warnings.length>0){showConfirm(warnings.join('\n\n'),doSave);return}
+    await doSave()};
   
   const getQty=(id)=>d.extras.filter(x=>x===id).length;
   const addOne=(id)=>setD({...d,extras:[...d.extras,id]});
@@ -449,7 +456,14 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
                 React.createElement('span',{style:{fontSize:'18px',fontWeight:'bold',minWidth:'30px',textAlign:'center'}},qty),
                 React.createElement('button',{type:'button',onClick:function(){addOne(ex.id);},style:{width:'32px',height:'32px',borderRadius:'6px',border:'none',background:'#22c55e',color:'white',fontSize:'18px',cursor:'pointer'}},'+')));
             })));
-          })))));
+          })),
+        confirmPopup&&React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}},
+          React.createElement('div',{style:{background:'#7f1d1d',border:'3px solid #ef4444',borderRadius:'16px',padding:'24px',maxWidth:'400px',width:'100%',textAlign:'center',boxShadow:'0 20px 60px rgba(239,68,68,0.4)'}},
+            React.createElement('div',{style:{fontSize:'48px',marginBottom:'12px'}},'\u26a0\ufe0f'),
+            confirmPopup.msg.split('\n\n').map(function(line,i){return React.createElement('div',{key:i,style:{color:'#fecaca',fontSize:'18px',fontWeight:'bold',marginBottom:'12px',lineHeight:'1.4'}},line)}),
+            React.createElement('div',{style:{display:'flex',gap:'12px',justifyContent:'center',marginTop:'20px'}},
+              React.createElement('button',{type:'button',onClick:function(){setConfirmPopup(null)},style:{padding:'14px 32px',borderRadius:'10px',border:'2px solid #ef4444',background:'transparent',color:'#fecaca',fontSize:'16px',fontWeight:'bold',cursor:'pointer'}},'Cancel'),
+              React.createElement('button',{type:'button',onClick:function(){var cb=confirmPopup.cb;setConfirmPopup(null);cb()},style:{padding:'14px 32px',borderRadius:'10px',border:'none',background:'#ef4444',color:'#fff',fontSize:'16px',fontWeight:'bold',cursor:'pointer'}},'OK - Save')))))));
 }
 function ImportModal({cleaners,staffName,onClose,onImport,notify,t}){
   const[file,setFile]=useState(null);const[prev,setPrev]=useState([]);const[imp,setImp]=useState(false);const[res,setRes]=useState(null);
