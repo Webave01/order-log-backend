@@ -757,6 +757,8 @@ function Payments({cleaners,settings,t}){
   
   const deleteInvoice=async(id)=>{if(!confirm('Delete this invoice record?'))return;try{await api.del('/invoice-tracking/'+id);await load()}catch(e){alert(e.message)}};
   
+  const quickPay=async(inv)=>{try{await api.put('/invoice-tracking/'+inv.id,{amount_paid:parseFloat(inv.invoice_amount),status:'paid',paid_date:new Date().toISOString().split('T')[0]});await load()}catch(e){alert(e.message)}};
+  
   const startEdit=(inv)=>{setEditing(inv.id);setEditPay(inv.amount_paid||'');setEditNote(inv.notes||'');setEditStat(inv.status||'unpaid')};
   const handlePayChange=(val)=>{setEditPay(val);if(parseFloat(val)>0&&editStat==='unpaid')setEditStat('paid')};
   
@@ -863,7 +865,9 @@ function Payments({cleaners,settings,t}){
             React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmtC(inv.invoice_amount)),
             React.createElement('td',{style:{padding:'8px',textAlign:'right',color:'#4ade80'}},fmtC(inv.amount_paid)),
             React.createElement('td',{style:{padding:'8px',textAlign:'right',color:bal>0?'#ef4444':'#4ade80',fontWeight:'bold'}},fmtC(bal)),
-            React.createElement('td',{style:{padding:'8px',textAlign:'center'}},React.createElement('span',{style:{padding:'2px 8px',borderRadius:'4px',fontSize:'11px',background:inv.status==='paid'?'#065f46':inv.status==='partial'?'#78350f':'#7f1d1d'}},inv.status)),
+            React.createElement('td',{style:{padding:'8px',textAlign:'center'}},inv.status==='paid'?
+              React.createElement('span',{style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#065f46',color:'#4ade80',cursor:'default'}},'✓ Paid'):
+              React.createElement('button',{onClick:function(){quickPay(inv)},style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',border:'2px solid #ef4444',background:'rgba(127,29,29,0.5)',color:'#fecaca',cursor:'pointer'}},inv.status==='partial'?'Partial → Paid':'Mark Paid')),
             React.createElement('td',{style:{padding:'8px',textAlign:'center'}},
               React.createElement('button',{onClick:function(){viewInvoice(inv);},style:{...S.btn,padding:'4px 8px',fontSize:'11px',marginRight:'4px',background:'#0ea5e9'}},'View'),
               React.createElement('button',{onClick:function(){startEdit(inv);},style:{...S.edit,padding:'4px 8px',fontSize:'11px',marginRight:'4px'}},'Edit'),
