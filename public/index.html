@@ -811,7 +811,7 @@ function Payments({cleaners,settings,t}){
     
     summary&&React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
       React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#60a5fa'}},fmtC(summary.overall.total_invoiced)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Invoiced')),
-      React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#4ade80'}},fmtC(summary.overall.total_paid)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Paid')),
+      React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:parseFloat(summary.overall.total_paid)>0?'#4ade80':'#64748b'}},fmtC(summary.overall.total_paid)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Paid')),
       React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#ef4444'}},fmtC(unpaidTotal)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Past Due (Unpaid)'))),
     
     React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
@@ -834,7 +834,7 @@ function Payments({cleaners,settings,t}){
         React.createElement('tbody',null,summary.cleaners.filter(c=>(cleanerUnpaid[c.cleaner_name]||0)>0).map((c,i)=>React.createElement('tr',{key:i,style:{borderBottom:'1px solid #334155'}},
           React.createElement('td',{style:{padding:'10px'}},c.cleaner_name),
           React.createElement('td',{style:{padding:'10px',textAlign:'right'}},fmtC(c.total_invoiced)),
-          React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#4ade80'}},fmtC(c.total_paid)),
+          React.createElement('td',{style:{padding:'10px',textAlign:'right',color:parseFloat(c.total_paid)>0?'#4ade80':'#64748b'}},fmtC(c.total_paid)),
           React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#ef4444',fontWeight:'bold'}},fmtC(cleanerUnpaid[c.cleaner_name]||0))))))),
     
     Object.keys(groupedByWeek).sort().reverse().map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
@@ -863,8 +863,8 @@ function Payments({cleaners,settings,t}){
           return React.createElement('tr',{key:inv.id,style:{borderBottom:'1px solid #334155'}},
             React.createElement('td',{style:{padding:'8px'}},inv.cleaner_name),
             React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmtC(inv.invoice_amount)),
-            React.createElement('td',{style:{padding:'8px',textAlign:'right',color:'#4ade80'}},fmtC(inv.amount_paid)),
-            React.createElement('td',{style:{padding:'8px',textAlign:'right',color:bal>0?'#ef4444':'#4ade80',fontWeight:'bold'}},fmtC(bal)),
+            React.createElement('td',{style:{padding:'8px',textAlign:'right',color:parseFloat(inv.amount_paid)>0?'#4ade80':'#64748b'}},fmtC(inv.amount_paid)),
+            React.createElement('td',{style:{padding:'8px',textAlign:'right',color:bal>0?'#ef4444':'#4ade80',fontWeight:'bold'}},bal>0?fmtC(bal):'$0.00'),
             React.createElement('td',{style:{padding:'8px',textAlign:'center'}},inv.status==='paid'?
               React.createElement('span',{style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#065f46',color:'#4ade80',cursor:'default'}},'✓ Paid'):
               React.createElement('button',{onClick:function(){quickPay(inv)},style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',border:'2px solid #ef4444',background:'rgba(127,29,29,0.5)',color:'#fecaca',cursor:'pointer'}},inv.status==='partial'?'Partial → Paid':'Mark Paid')),
