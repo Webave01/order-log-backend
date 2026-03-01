@@ -9,6 +9,17 @@ const express = require('express');
 module.exports = function(pool, authenticate, adminOnly) {
   const router = express.Router();
 
+  // Middleware: allows admin OR drivers/staff with 'manage_schedule' permission
+  const canManageSchedule = async (req, res, next) => {
+    if (req.user.role === 'admin') return next();
+    try {
+      const result = await pool.query('SELECT permissions FROM users WHERE id = $1', [req.user.id]);
+      const perms = result.rows[0]?.permissions || [];
+      if (perms.includes('manage_schedule')) return next();
+    } catch(e) {}
+    res.status(403).json({ error: 'Requires schedule management access' });
+  };
+
   // =============================================
   // DRIVERS CRUD
   // =============================================
@@ -16,8 +27,9 @@ module.exports = function(pool, authenticate, adminOnly) {
   // List all drivers
   router.get('/drivers', authenticate, async (req, res) => {
     try {
+      const includeAll = req.query.include_terminated === 'true';
       const { rows } = await pool.query(
-        'SELECT * FROM drivers WHERE status != $1 ORDER BY name', ['terminated']
+        includeAll ? 'SELECT * FROM drivers ORDER BY status, name' : 'SELECT * FROM drivers WHERE status != $1 ORDER BY name', includeAll ? [] : ['terminated']
       );
       res.json(rows);
     } catch (err) {
@@ -411,10 +423,16 @@ module.exports = function(pool, authenticate, adminOnly) {
       const { driver_id, work_date, status, route_selections, preferred_route_id, preferred_shift, notes, confirmed, admin_confirmed } = req.body;
       if (!driver_id || !work_date) return res.status(400).json({ error: 'driver_id and work_date required' });
 
-      // Verify driver owns this profile (unless admin)
+      // Verify driver owns this profile (unless admin or schedule manager)
       if (req.user.role !== 'admin') {
-        const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1 AND id = $2', [req.user.id, driver_id]);
-        if (dResult.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+        // Check if user has manage_schedule permission
+        const permResult = await pool.query('SELECT permissions FROM users WHERE id = $1', [req.user.id]);
+        const userPerms = permResult.rows[0]?.permissions || [];
+        const isScheduleManager = userPerms.includes('manage_schedule');
+        if (!isScheduleManager) {
+          const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1 AND id = $2', [req.user.id, driver_id]);
+          if (dResult.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+        }
       }
 
       // Build route_selections - accept new format or legacy single route
@@ -624,7 +642,7 @@ module.exports = function(pool, authenticate, adminOnly) {
   });
 
   // Create assignment
-  router.post('/schedule/assign', authenticate, adminOnly, async (req, res) => {
+  router.post('/schedule/assign', authenticate, canManageSchedule, async (req, res) => {
     try {
       const { driver_id, route_id, shift_template_id, day_of_week, effective_date } = req.body;
       if (!driver_id || !route_id || !shift_template_id || day_of_week === undefined) {
@@ -656,7 +674,7 @@ module.exports = function(pool, authenticate, adminOnly) {
   });
 
   // Update assignment
-  router.put('/schedule/assign/:id', authenticate, adminOnly, async (req, res) => {
+  router.put('/schedule/assign/:id', authenticate, canManageSchedule, async (req, res) => {
     try {
       const { driver_id, end_date } = req.body;
       const { rows } = await pool.query(
@@ -674,7 +692,7 @@ module.exports = function(pool, authenticate, adminOnly) {
   });
 
   // Delete assignment
-  router.delete('/schedule/assign/:id', authenticate, adminOnly, async (req, res) => {
+  router.delete('/schedule/assign/:id', authenticate, canManageSchedule, async (req, res) => {
     try {
       await pool.query('DELETE FROM schedule_assignments WHERE id=$1', [req.params.id]);
       res.json({ success: true });
