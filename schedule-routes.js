@@ -479,24 +479,37 @@ module.exports = function(pool, authenticate, adminOnly) {
       const isAdmin = req.user.role === 'admin';
 
       if (!isAdmin) {
-        // Verify ownership
-        const check = await pool.query(
-          'SELECT da.id, da.work_date, da.admin_confirmed FROM driver_availability da JOIN drivers d ON da.driver_id = d.id WHERE da.id = $1 AND d.user_id = $2',
-          [req.params.id, req.user.id]
-        );
-        if (check.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+        // Check if user has manage_schedule permission
+        const permResult = await pool.query('SELECT permissions FROM users WHERE id = $1', [req.user.id]);
+        const userPerms = permResult.rows[0]?.permissions || [];
+        const isScheduleManager = userPerms.includes('manage_schedule');
 
-        // Admin-confirmed schedules cannot be cancelled by driver
-        if (check.rows[0].admin_confirmed) {
-          return res.status(403).json({ error: 'This schedule has been confirmed by admin and cannot be changed. Contact your manager.' });
-        }
+        if (!isScheduleManager) {
+          // Verify ownership
+          const check = await pool.query(
+            'SELECT da.id, da.work_date, da.admin_confirmed FROM driver_availability da JOIN drivers d ON da.driver_id = d.id WHERE da.id = $1 AND d.user_id = $2',
+            [req.params.id, req.user.id]
+          );
+          if (check.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
 
-        // 48-hour rule
-        const workDate = new Date(check.rows[0].work_date);
-        const now = new Date();
-        const hoursUntil = (workDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-        if (hoursUntil < 48) {
-          return res.status(403).json({ error: 'Cannot cancel within 48 hours of the scheduled date. Contact your manager.' });
+          // Admin-confirmed schedules cannot be cancelled by driver
+          if (check.rows[0].admin_confirmed) {
+            return res.status(403).json({ error: 'This schedule has been confirmed by admin and cannot be changed. Contact your manager.' });
+          }
+
+          // 48-hour rule
+          const workDate = new Date(check.rows[0].work_date);
+          const now = new Date();
+          const hoursUntil = (workDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+          if (hoursUntil < 48) {
+            return res.status(403).json({ error: 'Cannot cancel within 48 hours of the scheduled date. Contact your manager.' });
+          }
+        } else {
+          // Schedule manager can delete but not admin-confirmed ones
+          const check = await pool.query('SELECT admin_confirmed FROM driver_availability WHERE id = $1', [req.params.id]);
+          if (check.rows.length > 0 && check.rows[0].admin_confirmed) {
+            return res.status(403).json({ error: 'This schedule has been confirmed by admin. Only admin can change it.' });
+          }
         }
       }
 
@@ -541,7 +554,7 @@ module.exports = function(pool, authenticate, adminOnly) {
   });
 
   // Admin: get coverage summary for a week (who's available, what's unfilled)
-  router.get('/availability/coverage', authenticate, adminOnly, async (req, res) => {
+  router.get('/availability/coverage', authenticate, canManageSchedule, async (req, res) => {
     try {
       const { week_of } = req.query;
       if (!week_of) return res.status(400).json({ error: 'week_of required' });
