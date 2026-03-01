@@ -1168,9 +1168,15 @@ function Schedule({isAdmin,notify,t,user}){
 function DriversPanel({drivers,notify,onRefresh}){
   const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[tab,setTab]=useState('basic');const[expand,setExpand]=useState(null);
   const[showRates,setShowRates]=useState(false);
+  const[showDeactivated,setShowDeactivated]=useState(false);const[deactivated,setDeactivated]=useState([]);
   const emptyF={name:'',phone:'',hourly_rate:16.50,day_rate:200,pay_type:'hourly',payment_method:'cash',
     worker_type:'1099',legal_name:'',dob:'',address:'',dl_number:'',tax_id:'',tax_id_type:'ssn',zelle_handle:'',status:'active',notes:''};
   const[f,setF]=useState({...emptyF});
+
+  const loadDeactivated=async()=>{try{const all=await api.get('/drivers?include_terminated=true');setDeactivated(all.filter(function(d){return d.status==='terminated'}))}catch(e){console.error(e)}};
+  useEffect(function(){if(showDeactivated)loadDeactivated()},[showDeactivated]);
+
+  const reactivate=async(id)=>{try{await api.put('/drivers/'+id,{status:'active'});notify('Driver reactivated');setDeactivated(deactivated.filter(function(d){return d.id!==id}));await onRefresh()}catch(e){alert(e.message)}};
 
   const save=async(e)=>{e.preventDefault();if(!f.name){alert('Name required');return}
     if(f.pay_type==='hourly'&&parseFloat(f.hourly_rate)<16.50){alert('Min hourly rate is $16.50 (NYC minimum wage)');return}
@@ -1196,6 +1202,7 @@ function DriversPanel({drivers,notify,onRefresh}){
       React.createElement('h2',{style:{margin:0}},'\ud83d\ude97 Drivers'),
       React.createElement('div',{style:{display:'flex',gap:'8px'}},
         React.createElement('button',{onClick:function(){setShowRates(!showRates)},style:{background:'none',border:'1px solid #475569',borderRadius:'8px',padding:'6px 14px',cursor:'pointer',color:showRates?'#4ade80':'#64748b',fontSize:'13px'}},showRates?'\ud83d\udc41\ufe0f Hide Pay':'\ud83d\udc41\ufe0f Show Pay'),
+        React.createElement('button',{onClick:function(){setShowDeactivated(!showDeactivated)},style:{background:'none',border:showDeactivated?'1px solid #ef4444':'1px solid #475569',borderRadius:'8px',padding:'6px 14px',cursor:'pointer',color:showDeactivated?'#ef4444':'#64748b',fontSize:'13px'}},showDeactivated?'\u2715 Hide Deactivated':'\ud83d\udcc2 Show Deactivated'),
         React.createElement('button',{onClick:()=>{setEd(null);setF({...emptyF});setTab('basic');setShow(true)},style:S.btn},'+ Add Driver'),
         !drivers.some(function(d){return d.name.toLowerCase().includes('manager')})&&
           React.createElement('button',{onClick:async function(){
@@ -1227,6 +1234,27 @@ function DriversPanel({drivers,notify,onRefresh}){
           React.createElement('div',{style:{display:'flex',gap:'8px'}},
             React.createElement('button',{onClick:(e)=>{e.stopPropagation();openEdit(d)},style:S.edit},'Edit'),
             d.status==='active'&&React.createElement('button',{onClick:(e)=>{e.stopPropagation();del(d.id)},style:S.del},'Deactivate')))))),
+
+    showDeactivated&&React.createElement('div',{style:{marginTop:'24px'}},
+      React.createElement('h3',{style:{color:'#ef4444',marginBottom:'12px'}},'\ud83d\udcc2 Deactivated Drivers ('+deactivated.length+')'),
+      deactivated.length===0?React.createElement('div',{style:{color:'#64748b',padding:'16px',textAlign:'center'}},'No deactivated drivers'):
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))',gap:'12px'}},
+        deactivated.map(function(d){return React.createElement('div',{key:d.id,style:{...S.card,borderLeft:'4px solid #ef4444',opacity:0.8,cursor:'pointer'},onClick:function(){setExpand(expand===d.id?null:d.id)}},
+          React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            React.createElement('div',null,
+              React.createElement('div',{style:{fontWeight:'bold',fontSize:'18px',color:'#94a3b8'}},d.name),
+              React.createElement('div',{style:{color:'#64748b',fontSize:'13px'}},d.phone||'No phone')),
+            React.createElement('span',{style:{padding:'4px 10px',borderRadius:'6px',fontSize:'11px',fontWeight:'bold',background:'#7f1d1d',color:'#fca5a5'}},'Deactivated')),
+          expand===d.id&&React.createElement('div',{style:{marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #334155'}},
+            d.legal_name&&React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8',marginBottom:'4px'}},'Legal: '+d.legal_name),
+            d.address&&React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8',marginBottom:'4px'}},'\ud83d\udccd '+d.address),
+            d.dl_number&&React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8',marginBottom:'4px'}},'DL#: ***'+d.dl_number.slice(-4)),
+            d.tax_id&&React.createElement('div',{style:{fontSize:'13px',color:'#f59e0b',marginBottom:'4px'}},(d.tax_id_type||'SSN').toUpperCase()+': '+maskSSN(d.tax_id)),
+            d.payment_method==='zelle'&&d.zelle_handle&&React.createElement('div',{style:{fontSize:'13px',color:'#8b5cf6',marginBottom:'4px'}},'Zelle: '+d.zelle_handle),
+            d.notes&&React.createElement('div',{style:{fontSize:'13px',color:'#64748b',marginBottom:'8px',fontStyle:'italic'}},d.notes),
+            React.createElement('div',{style:{display:'flex',gap:'8px'}},
+              React.createElement('button',{onClick:function(e){e.stopPropagation();openEdit(d)},style:S.edit},'Edit'),
+              React.createElement('button',{onClick:function(e){e.stopPropagation();reactivate(d.id)},style:{...S.btn,background:'#22c55e',padding:'6px 16px',fontSize:'13px'}},'\u2714 Reactivate'))))}))),
 
     show&&React.createElement('div',{style:S.modal},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'520px',maxHeight:'90vh',overflow:'auto',border:'1px solid #334155'}},
@@ -1672,7 +1700,7 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
                   av&&av.confirmed&&selections.length===0&&av.route_name&&React.createElement('div',{style:{padding:'1px 3px',borderRadius:'3px',fontSize:'9px',fontWeight:'bold',background:getRouteColor(av.route_name),color:'#fff',display:'inline-block'}},av.route_name),
                   av&&av.confirmed&&av.notes&&React.createElement('div',{style:{fontSize:'8px',color:'#94a3b8',fontStyle:'italic',maxWidth:'80px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:'0 auto'}},av.notes),
                   React.createElement('div',{style:{display:'flex',gap:'2px',justifyContent:'center',marginTop:'3px'}},
-                    av&&av.confirmed&&!isConfirmed&&React.createElement('button',{onClick:function(e){e.stopPropagation();confirmOne(av.id)},
+                    isAdmin&&av&&av.confirmed&&!isConfirmed&&React.createElement('button',{onClick:function(e){e.stopPropagation();confirmOne(av.id)},
                       style:{padding:'2px 6px',borderRadius:'4px',border:'1px solid #059669',background:'rgba(5,150,105,0.2)',color:'#4ade80',cursor:'pointer',fontSize:'9px',fontWeight:'bold'}},'\ud83d\udd12 Lock'),
                     React.createElement('button',{onClick:function(e){e.stopPropagation();
                       var existingSels=[];if(av&&selections.length>0){existingSels=selections.map(function(s){return{route_id:parseInt(s.route_id),shift:s.shift||null}})}
