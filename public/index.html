@@ -1127,7 +1127,8 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
 
 
 function Schedule({isAdmin,notify,t,user}){
-  const[subView,setSubView]=useState(isAdmin?'drivers':'myschedule');
+  const canManageSched0=!isAdmin&&user&&user.permissions&&user.permissions.indexOf('manage_schedule')!==-1;
+  const[subView,setSubView]=useState(isAdmin?'drivers':canManageSched0?'schedule':'myschedule');
   const[drivers,setDrivers]=useState([]);const[routes,setRoutes]=useState([]);const[shifts,setShifts]=useState([]);
   const[schedData,setSchedData]=useState({assignments:[],exceptions:[],time_entries:[]});
   const[weekOf,setWeekOf]=useState(getMonday(new Date()));
@@ -1146,19 +1147,21 @@ function Schedule({isAdmin,notify,t,user}){
 
   useEffect(()=>{loadAll()},[weekOf]);
 
+  const canManageSched=!isAdmin&&user&&user.permissions&&user.permissions.indexOf('manage_schedule')!==-1;
   const adminTabs=['drivers','schedule','payroll'];
+  const managerTabs=['schedule','myschedule','myprofile'];
   const staffTabs=['myschedule','myprofile'];
-  const subTabs=isAdmin?adminTabs:staffTabs;
-  const subLabels={schedule:'📅 Schedule',drivers:'🚗 Drivers',payroll:'💰 Payroll',myschedule:'📅 My Schedule',myprofile:'👤 My Profile'};
+  const subTabs=isAdmin?adminTabs:canManageSched?managerTabs:staffTabs;
+  const subLabels={schedule:'\ud83d\udcc5 Schedule',drivers:'\ud83d\ude97 Drivers',payroll:'\ud83d\udcb0 Payroll',myschedule:'\ud83d\udcc5 My Schedule',myprofile:'\ud83d\udc64 My Profile'};
 
   return React.createElement('div',null,
     React.createElement('div',{className:'nav-tabs',style:{display:'flex',gap:'8px',marginBottom:'20px',flexWrap:'wrap'}},
       subTabs.map(st=>React.createElement('button',{key:st,onClick:()=>setSubView(st),style:{padding:'10px 16px',borderRadius:'8px',border:subView===st?'2px solid #3b82f6':'1px solid #475569',background:subView===st?'rgba(59,130,246,0.2)':'transparent',color:subView===st?'#fff':'#94a3b8',cursor:'pointer',fontWeight:'600',fontSize:'14px'}},subLabels[st]))),
     ld&&React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'#94a3b8'}},'Loading...'),
     subView==='drivers'&&isAdmin&&React.createElement(DriversPanel,{drivers,notify,onRefresh:loadAll}),
-    subView==='schedule'&&isAdmin&&React.createElement(AvailabilityPanel,{drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh:loadAll}),
+    subView==='schedule'&&(isAdmin||canManageSched)&&React.createElement(AvailabilityPanel,{drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh:loadAll,isAdmin}),
     subView==='payroll'&&isAdmin&&React.createElement(PayrollPanel,{drivers,notify}),
-    subView==='myschedule'&&!isAdmin&&React.createElement(MySchedulePanel,{schedData,weekOf,setWeekOf,addDays,dayNames,dayNums,routes,shifts,drivers,myDriverId:user&&user.driver_id}),
+    subView==='myschedule'&&(!isAdmin||canManageSched)&&React.createElement(MySchedulePanel,{schedData,weekOf,setWeekOf,addDays,dayNames,dayNums,routes,shifts,drivers,myDriverId:user&&user.driver_id}),
     subView==='myprofile'&&!isAdmin&&React.createElement(DriverProfilePanel,{notify}));
 }
 
@@ -1367,7 +1370,7 @@ function ScheduleGrid({drivers,routes,shifts,schedData,weekOf,setWeekOf,addDays,
     assigning&&React.createElement('div',{style:{position:'fixed',bottom:20,left:'50%',transform:'translateX(-50%)',background:'#1e40af',color:'#fff',padding:'12px 24px',borderRadius:'8px',zIndex:50}},'Click a cell to assign, or click elsewhere to cancel'));
 }
 
-function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh}){
+function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh,isAdmin}){
   const[avail,setAvail]=useState([]);const[assignments,setAssignments]=useState([]);const[ld,setLd]=useState(false);
   const[viewWeek,setViewWeek]=useState(0);const[showRouteManager,setShowRouteManager]=useState(false);
   const[newRouteName,setNewRouteName]=useState('');const[newRouteShifts,setNewRouteShifts]=useState(false);const[newRouteDays,setNewRouteDays]=useState([1,2,3,4,5,6]);
@@ -1417,7 +1420,7 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
     try{await api.post('/availability',{
       driver_id:overrideModal.driverId,work_date:overrideModal.date,status:'available',
       route_selections:finalSelections,
-      notes:overrideNotes||null,confirmed:true,admin_confirmed:true});
+      notes:overrideNotes||null,confirmed:true,admin_confirmed:isAdmin});
     setOverrideModal(null);notify('Schedule assigned');loadData()}catch(e){alert(e.message)}};
 
   var toggleOverrideRoute=function(routeId){
@@ -1533,7 +1536,7 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
                 d.name+(hasLocked?' 🔒':hasRequested?' (not locked)':' (no schedule)'))}),
             React.createElement('button',{onClick:function(){setShowExportMenu(false)},style:{display:'block',width:'100%',padding:'6px',background:'transparent',border:'none',color:'#64748b',cursor:'pointer',fontSize:'11px',marginTop:'4px'}},'Cancel'))),
         React.createElement('button',{onClick:function(){setShowDebug(!showDebug)},style:{...S.cancel,fontSize:'13px',padding:'8px 16px',background:showDebug?'rgba(239,68,68,0.2)':'transparent',border:'1px solid '+(showDebug?'#ef4444':'#475569')}},showDebug?'Hide Debug':'\ud83d\udd0d Debug'),
-        viewWeek>=0&&React.createElement('button',{onClick:confirmAll,style:{...S.btn,background:'#059669',fontSize:'13px',padding:'8px 16px'}},'\ud83d\udd12 Confirm All This Week'),
+        viewWeek>=0&&isAdmin&&React.createElement('button',{onClick:confirmAll,style:{...S.btn,background:'#059669',fontSize:'13px',padding:'8px 16px'}},'\ud83d\udd12 Confirm All This Week'),
         React.createElement('button',{onClick:function(){setShowRouteManager(!showRouteManager)},style:{...S.btn,background:showRouteManager?'#475569':'#f59e0b',fontSize:'13px',padding:'8px 16px'}},
           showRouteManager?'Hide Routes':'\ud83d\udea3 Manage Routes'))),
 
@@ -1724,7 +1727,7 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
     overrideModal&&React.createElement('div',{style:S.modal,onClick:function(e){if(e.target===e.currentTarget)setOverrideModal(null)}},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'440px',border:'1px solid #f59e0b',maxHeight:'90vh',overflowY:'auto'}},
         React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},
-          React.createElement('h3',{style:{margin:0}},'Admin Assign: '+overrideModal.driverName),
+          React.createElement('h3',{style:{margin:0}},(isAdmin?'Admin':'Manager')+' Assign: '+overrideModal.driverName),
           React.createElement('button',{onClick:function(){setOverrideModal(null)},style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'\u00d7')),
         React.createElement('div',{style:{padding:'16px'}},
           React.createElement('div',{style:{textAlign:'center',marginBottom:'16px'}},
@@ -1884,13 +1887,15 @@ function UsersPanel({notify}){
       React.createElement('div',{style:{fontSize:'14px',color:'#94a3b8'}},
         React.createElement('span',{style:{color:'#dc2626',fontWeight:'bold'}},'Admin'),' = full access | ',
         React.createElement('span',{style:{color:'#3b82f6',fontWeight:'bold'}},'Staff'),' = custom permissions (set below) | ',
-        React.createElement('span',{style:{color:'#22c55e',fontWeight:'bold'}},'Driver'),' = own schedule + profile')),
+        React.createElement('span',{style:{color:'#22c55e',fontWeight:'bold'}},'Driver'),' = own schedule + profile (can be promoted to Schedule Manager)')),
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
       users.map(function(u){const linked=getLinkedDriver(u);return React.createElement('div',{key:u.id,style:{...S.card,borderLeft:'4px solid '+(roleColors[u.role]||'#475569')}},
         React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
           React.createElement('div',{style:{fontWeight:'bold',fontSize:'18px'}},u.username),
           React.createElement('span',{style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:roleColors[u.role]||'#475569',color:'#fff'}},roleLabels[u.role]||u.role)),
         linked&&React.createElement('div',{style:{fontSize:'13px',color:'#22c55e',marginBottom:'4px'}},'\ud83d\ude97 Linked to: '+linked.name),
+        u.role==='driver'&&u.permissions&&u.permissions.indexOf('manage_schedule')!==-1&&React.createElement('div',{style:{marginBottom:'4px'}},
+          React.createElement('span',{style:{padding:'3px 8px',borderRadius:'4px',fontSize:'11px',fontWeight:'bold',background:'rgba(245,158,11,0.2)',color:'#fbbf24'}},'\ud83d\udcc5 Schedule Manager')),
         u.role!=='admin'&&u.role!=='driver'&&u.permissions&&u.permissions.length>0&&React.createElement('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'4px'}},
           u.permissions.map(function(p){return React.createElement('span',{key:p,style:{padding:'2px 6px',borderRadius:'4px',fontSize:'10px',background:'rgba(59,130,246,0.2)',color:'#60a5fa'}},p)})),
         React.createElement('div',{style:{color:'#64748b',fontSize:'12px'}},'Created: '+fmtD(u.created_at)),
@@ -1923,6 +1928,12 @@ function UsersPanel({notify}){
               React.createElement('option',{value:''},'Select driver...'),
               driversList.filter(function(d){return d.status==='active'&&(!linkedDriverIds.has(d.id)||(ed&&getLinkedDriver(ed)&&getLinkedDriver(ed).id===d.id))}).map(function(d){return React.createElement('option',{key:d.id,value:d.id},d.name)})),
             React.createElement('div',{style:{color:'#f59e0b',fontSize:'11px',marginTop:'4px'}},'Links this login to a driver profile so they see their schedule')),
+          f.role==='driver'&&React.createElement('div',{style:{marginBottom:'16px'}},
+            React.createElement('label',{style:{...S.lbl,marginBottom:'8px'}},'Driver Access Level'),
+            React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 14px',borderRadius:'8px',border:(f.permissions||[]).indexOf('manage_schedule')!==-1?'2px solid #f59e0b':'1px solid #475569',background:(f.permissions||[]).indexOf('manage_schedule')!==-1?'rgba(245,158,11,0.15)':'transparent',cursor:'pointer',fontSize:'14px',color:(f.permissions||[]).indexOf('manage_schedule')!==-1?'#fff':'#94a3b8',fontWeight:(f.permissions||[]).indexOf('manage_schedule')!==-1?'600':'400'}},
+              React.createElement('input',{type:'checkbox',checked:(f.permissions||[]).indexOf('manage_schedule')!==-1,onChange:function(){var perms=f.permissions||[];setF({...f,permissions:perms.indexOf('manage_schedule')!==-1?perms.filter(function(x){return x!=='manage_schedule'}):[].concat(perms,['manage_schedule'])})},style:{accentColor:'#f59e0b',width:'18px',height:'18px'}}),
+              '\ud83d\udcc5 Schedule Manager \u2014 can assign routes & days to other drivers'),
+            (f.permissions||[]).indexOf('manage_schedule')!==-1&&React.createElement('div',{style:{color:'#fbbf24',fontSize:'12px',marginTop:'6px',padding:'8px 10px',background:'rgba(245,158,11,0.1)',borderRadius:'6px'}},'This driver will see the admin schedule grid and can assign routes/days to other drivers. Final approval (\\ud83d\\udd12 Confirm) stays with admin only.')),
           f.role==='attendant'&&React.createElement('div',{style:{marginBottom:'16px'}},
             React.createElement('label',{style:{...S.lbl,marginBottom:'8px'}},'Access Permissions'),
             React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
