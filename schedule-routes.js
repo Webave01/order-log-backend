@@ -461,6 +461,35 @@ module.exports = function(pool, authenticate, adminOnly) {
         }
       }
 
+      // Conflict check: Schools route is Friday OR Saturday per week, not both
+      const selRouteIds = selections.map(s => parseInt(s.route_id));
+      if (selRouteIds.length > 0) {
+        const { rows: selRouteNames } = await pool.query('SELECT id, name FROM routes WHERE id = ANY($1)', [selRouteIds]);
+        const schoolsRoute = selRouteNames.find(r => r.name.toLowerCase().includes('schools'));
+        if (schoolsRoute) {
+          const wd = new Date(work_date + 'T12:00:00');
+          const dayOfWeek = wd.getDay(); // 0=Sun,5=Fri,6=Sat
+          if (dayOfWeek === 5 || dayOfWeek === 6) {
+            // Check the other day
+            const otherDate = new Date(wd);
+            otherDate.setDate(wd.getDate() + (dayOfWeek === 5 ? 1 : -1));
+            const otherDateStr = otherDate.toISOString().split('T')[0];
+            const { rows: conflict } = await pool.query(
+              `SELECT da.id, d.name as driver_name FROM driver_availability da
+               JOIN drivers d ON da.driver_id = d.id
+               WHERE da.work_date = $1 AND da.confirmed = true
+               AND da.route_selections::text LIKE '%' || $2 || '%'
+               AND da.id != COALESCE((SELECT id FROM driver_availability WHERE driver_id = $3 AND work_date = $4), -1)`,
+              [otherDateStr, String(schoolsRoute.id), driver_id, work_date]
+            );
+            if (conflict.length > 0) {
+              const otherDay = dayOfWeek === 5 ? 'Saturday' : 'Friday';
+              return res.status(400).json({ error: 'Schools pickup already assigned on ' + otherDay + ' to ' + conflict[0].driver_name + '. Pickup is Friday or Saturday (not both). Delivery is always Monday.' });
+            }
+          }
+        }
+      }
+
       // Store first route as preferred_route_id for backward compat
       const primaryRouteId = selections.length > 0 ? parseInt(selections[0].route_id) : null;
       const primaryShift = selections.length > 0 ? selections[0].shift : null;
