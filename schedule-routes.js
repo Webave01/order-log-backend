@@ -376,14 +376,18 @@ module.exports = function(pool, authenticate, adminOnly) {
       if (end_date) { params.push(end_date); query += ` AND da.work_date <= $${params.length}`; }
       if (driver_id) { params.push(parseInt(driver_id)); query += ` AND da.driver_id = $${params.length}`; }
 
-      // Non-admin only sees own
+      // Non-admin: drivers only see own unless they have manage_schedule
       if (req.user.role === 'driver') {
-        const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [req.user.id]);
-        if (dResult.rows.length > 0) {
-          params.push(dResult.rows[0].id);
-          query += ` AND da.driver_id = $${params.length}`;
-        } else {
-          return res.json([]);
+        const permResult = await pool.query('SELECT permissions FROM users WHERE id = $1', [req.user.id]);
+        const userPerms = permResult.rows[0]?.permissions || [];
+        if (!userPerms.includes('manage_schedule')) {
+          const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [req.user.id]);
+          if (dResult.rows.length > 0) {
+            params.push(dResult.rows[0].id);
+            query += ` AND da.driver_id = $${params.length}`;
+          } else {
+            return res.json([]);
+          }
         }
       }
 
