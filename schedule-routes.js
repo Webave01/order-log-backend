@@ -432,6 +432,12 @@ module.exports = function(pool, authenticate, adminOnly) {
         if (!isScheduleManager) {
           const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1 AND id = $2', [req.user.id, driver_id]);
           if (dResult.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+        } else {
+          // Schedule manager can assign freely UNLESS admin already confirmed
+          const existing = await pool.query('SELECT admin_confirmed FROM driver_availability WHERE driver_id = $1 AND work_date = $2', [driver_id, work_date]);
+          if (existing.rows.length > 0 && existing.rows[0].admin_confirmed) {
+            return res.status(403).json({ error: 'This schedule has been confirmed by admin. Only admin can change it.' });
+          }
         }
       }
 
