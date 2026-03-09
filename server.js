@@ -351,58 +351,6 @@ async function initDB() {
     try { await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password VARCHAR(255)"); } catch(e) {}
     // Migration: add permissions JSONB to users for granular access control
     try { await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb"); } catch(e) {}
-    // Migration: add has_addresses flag to cleaners (for doorman/individual address customers)
-    try { await client.query("ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS has_addresses BOOLEAN DEFAULT false"); } catch(e) {}
-    // Migration: add customer_address to orders
-    try { await client.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_address TEXT"); } catch(e) {}
-    // Migration: add customer_apt to orders (separate apartment field)
-    try { await client.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_apt VARCHAR(100)"); } catch(e) {}
-    // Create cleaner_addresses table
-    try { await client.query(`
-      CREATE TABLE IF NOT EXISTS cleaner_addresses (
-        id SERIAL PRIMARY KEY,
-        cleaner_id INTEGER NOT NULL REFERENCES cleaners(id) ON DELETE CASCADE,
-        address TEXT NOT NULL,
-        apt VARCHAR(100),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `); } catch(e) {}
-
-    // Seed: enable has_addresses on Laundry Day and add default addresses
-    try {
-      const ldCheck = await client.query("SELECT id FROM cleaners WHERE LOWER(name) LIKE '%laundry day%' AND has_addresses = false");
-      if (ldCheck.rows.length > 0) {
-        const ldId = ldCheck.rows[0].id;
-        await client.query("UPDATE cleaners SET has_addresses = true WHERE id = $1", [ldId]);
-        const addrCheck = await client.query("SELECT COUNT(*) FROM cleaner_addresses WHERE cleaner_id = $1", [ldId]);
-        if (parseInt(addrCheck.rows[0].count) === 0) {
-          const addrs = [
-            '214 West 102','14 West 103rd','121 East 97th','309 East 61st','71 West 12th',
-            '101 Clinton Street','96 5th Ave','525 East 13th Street','1073 First Ave','185 Avenue C',
-            '311 East 25th','234 Mulberry Street','190 West 10th','257 East 61st','8 Jones Street',
-            '226 East 36th','219 East 69th','174 Thompson','165 East 35','145 East 16th',
-            '228 East 36th','42 Clinton','93 Clinton','712 9th Ave','309 East 9th',
-            '145 4th Ave','178 Thompson','176 Thompson','3 Clinton St','162 East 55th Street',
-            '145 West 55th','161 East 55th','157 East 57th','340 East 53rd','25 Thompson St',
-            '234 West 13th','137 East 38th','345 East 65th','101 West 25th','141 West 80th St',
-            '219 East 88th','222 East 85th','320 East 93rd St','205 West 80th','165 East 87th',
-            '240 East 82','346 East 76th','330 East 90th','43 East 74th','328 East 93rd',
-            '188 East 93rd','163 East 92','332 East 93rd','212 East 85th St','415 East 73rd',
-            '55 East 95th','320 East 73rd','304 East 90th','1654 3rd Ave','226 East 87th',
-            '120 West 86th','400 East 89th','1435 1st Ave','209 West 80th','232 East 74th',
-            '207 West 80th','211 West 80th','265 East 78th','318 East 93rd','106 East 81st',
-            '428 East 89th','315 East 84th','54 West 106th','55 West 105th','4 West 103rd',
-            '77 Christopher St','234 East 14th St','101 Thompson','392 East 10th','234 East 52nd',
-            '300 East 49th','337 East 49th Street','91 Clinton','137 Sullivan','86 East 4th',
-            '1069 First Ave','222 East 51st','61 East 66th'
-          ];
-          for (const addr of addrs) {
-            await client.query("INSERT INTO cleaner_addresses (cleaner_id, address) VALUES ($1, $2)", [ldId, addr]);
-          }
-          console.log('Seeded ' + addrs.length + ' addresses for Laundry Day');
-        }
-      }
-    } catch(e) { console.error('Laundry Day seed error:', e.message); }
 
     // =============================================
     // END DRIVER SCHEDULING TABLES
@@ -452,14 +400,11 @@ app.post('/api/login', async (req, res) => {
       const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [user.id]);
       if (dResult.rows.length > 0) driver_id = dResult.rows[0].id;
     }
-    // Build permissions: admin=all, driver=schedule+stored, others=stored permissions
+    // Build permissions: admin=all, driver=schedule, others=stored permissions
     const ALL_PERMS = ['orders','cleaners','extras','invoices','payments','reports','errors','schedule','settings'];
     let perms;
     if (user.role === 'admin') perms = ALL_PERMS;
-    else if (user.role === 'driver') {
-      const driverPerms = user.permissions || [];
-      perms = ['schedule'].concat(driverPerms.filter(p => p !== 'schedule'));
-    }
+    else if (user.role === 'driver') perms = ['schedule'];
     else perms = user.permissions || ['orders'];
     res.json({ token, user: { id: user.id, username: user.username, role: user.role, driver_id, permissions: perms } });
   } catch (err) {
@@ -480,10 +425,7 @@ app.get('/api/me', authenticate, async (req, res) => {
     const ALL_PERMS = ['orders','cleaners','extras','invoices','payments','reports','errors','schedule','settings'];
     let perms;
     if (user.role === 'admin') perms = ALL_PERMS;
-    else if (user.role === 'driver') {
-      const driverPerms = user.permissions || [];
-      perms = ['schedule'].concat(driverPerms.filter(p => p !== 'schedule'));
-    }
+    else if (user.role === 'driver') perms = ['schedule'];
     else perms = user.permissions || ['orders'];
     res.json({ user: { id: user.id, username: user.username, role: user.role, driver_id, permissions: perms } });
   } catch(e) {
@@ -538,12 +480,12 @@ app.get('/api/orders', authenticate, async (req, res) => {
 });
 
 app.post('/api/orders', authenticate, async (req, res) => {
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-      [order_num, cleaner_id, weight || 0, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes, staff_name, price_adjustment || 0, customer_address || null, customer_apt || null]
+      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [order_num, cleaner_id, weight || 0, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes, staff_name, price_adjustment || 0]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -569,11 +511,11 @@ app.post('/api/orders/import', authenticate, async (req, res) => {
 
 app.put('/api/orders/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, customer_address=$11, customer_apt=$12, updated_at=CURRENT_TIMESTAMP WHERE id=$13 RETURNING *`,
-      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, customer_address || null, customer_apt || null, id]
+      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, updated_at=CURRENT_TIMESTAMP WHERE id=$11 RETURNING *`,
+      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     res.json(result.rows[0]);
@@ -623,66 +565,6 @@ app.get('/api/orders/export', authenticate, requirePerm('orders'), async (req, r
   }
 });
 
-// Get next sequential order number for a cleaner (used by address-based cleaners)
-app.get('/api/orders/next-number/:cleaner_id', authenticate, async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT order_num FROM orders WHERE cleaner_id = $1 ORDER BY created_at DESC LIMIT 1",
-      [req.params.cleaner_id]
-    );
-    const MIN_START = 550;
-    if (result.rows.length === 0) {
-      return res.json({ next: String(MIN_START).padStart(4, '0') });
-    }
-    const last = result.rows[0].order_num;
-    const match = last.match(/(\d+)$/);
-    if (match) {
-      const num = Math.max(parseInt(match[1]) + 1, MIN_START);
-      const padLen = Math.max(match[1].length, 4);
-      const padded = String(num).padStart(padLen, '0');
-      return res.json({ next: padded, last });
-    }
-    res.json({ next: String(MIN_START).padStart(4, '0'), last });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-app.get('/api/orders/check-duplicate', authenticate, async (req, res) => {
-  const { order_num, cleaner_id, exclude_id } = req.query;
-  try {
-    let query = 'SELECT * FROM orders WHERE order_num = $1 AND cleaner_id = $2';
-    const params = [order_num, cleaner_id];
-    if (exclude_id) { query += ' AND id != $3'; params.push(exclude_id); }
-    query += ' LIMIT 1';
-    const result = await pool.query(query, params);
-    if (result.rows.length > 0) {
-      res.json({ isDuplicate: true, existingOrder: result.rows[0] });
-    } else {
-      res.json({ isDuplicate: false });
-    }
-  } catch (err) { res.json({ isDuplicate: false }); }
-});
-
-app.get('/api/orders/check-sequence', authenticate, async (req, res) => {
-  const { order_num, cleaner_id } = req.query;
-  try {
-    const result = await pool.query(
-      'SELECT order_num FROM orders WHERE cleaner_id = $1 ORDER BY created_at DESC LIMIT 1',
-      [cleaner_id]
-    );
-    if (result.rows.length === 0) return res.json({ isOutOfSequence: false });
-    const lastNum = parseInt(String(result.rows[0].order_num).replace(/\D/g, '')) || 0;
-    const currentNum = parseInt(String(order_num).replace(/\D/g, '')) || 0;
-    const diff = Math.abs(currentNum - lastNum);
-    if (diff > 5 && currentNum !== 0) {
-      res.json({ isOutOfSequence: true, lastOrderNum: result.rows[0].order_num, difference: diff });
-    } else {
-      res.json({ isOutOfSequence: false });
-    }
-  } catch (err) { res.json({ isOutOfSequence: false }); }
-});
-
 app.get('/api/orders/find-duplicates', authenticate, async (req, res) => {
   const { cleaner_id, start_date, end_date } = req.query;
   try {
@@ -692,6 +574,51 @@ app.get('/api/orders/find-duplicates', authenticate, async (req, res) => {
       GROUP BY order_num HAVING COUNT(*) > 1
     `, [cleaner_id, start_date, end_date]);
     res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Check if order number is a duplicate for this cleaner
+app.get('/api/orders/check-duplicate', authenticate, async (req, res) => {
+  const { order_num, cleaner_id, exclude_id } = req.query;
+  try {
+    let query = 'SELECT id, pickup_date FROM orders WHERE order_num = $1 AND cleaner_id = $2';
+    const params = [order_num, cleaner_id];
+    if (exclude_id) { query += ' AND id != $3'; params.push(exclude_id); }
+    query += ' LIMIT 1';
+    const result = await pool.query(query, params);
+    res.json({ isDuplicate: result.rows.length > 0, existingOrder: result.rows[0] || null });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Check if order number is in sequence — finds nearest number in same sequence cluster
+app.get('/api/orders/check-sequence', authenticate, async (req, res) => {
+  const { order_num, cleaner_id } = req.query;
+  try {
+    const inputNum = parseInt(String(order_num).replace(/\D/g, ''));
+    if (isNaN(inputNum)) return res.json({ isOutOfSequence: false });
+
+    // Get all order numbers for this cleaner (recent 500)
+    const result = await pool.query(
+      'SELECT order_num FROM orders WHERE cleaner_id = $1 ORDER BY created_at DESC LIMIT 500', [cleaner_id]
+    );
+    const allNums = result.rows.map(r => parseInt(String(r.order_num).replace(/\D/g, ''))).filter(n => !isNaN(n) && n !== inputNum);
+    if (allNums.length === 0) return res.json({ isOutOfSequence: false });
+
+    // Find the nearest existing order number to the entered one
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const n of allNums) {
+      const dist = Math.abs(n - inputNum);
+      if (dist < nearestDist) { nearestDist = dist; nearest = n; }
+    }
+
+    // If the nearest number is within 10, it's in sequence — no warning
+    const isOutOfSequence = nearestDist > 10;
+    res.json({ isOutOfSequence, lastOrderNum: nearest, difference: nearestDist });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -708,11 +635,11 @@ app.get('/api/cleaners', authenticate, async (req, res) => {
 });
 
 app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, has_addresses || false]
+      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -722,11 +649,11 @@ app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res
 
 app.put('/api/cleaners/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { id } = req.params;
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate } = req.body;
   try {
     const result = await pool.query(
-      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, has_addresses=$8 WHERE id=$9 RETURNING *',
-      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, id]
+      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7 WHERE id=$8 RETURNING *',
+      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Cleaner not found' });
     res.json(result.rows[0]);
@@ -839,52 +766,6 @@ app.delete('/api/staff-names/:id', authenticate, adminOnly, async (req, res) => 
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
-});
-
-// Cleaner Addresses routes
-app.get('/api/cleaner-addresses/:cleaner_id', authenticate, async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM cleaner_addresses WHERE cleaner_id = $1 ORDER BY address', [req.params.cleaner_id]);
-    res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-
-app.post('/api/cleaner-addresses', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { cleaner_id, address, apt } = req.body;
-  if (!cleaner_id || !address) return res.status(400).json({ error: 'cleaner_id and address required' });
-  try {
-    const result = await pool.query('INSERT INTO cleaner_addresses (cleaner_id, address, apt) VALUES ($1, $2, $3) RETURNING *', [cleaner_id, address.trim(), (apt||'').trim()]);
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-
-app.post('/api/cleaner-addresses/bulk', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { cleaner_id, addresses } = req.body;
-  if (!cleaner_id || !addresses || !addresses.length) return res.status(400).json({ error: 'cleaner_id and addresses required' });
-  try {
-    const added = [];
-    for (const a of addresses) {
-      const result = await pool.query('INSERT INTO cleaner_addresses (cleaner_id, address, apt) VALUES ($1, $2, $3) RETURNING *', [cleaner_id, (a.address||'').trim(), (a.apt||'').trim()]);
-      added.push(result.rows[0]);
-    }
-    res.json(added);
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-
-app.put('/api/cleaner-addresses/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { address, apt } = req.body;
-  try {
-    const result = await pool.query('UPDATE cleaner_addresses SET address=$1, apt=$2 WHERE id=$3 RETURNING *', [address.trim(), (apt||'').trim(), req.params.id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-
-app.delete('/api/cleaner-addresses/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
-  try {
-    await pool.query('DELETE FROM cleaner_addresses WHERE id = $1', [req.params.id]);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 // Extras routes
@@ -1004,10 +885,49 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
 
     const orderNums = ordersResult.rows.map(o => parseInt(o.order_num.replace(/\D/g, ''))).filter(n => !isNaN(n)).sort((a, b) => a - b);
     const sequenceWarnings = [];
-    for (let i = 1; i < orderNums.length; i++) {
-      const gap = orderNums[i] - orderNums[i - 1];
-      if (gap > 50 || gap < 0) {
-        sequenceWarnings.push({ from: orderNums[i - 1], to: orderNums[i], gap });
+    
+    // Cluster order numbers into sequences where consecutive members differ by ≤ 10
+    // Then flag isolated numbers (likely typos) — a number with no neighbor within 10
+    if (orderNums.length > 1) {
+      const clusters = [];
+      let currentCluster = [orderNums[0]];
+      for (let i = 1; i < orderNums.length; i++) {
+        if (orderNums[i] - orderNums[i - 1] <= 10) {
+          currentCluster.push(orderNums[i]);
+        } else {
+          clusters.push(currentCluster);
+          currentCluster = [orderNums[i]];
+        }
+      }
+      clusters.push(currentCluster);
+      
+      // Flag single-number clusters (isolated numbers far from any sequence)
+      for (const cluster of clusters) {
+        if (cluster.length === 1) {
+          const num = cluster[0];
+          // Find the nearest number in any other cluster
+          let nearestDist = Infinity;
+          let nearestNum = null;
+          for (const other of orderNums) {
+            if (other !== num) {
+              const dist = Math.abs(other - num);
+              if (dist < nearestDist) { nearestDist = dist; nearestNum = other; }
+            }
+          }
+          if (nearestDist > 10 && nearestNum !== null) {
+            sequenceWarnings.push({ from: nearestNum, to: num, gap: num - nearestNum });
+          }
+        }
+        // Also flag internal gaps within a cluster > 5 (possible missed orders)
+        if (cluster.length > 1) {
+          for (let i = 1; i < cluster.length; i++) {
+            const gap = cluster[i] - cluster[i - 1];
+            if (gap > 5 && gap <= 10) {
+              // Small gap within cluster — possible missed orders, soft warning
+              sequenceWarnings.push({ from: cluster[i - 1], to: cluster[i], gap });
+            }
+          }
+        }
       }
     }
 
