@@ -134,6 +134,16 @@ async function initDB() {
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS price_adjustment DECIMAL(10,2) DEFAULT 0;
     `);
 
+    // DBA / address columns
+    await client.query(`
+      ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS has_addresses BOOLEAN DEFAULT false;
+      ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_name VARCHAR(255);
+      ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_address VARCHAR(255);
+      ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_phone VARCHAR(50);
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_address VARCHAR(255);
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_apt VARCHAR(50);
+    `);
+
     // =============================================
     // DRIVER SCHEDULING & PAY TABLES
     // =============================================
@@ -635,11 +645,11 @@ app.get('/api/cleaners', authenticate, async (req, res) => {
 });
 
 app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, dba_name, dba_address, dba_phone } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00]
+      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, dba_name, dba_address, dba_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
+      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, dba_name || null, dba_address || null, dba_phone || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -649,11 +659,11 @@ app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res
 
 app.put('/api/cleaners/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { id } = req.params;
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, dba_name, dba_address, dba_phone } = req.body;
   try {
     const result = await pool.query(
-      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7 WHERE id=$8 RETURNING *',
-      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, id]
+      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, has_addresses=$8, dba_name=$9, dba_address=$10, dba_phone=$11 WHERE id=$12 RETURNING *',
+      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, dba_name || null, dba_address || null, dba_phone || null, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Cleaner not found' });
     res.json(result.rows[0]);
