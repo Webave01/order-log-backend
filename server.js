@@ -627,7 +627,7 @@ app.get('/api/orders/check-sequence', authenticate, async (req, res) => {
     }
 
     // If the nearest number is within 10, it's in sequence — no warning
-    const isOutOfSequence = nearestDist > 10;
+    const isOutOfSequence = nearestDist > 50;
     res.json({ isOutOfSequence, lastOrderNum: nearest, difference: nearestDist });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -902,7 +902,7 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
       const clusters = [];
       let currentCluster = [orderNums[0]];
       for (let i = 1; i < orderNums.length; i++) {
-        if (orderNums[i] - orderNums[i - 1] <= 10) {
+        if (orderNums[i] - orderNums[i - 1] <= 50) {
           currentCluster.push(orderNums[i]);
         } else {
           clusters.push(currentCluster);
@@ -924,7 +924,7 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
               if (dist < nearestDist) { nearestDist = dist; nearestNum = other; }
             }
           }
-          if (nearestDist > 10 && nearestNum !== null) {
+          if (nearestDist > 50 && nearestNum !== null) {
             sequenceWarnings.push({ from: nearestNum, to: num, gap: num - nearestNum });
           }
         }
@@ -932,7 +932,7 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
         if (cluster.length > 1) {
           for (let i = 1; i < cluster.length; i++) {
             const gap = cluster[i] - cluster[i - 1];
-            if (gap > 5 && gap <= 10) {
+            if (gap > 10 && gap <= 50) {
               // Small gap within cluster — possible missed orders, soft warning
               sequenceWarnings.push({ from: cluster[i - 1], to: cluster[i], gap });
             }
