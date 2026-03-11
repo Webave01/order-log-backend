@@ -1203,7 +1203,7 @@ function Schedule({isAdmin,notify,t,user}){
       subTabs.map(st=>React.createElement('button',{key:st,onClick:()=>setSubView(st),style:{padding:'10px 16px',borderRadius:'8px',border:subView===st?'2px solid #3b82f6':'1px solid #475569',background:subView===st?'rgba(59,130,246,0.2)':'transparent',color:subView===st?'#fff':'#94a3b8',cursor:'pointer',fontWeight:'600',fontSize:'14px'}},subLabels[st]))),
     ld&&React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'#94a3b8'}},'Loading...'),
     subView==='drivers'&&isAdmin&&React.createElement(DriversPanel,{drivers,notify,onRefresh:loadAll}),
-    subView==='schedule'&&(isAdmin||canManageSched)&&React.createElement(AvailabilityPanel,{drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh:loadAll,isAdmin,t}),
+    subView==='schedule'&&(isAdmin||canManageSched)&&React.createElement(AvailabilityPanel,{drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh:loadAll,isAdmin,t,user}),
     subView==='payroll'&&isAdmin&&React.createElement(PayrollPanel,{drivers,notify}),
     subView==='myschedule'&&(!isAdmin||canManageSched)&&React.createElement(MySchedulePanel,{schedData,weekOf,setWeekOf,addDays,dayNames,dayNums,routes,shifts,drivers,myDriverId:user&&user.driver_id,t}),
     subView==='myprofile'&&!isAdmin&&React.createElement(DriverProfilePanel,{notify}));
@@ -1442,13 +1442,17 @@ function ScheduleGrid({drivers,routes,shifts,schedData,weekOf,setWeekOf,addDays,
     assigning&&React.createElement('div',{style:{position:'fixed',bottom:20,left:'50%',transform:'translateX(-50%)',background:'#1e40af',color:'#fff',padding:'12px 24px',borderRadius:'8px',zIndex:50}},'Click a cell to assign, or click elsewhere to cancel'));
 }
 
-function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh,isAdmin,t}){
+function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh,isAdmin,t,user}){
   const[avail,setAvail]=useState([]);const[assignments,setAssignments]=useState([]);const[ld,setLd]=useState(false);
   const[viewWeek,setViewWeek]=useState(0);const[showRouteManager,setShowRouteManager]=useState(false);
   const[newRouteName,setNewRouteName]=useState('');const[newRouteShifts,setNewRouteShifts]=useState(false);const[newRouteDays,setNewRouteDays]=useState([1,2,3,4,5,6]);
   const[editRoute,setEditRoute]=useState(null);
   const[overrideModal,setOverrideModal]=useState(null);const[overrideSelections,setOverrideSelections]=useState([]);const[overrideNotes,setOverrideNotes]=useState('');
   const[showDebug,setShowDebug]=useState(false);const[loadError,setLoadError]=useState(null);const[lastLoad,setLastLoad]=useState(null);
+  var userPerms=user&&user.permissions||[];
+  var canExport=isAdmin||userPerms.indexOf('sched_export')!==-1;
+  var canDebug=isAdmin||userPerms.indexOf('sched_debug')!==-1;
+  var canManageRoutes=isAdmin||userPerms.indexOf('sched_routes')!==-1;
   var currentWeekOf=addDays(weekOf,viewWeek*7);
 
   var routeColors={'East Cleaners':'#3b82f6','West Cleaners':'#8b5cf6','Laundry Day':'#06b6d4','Schools':'#f59e0b','Sleepy':'#ec4899','Panda':'#22c55e'};
@@ -1595,7 +1599,7 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
       React.createElement('h2',{style:{margin:0}},'\u2705 Driver Availability'),
       React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
         React.createElement('button',{onClick:async function(){await onRefresh();await loadData();notify('Schedule refreshed')},disabled:ld,style:{...S.cancel,fontSize:'13px',padding:'8px 16px',opacity:ld?0.5:1}},ld?'↻ Loading...':'↻ Refresh'),
-        React.createElement('div',{style:{position:'relative'}},
+        canExport&&React.createElement('div',{style:{position:'relative'}},
           React.createElement('button',{onClick:function(){setShowExportMenu(!showExportMenu)},style:{...S.btn,background:'#7c3aed',fontSize:'13px',padding:'8px 16px'}},'\ud83d\udcc4 Export PDF'),
           showExportMenu&&React.createElement('div',{style:{position:'absolute',top:'100%',left:0,marginTop:'4px',background:'#1e293b',border:'1px solid #475569',borderRadius:'8px',padding:'8px',zIndex:100,minWidth:'220px',boxShadow:'0 8px 24px rgba(0,0,0,0.4)'}},
             React.createElement('button',{onClick:function(){exportDriverPDF(null);setShowExportMenu(false)},style:{display:'block',width:'100%',padding:'10px 12px',background:'rgba(124,58,237,0.15)',border:'1px solid #7c3aed',borderRadius:'6px',color:'#c4b5fd',cursor:'pointer',fontWeight:'bold',fontSize:'13px',marginBottom:'6px',textAlign:'left'}},'\ud83d\udcc4 All Drivers (one PDF)'),
@@ -1607,9 +1611,9 @@ function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNa
                 style:{display:'block',width:'100%',padding:'8px 12px',background:'transparent',border:'1px solid '+(hasLocked?'#059669':hasRequested?'#334155':'#1e293b'),borderRadius:'6px',color:hasLocked?'#4ade80':hasRequested?'#e2e8f0':'#475569',cursor:'pointer',fontSize:'13px',marginBottom:'3px',textAlign:'left'}},
                 d.name+(hasLocked?' 🔒':hasRequested?' (not locked)':' (no schedule)'))}),
             React.createElement('button',{onClick:function(){setShowExportMenu(false)},style:{display:'block',width:'100%',padding:'6px',background:'transparent',border:'none',color:'#64748b',cursor:'pointer',fontSize:'11px',marginTop:'4px'}},'Cancel'))),
-        React.createElement('button',{onClick:function(){setShowDebug(!showDebug)},style:{...S.cancel,fontSize:'13px',padding:'8px 16px',background:showDebug?'rgba(239,68,68,0.2)':'transparent',border:'1px solid '+(showDebug?'#ef4444':'#475569')}},showDebug?'Hide Debug':'\ud83d\udd0d Debug'),
+        canDebug&&React.createElement('button',{onClick:function(){setShowDebug(!showDebug)},style:{...S.cancel,fontSize:'13px',padding:'8px 16px',background:showDebug?'rgba(239,68,68,0.2)':'transparent',border:'1px solid '+(showDebug?'#ef4444':'#475569')}},showDebug?'Hide Debug':'\ud83d\udd0d Debug'),
         viewWeek>=0&&isAdmin&&React.createElement('button',{onClick:confirmAll,style:{...S.btn,background:'#059669',fontSize:'13px',padding:'8px 16px'}},'\ud83d\udd12 Confirm All This Week'),
-        React.createElement('button',{onClick:function(){setShowRouteManager(!showRouteManager)},style:{...S.btn,background:showRouteManager?'#475569':'#f59e0b',fontSize:'13px',padding:'8px 16px'}},
+        canManageRoutes&&React.createElement('button',{onClick:function(){setShowRouteManager(!showRouteManager)},style:{...S.btn,background:showRouteManager?'#475569':'#f59e0b',fontSize:'13px',padding:'8px 16px'}},
           showRouteManager?'Hide Routes':'\ud83d\udea3 Manage Routes'))),
 
     showRouteManager&&React.createElement('div',{style:{...S.card,marginBottom:'16px',border:'1px solid #f59e0b'}},
@@ -1973,7 +1977,10 @@ function UsersPanel({notify}){
           React.createElement('span',{style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:roleColors[u.role]||'#475569',color:'#fff'}},roleLabels[u.role]||u.role)),
         linked&&React.createElement('div',{style:{fontSize:'13px',color:'#22c55e',marginBottom:'4px'}},'\ud83d\ude97 Linked to: '+linked.name),
         u.role==='driver'&&u.permissions&&u.permissions.indexOf('manage_schedule')!==-1&&React.createElement('div',{style:{marginBottom:'4px'}},
-          React.createElement('span',{style:{padding:'3px 8px',borderRadius:'4px',fontSize:'11px',fontWeight:'bold',background:'rgba(245,158,11,0.2)',color:'#fbbf24'}},'\ud83d\udcc5 Schedule Manager')),
+          React.createElement('span',{style:{padding:'3px 8px',borderRadius:'4px',fontSize:'11px',fontWeight:'bold',background:'rgba(245,158,11,0.2)',color:'#fbbf24'}},'\ud83d\udcc5 Schedule Manager'),
+          u.permissions&&u.permissions.indexOf('sched_export')!==-1&&React.createElement('span',{style:{padding:'2px 6px',borderRadius:'4px',fontSize:'9px',background:'rgba(124,58,237,0.2)',color:'#c4b5fd',marginLeft:'4px'}},'\ud83d\udcc4 PDF'),
+          u.permissions&&u.permissions.indexOf('sched_routes')!==-1&&React.createElement('span',{style:{padding:'2px 6px',borderRadius:'4px',fontSize:'9px',background:'rgba(245,158,11,0.15)',color:'#fbbf24',marginLeft:'4px'}},'\ud83d\udea3 Routes'),
+          u.permissions&&u.permissions.indexOf('sched_debug')!==-1&&React.createElement('span',{style:{padding:'2px 6px',borderRadius:'4px',fontSize:'9px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',marginLeft:'4px'}},'\ud83d\udd0d Debug')),
         u.role!=='admin'&&u.role!=='driver'&&u.permissions&&u.permissions.length>0&&React.createElement('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'4px'}},
           u.permissions.map(function(p){return React.createElement('span',{key:p,style:{padding:'2px 6px',borderRadius:'4px',fontSize:'10px',background:'rgba(59,130,246,0.2)',color:'#60a5fa'}},p)})),
         React.createElement('div',{style:{color:'#64748b',fontSize:'12px'}},'Created: '+fmtD(u.created_at)),
@@ -2009,9 +2016,15 @@ function UsersPanel({notify}){
           f.role==='driver'&&React.createElement('div',{style:{marginBottom:'16px'}},
             React.createElement('label',{style:{...S.lbl,marginBottom:'8px'}},'Driver Access Level'),
             React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 14px',borderRadius:'8px',border:(f.permissions||[]).indexOf('manage_schedule')!==-1?'2px solid #f59e0b':'1px solid #475569',background:(f.permissions||[]).indexOf('manage_schedule')!==-1?'rgba(245,158,11,0.15)':'transparent',cursor:'pointer',fontSize:'14px',color:(f.permissions||[]).indexOf('manage_schedule')!==-1?'#fff':'#94a3b8',fontWeight:(f.permissions||[]).indexOf('manage_schedule')!==-1?'600':'400'}},
-              React.createElement('input',{type:'checkbox',checked:(f.permissions||[]).indexOf('manage_schedule')!==-1,onChange:function(){var perms=f.permissions||[];setF({...f,permissions:perms.indexOf('manage_schedule')!==-1?perms.filter(function(x){return x!=='manage_schedule'}):[].concat(perms,['manage_schedule'])})},style:{accentColor:'#f59e0b',width:'18px',height:'18px'}}),
+              React.createElement('input',{type:'checkbox',checked:(f.permissions||[]).indexOf('manage_schedule')!==-1,onChange:function(){var perms=f.permissions||[];if(perms.indexOf('manage_schedule')!==-1){setF({...f,permissions:perms.filter(function(x){return x!=='manage_schedule'&&x!=='sched_export'&&x!=='sched_routes'&&x!=='sched_debug'})})}else{setF({...f,permissions:[].concat(perms,['manage_schedule'])})}},style:{accentColor:'#f59e0b',width:'18px',height:'18px'}}),
               '\ud83d\udcc5 Schedule Manager \u2014 can assign routes & days to other drivers'),
-            (f.permissions||[]).indexOf('manage_schedule')!==-1&&React.createElement('div',{style:{color:'#fbbf24',fontSize:'12px',marginTop:'6px',padding:'8px 10px',background:'rgba(245,158,11,0.1)',borderRadius:'6px'}},'This driver will see the admin schedule grid and can assign routes/days to other drivers. Final approval (\ud83d\udd12 Confirm) stays with admin only.')),
+            (f.permissions||[]).indexOf('manage_schedule')!==-1&&React.createElement('div',{style:{marginTop:'8px',padding:'10px',background:'rgba(245,158,11,0.1)',borderRadius:'6px'}},
+              React.createElement('div',{style:{color:'#fbbf24',fontSize:'12px',marginBottom:'8px'}},'Assign routes/days to drivers. Final approval (\ud83d\udd12 Confirm) stays with admin only.'),
+              React.createElement('div',{style:{color:'#94a3b8',fontSize:'11px',marginBottom:'6px',fontWeight:'600'}},'ADDITIONAL ACCESS:'),
+              [{k:'sched_export',l:'\ud83d\udcc4 Export PDF',c:'#7c3aed'},{k:'sched_routes',l:'\ud83d\udea3 Manage Routes',c:'#f59e0b'},{k:'sched_debug',l:'\ud83d\udd0d Debug',c:'#ef4444'}].map(function(p){
+                var checked=(f.permissions||[]).indexOf(p.k)!==-1;
+                return React.createElement('label',{key:p.k,style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 10px',borderRadius:'6px',border:checked?'2px solid '+p.c:'1px solid #475569',background:checked?p.c+'22':'transparent',cursor:'pointer',fontSize:'12px',color:checked?'#fff':'#94a3b8',fontWeight:checked?'600':'400',marginBottom:'4px'}},
+                  React.createElement('input',{type:'checkbox',checked:checked,onChange:function(){var perms=f.permissions||[];setF({...f,permissions:checked?perms.filter(function(x){return x!==p.k}):perms.concat([p.k])})},style:{accentColor:p.c,width:'16px',height:'16px'}}),p.l)}))),
           f.role==='attendant'&&React.createElement('div',{style:{marginBottom:'16px'}},
             React.createElement('label',{style:{...S.lbl,marginBottom:'8px'}},'Access Permissions'),
             React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
