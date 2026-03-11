@@ -410,11 +410,14 @@ app.post('/api/login', async (req, res) => {
       const dResult = await pool.query('SELECT id FROM drivers WHERE user_id = $1', [user.id]);
       if (dResult.rows.length > 0) driver_id = dResult.rows[0].id;
     }
-    // Build permissions: admin=all, driver=schedule, others=stored permissions
+    // Build permissions: admin=all, driver=schedule+stored, others=stored permissions
     const ALL_PERMS = ['orders','cleaners','extras','invoices','payments','reports','errors','schedule','settings'];
     let perms;
     if (user.role === 'admin') perms = ALL_PERMS;
-    else if (user.role === 'driver') perms = ['schedule'];
+    else if (user.role === 'driver') {
+      const driverPerms = user.permissions || [];
+      perms = ['schedule'].concat(driverPerms.filter(p => p !== 'schedule'));
+    }
     else perms = user.permissions || ['orders'];
     res.json({ token, user: { id: user.id, username: user.username, role: user.role, driver_id, permissions: perms } });
   } catch (err) {
@@ -435,7 +438,10 @@ app.get('/api/me', authenticate, async (req, res) => {
     const ALL_PERMS = ['orders','cleaners','extras','invoices','payments','reports','errors','schedule','settings'];
     let perms;
     if (user.role === 'admin') perms = ALL_PERMS;
-    else if (user.role === 'driver') perms = ['schedule'];
+    else if (user.role === 'driver') {
+      const driverPerms = user.permissions || [];
+      perms = ['schedule'].concat(driverPerms.filter(p => p !== 'schedule'));
+    }
     else perms = user.permissions || ['orders'];
     res.json({ user: { id: user.id, username: user.username, role: user.role, driver_id, permissions: perms } });
   } catch(e) {
