@@ -144,6 +144,17 @@ async function initDB() {
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_apt VARCHAR(50);
     `);
 
+    // Cleaner addresses table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS cleaner_addresses (
+        id SERIAL PRIMARY KEY,
+        cleaner_id INTEGER NOT NULL REFERENCES cleaners(id) ON DELETE CASCADE,
+        address TEXT NOT NULL,
+        apt VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // =============================================
     // DRIVER SCHEDULING & PAY TABLES
     // =============================================
@@ -782,6 +793,52 @@ app.delete('/api/staff-names/:id', authenticate, adminOnly, async (req, res) => 
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Cleaner addresses routes
+app.get('/api/cleaner-addresses/:cleaner_id', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM cleaner_addresses WHERE cleaner_id = $1 ORDER BY address', [req.params.cleaner_id]);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/cleaner-addresses', authenticate, requirePerm('cleaners'), async (req, res) => {
+  const { cleaner_id, address, apt } = req.body;
+  if (!cleaner_id || !address) return res.status(400).json({ error: 'cleaner_id and address required' });
+  try {
+    const result = await pool.query('INSERT INTO cleaner_addresses (cleaner_id, address, apt) VALUES ($1, $2, $3) RETURNING *', [cleaner_id, address.trim(), (apt||'').trim()]);
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/cleaner-addresses/bulk', authenticate, requirePerm('cleaners'), async (req, res) => {
+  const { cleaner_id, addresses } = req.body;
+  if (!cleaner_id || !addresses || !addresses.length) return res.status(400).json({ error: 'cleaner_id and addresses required' });
+  try {
+    const added = [];
+    for (const a of addresses) {
+      const result = await pool.query('INSERT INTO cleaner_addresses (cleaner_id, address, apt) VALUES ($1, $2, $3) RETURNING *', [cleaner_id, (a.address||'').trim(), (a.apt||'').trim()]);
+      added.push(result.rows[0]);
+    }
+    res.json(added);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.put('/api/cleaner-addresses/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
+  const { address, apt } = req.body;
+  try {
+    const result = await pool.query('UPDATE cleaner_addresses SET address=$1, apt=$2 WHERE id=$3 RETURNING *', [address.trim(), (apt||'').trim(), req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/cleaner-addresses/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM cleaner_addresses WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 // Extras routes
