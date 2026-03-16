@@ -16,7 +16,7 @@ const pool = new Pool({
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // === Schedule Routes (Driver Scheduling & Pay) ===
@@ -153,6 +153,11 @@ async function initDB() {
         apt VARCHAR(100),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    // Order photos
+    await client.query(`
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'::jsonb;
     `);
 
     // =============================================
@@ -507,12 +512,12 @@ app.get('/api/orders', authenticate, async (req, res) => {
 });
 
 app.post('/api/orders', authenticate, async (req, res) => {
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-      [order_num, cleaner_id, weight || 0, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes, staff_name, price_adjustment || 0]
+      `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      [order_num, cleaner_id, weight || 0, service_type || '24-hour', pickup_date, bag_color || 'White', extras || [], notes, staff_name, price_adjustment || 0, customer_address || null, customer_apt || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -538,11 +543,11 @@ app.post('/api/orders/import', authenticate, async (req, res) => {
 
 app.put('/api/orders/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment } = req.body;
+  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, updated_at=CURRENT_TIMESTAMP WHERE id=$11 RETURNING *`,
-      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, id]
+      `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, customer_address=$11, customer_apt=$12, updated_at=CURRENT_TIMESTAMP WHERE id=$13 RETURNING *`,
+      [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, customer_address || null, customer_apt || null, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     res.json(result.rows[0]);
@@ -561,6 +566,68 @@ app.delete('/api/orders/:id', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// Order photos - upload (accepts base64 image, compresses on client)
+app.post('/api/orders/:id/photos', authenticate, async (req, res) => {
+  const { image, label } = req.body;
+  if (!image) return res.status(400).json({ error: 'image required' });
+  try {
+    const order = await pool.query('SELECT photos FROM orders WHERE id = $1', [req.params.id]);
+    if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    const photos = order.rows[0].photos || [];
+    photos.push({ data: image, label: label || '', uploaded_at: new Date().toISOString(), uploaded_by: req.user.username });
+    await pool.query('UPDATE orders SET photos = $1::jsonb WHERE id = $2', [JSON.stringify(photos), req.params.id]);
+    res.json({ success: true, count: photos.length });
+  } catch (err) {
+    console.error('Photo upload error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Order photos - get
+app.get('/api/orders/:id/photos', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT photos FROM orders WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    res.json(result.rows[0].photos || []);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// Order photos - delete one by index
+app.delete('/api/orders/:id/photos/:index', authenticate, async (req, res) => {
+  try {
+    const order = await pool.query('SELECT photos FROM orders WHERE id = $1', [req.params.id]);
+    if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    const photos = order.rows[0].photos || [];
+    const idx = parseInt(req.params.index);
+    if (idx < 0 || idx >= photos.length) return res.status(400).json({ error: 'Invalid index' });
+    photos.splice(idx, 1);
+    await pool.query('UPDATE orders SET photos = $1::jsonb WHERE id = $2', [JSON.stringify(photos), req.params.id]);
+    res.json({ success: true, count: photos.length });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// Photo cleanup - purge photos older than retention days
+async function cleanupOldPhotos() {
+  try {
+    const settingResult = await pool.query("SELECT value FROM settings WHERE key = 'photoRetentionDays'");
+    const retentionDays = settingResult.rows.length > 0 ? parseInt(settingResult.rows[0].value) : 45;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retentionDays);
+    
+    const result = await pool.query("SELECT id, photos FROM orders WHERE photos IS NOT NULL AND photos != '[]'::jsonb");
+    let cleaned = 0;
+    for (const row of result.rows) {
+      const photos = row.photos || [];
+      const filtered = photos.filter(p => new Date(p.uploaded_at) > cutoff);
+      if (filtered.length < photos.length) {
+        await pool.query('UPDATE orders SET photos = $1::jsonb WHERE id = $2', [JSON.stringify(filtered), row.id]);
+        cleaned += photos.length - filtered.length;
+      }
+    }
+    if (cleaned > 0) console.log(`Photo cleanup: removed ${cleaned} photos older than ${retentionDays} days`);
+  } catch (err) { console.error('Photo cleanup error:', err); }
+}
 
 app.delete('/api/orders/clear-all', authenticate, adminOnly, async (req, res) => {
   try {
@@ -894,6 +961,7 @@ app.get('/api/settings', authenticate, async (req, res) => {
     if (!settings.companyAddress) settings.companyAddress = '1363 WEBSTER AVE, NEW YORK, NY 10456';
     if (!settings.storePhone) settings.storePhone = '929-263-1560';
     if (!settings.managerPhone) settings.managerPhone = '347-632-2024';
+    if (!settings.photoRetentionDays) settings.photoRetentionDays = 45;
     res.json(settings);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -901,7 +969,7 @@ app.get('/api/settings', authenticate, async (req, res) => {
 });
 
 app.put('/api/settings', authenticate, adminOnly, async (req, res) => {
-  const { sameDayMult, defaultRate, companyName, companyAddress, storePhone, managerPhone } = req.body;
+  const { sameDayMult, defaultRate, companyName, companyAddress, storePhone, managerPhone, photoRetentionDays } = req.body;
   try {
     if (sameDayMult !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['sameDayMult', sameDayMult.toString()]);
     if (defaultRate !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['defaultRate', defaultRate.toString()]);
@@ -909,6 +977,7 @@ app.put('/api/settings', authenticate, adminOnly, async (req, res) => {
     if (companyAddress !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['companyAddress', companyAddress]);
     if (storePhone !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['storePhone', storePhone]);
     if (managerPhone !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['managerPhone', managerPhone]);
+    if (photoRetentionDays !== undefined) await pool.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', ['photoRetentionDays', photoRetentionDays.toString()]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -1460,6 +1529,8 @@ initDB().then(() => {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     cleanupOldOrders();
+    cleanupOldPhotos();
     setInterval(cleanupOldOrders, 24 * 60 * 60 * 1000);
+    setInterval(cleanupOldPhotos, 24 * 60 * 60 * 1000);
   });
 });
