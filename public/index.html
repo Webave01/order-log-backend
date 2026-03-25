@@ -888,6 +888,7 @@ function Payments({cleaners,settings,t}){
   
   const startEdit=(inv)=>{setEditing(inv.id);setEditPay(inv.amount_paid||'');setEditNote(inv.notes||'');setEditStat(inv.status||'unpaid')};
   const handlePayChange=(val)=>{setEditPay(val);if(parseFloat(val)>0&&editStat==='unpaid')setEditStat('paid')};
+  const handleStatChange=(val,inv)=>{setEditStat(val);if(val==='paid'&&(!editPay||parseFloat(editPay)===0)){setEditPay(inv.invoice_amount)}};
   
   const exportExcel=()=>{
     const wb=XLSX.utils.book_new();
@@ -982,9 +983,9 @@ function Payments({cleaners,settings,t}){
               React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmtC(inv.invoice_amount)),
               React.createElement('td',{style:{padding:'8px'}},React.createElement('input',{type:'number',step:'0.01',value:editPay,onChange:e=>handlePayChange(e.target.value),style:{...S.inp,width:'80px',padding:'4px'}})),
               React.createElement('td',{style:{padding:'8px'}},React.createElement('input',{type:'text',value:editNote,onChange:e=>setEditNote(e.target.value),placeholder:'Notes',style:{...S.inp,width:'80px',padding:'4px'}})),
-              React.createElement('td',{style:{padding:'8px',textAlign:'center'}},React.createElement('select',{value:editStat,onChange:e=>setEditStat(e.target.value),style:{...S.inp,padding:'4px'}},React.createElement('option',{value:'unpaid'},'Unpaid'),React.createElement('option',{value:'partial'},'Partial'),React.createElement('option',{value:'paid'},'Paid'))),
+              React.createElement('td',{style:{padding:'8px',textAlign:'center'}},React.createElement('select',{value:editStat,onChange:function(e){handleStatChange(e.target.value,inv)},style:{...S.inp,padding:'4px'}},React.createElement('option',{value:'unpaid'},'Unpaid'),React.createElement('option',{value:'partial'},'Partial'),React.createElement('option',{value:'paid'},'Paid'))),
               React.createElement('td',{style:{padding:'8px',textAlign:'center'}},
-                React.createElement('button',{onClick:function(){updatePayment(inv.id,{amount_paid:parseFloat(editPay)||0,notes:editNote,status:editStat,paid_date:new Date().toISOString().split('T')[0]});},style:{...S.btn,padding:'4px 8px',fontSize:'12px',marginRight:'4px'}},'Save'),
+                React.createElement('button',{onClick:function(){var amt=parseFloat(editPay)||0;if(editStat==='paid'&&amt===0)amt=parseFloat(inv.invoice_amount);updatePayment(inv.id,{amount_paid:amt,notes:editNote,status:editStat,paid_date:new Date().toISOString().split('T')[0]});},style:{...S.btn,padding:'4px 8px',fontSize:'12px',marginRight:'4px'}},'Save'),
                 React.createElement('button',{onClick:function(){setEditing(null);},style:{...S.cancel,padding:'4px 8px',fontSize:'12px'}},'X')));
           }
           return React.createElement('tr',{key:inv.id,style:{borderBottom:'1px solid #334155'}},
