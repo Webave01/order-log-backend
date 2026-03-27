@@ -671,9 +671,9 @@ function Reports({t}){
 }
 
 function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
-  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);
+  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);const[showDba,setShowDba]=useState(false);
   const[showAddrs,setShowAddrs]=useState(null);const[addrList,setAddrList]=useState([]);const[newAddr,setNewAddr]=useState('');const[newApt,setNewApt]=useState('');const[editAddr,setEditAddr]=useState(null);
-  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setF({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
+  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
   const del=async id=>{if(!confirm(t.delete+'?'))return;try{await api.del('/cleaners/'+id);notify('Deleted');await loadData()}catch(e){alert(e.message)}};
   const loadAddrs=async(cid)=>{try{const a=await api.get('/cleaner-addresses/'+cid);setAddrList(a)}catch(e){setAddrList([])}};
   const addAddr=async()=>{if(!newAddr.trim()){alert('Enter address');return}try{await api.post('/cleaner-addresses',{cleaner_id:showAddrs.id,address:newAddr.trim(),apt:newApt.trim()});setNewAddr('');setNewApt('');loadAddrs(showAddrs.id);notify('Address added')}catch(e){alert(e.message)}};
@@ -681,7 +681,7 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
   const saveAddr=async()=>{if(!editAddr)return;try{await api.put('/cleaner-addresses/'+editAddr.id,{address:editAddr.address,apt:editAddr.apt});setEditAddr(null);loadAddrs(showAddrs.id);notify('Updated')}catch(e){alert(e.message)}};
 
   return React.createElement('div',null,
-    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,dba_name:'',dba_address:'',dba_phone:''});setShow(true)},style:S.btn},t.addCleaner)),
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,dba_name:'',dba_address:'',dba_phone:''});setShowDba(false);setShow(true)},style:S.btn},t.addCleaner)),
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
       cleaners.map(c=>React.createElement('div',{key:c.id,style:S.card},
         React.createElement('div',{style:{fontWeight:'bold',marginBottom:'4px'}},c.name,c.has_addresses&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),c.dba_name&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#f59e0b'}},'\ud83c\udfe2 '+c.dba_name)),
@@ -691,7 +691,7 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
           React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:c.route==='east'?'#3b82f6':'#f59e0b'}},c.route==='east'?'\ud83d\uddfd East':'\ud83c\udf06 West'),
           c.congestion_zone&&React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#dc2626'}},'\ud83d\ude97 Congestion $'+parseFloat(c.congestion_rate||5).toFixed(2)+'/day')),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',flexWrap:'wrap'}},
-          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false,dba_name:c.dba_name||'',dba_address:c.dba_address||'',dba_phone:c.dba_phone||''});setShow(true)},style:S.edit},t.edit),
+          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,address:c.address||'',rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false,dba_name:c.dba_name||'',dba_address:c.dba_address||'',dba_phone:c.dba_phone||''});setShowDba(!!c.dba_name);setShow(true)},style:S.edit},t.edit),
           React.createElement('button',{onClick:()=>setShowPrices(c),style:{...S.edit,borderColor:'#f59e0b',color:'#f59e0b'}},t.customPrices),
           c.has_addresses&&React.createElement('button',{onClick:()=>{setShowAddrs(c);loadAddrs(c.id)},style:{...S.edit,borderColor:'#8b5cf6',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),
           React.createElement('button',{onClick:()=>del(c.id),style:S.del},t.delete))))),
@@ -713,11 +713,11 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
               React.createElement('input',{type:'checkbox',id:'hasAddr',checked:f.has_addresses,onChange:e=>setF({...f,has_addresses:e.target.checked}),style:{width:'20px',height:'20px'}}),
               React.createElement('label',{htmlFor:'hasAddr',style:{color:'#a78bfa',fontWeight:'bold',cursor:'pointer'}},'\ud83c\udfe0 Individual Addresses (Doorman/Residential)')),
             f.has_addresses&&React.createElement('div',{style:{marginTop:'6px',color:'#94a3b8',fontSize:'11px'}},'Staff will pick customer address from a list when entering orders. Bag color auto-set to Black.')),
-          React.createElement('div',{style:{marginTop:'12px',padding:'12px',borderRadius:'8px',border:f.dba_name?'1px solid #f59e0b':'1px solid #475569',background:f.dba_name?'rgba(245,158,11,0.05)':'transparent'}},
-            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:f.dba_name?'10px':'0'}},
-              React.createElement('input',{type:'checkbox',id:'hasDba',checked:!!f.dba_name,onChange:e=>{if(e.target.checked)setF({...f,dba_name:' '});else setF({...f,dba_name:'',dba_address:'',dba_phone:''})},style:{width:'20px',height:'20px'}}),
+          React.createElement('div',{style:{marginTop:'12px',padding:'12px',borderRadius:'8px',border:showDba?'1px solid #f59e0b':'1px solid #475569',background:showDba?'rgba(245,158,11,0.05)':'transparent'}},
+            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:showDba?'10px':'0'}},
+              React.createElement('input',{type:'checkbox',id:'hasDba',checked:showDba,onChange:e=>{if(e.target.checked){setShowDba(true)}else{setShowDba(false);setF({...f,dba_name:'',dba_address:'',dba_phone:''})}},style:{width:'20px',height:'20px'}}),
               React.createElement('label',{htmlFor:'hasDba',style:{color:'#f59e0b',fontWeight:'bold',cursor:'pointer'}},'\ud83c\udfe2 Custom Company on Invoice (DBA)')),
-            f.dba_name!==''&&React.createElement('div',{style:{display:'grid',gap:'8px'}},
+            showDba&&React.createElement('div',{style:{display:'grid',gap:'8px'}},
               React.createElement('input',{value:f.dba_name,onChange:e=>setF({...f,dba_name:e.target.value}),placeholder:'Company Name (e.g. Kleen Panda Laundry)',style:S.inp}),
               React.createElement('input',{value:f.dba_address,onChange:e=>setF({...f,dba_address:e.target.value}),placeholder:'Address (e.g. 113 E Tremont Ave, NY 10453)',style:S.inp}),
               React.createElement('input',{value:f.dba_phone,onChange:e=>setF({...f,dba_phone:e.target.value}),placeholder:'Phone (e.g. 347-632-2024)',style:S.inp}),
