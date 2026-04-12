@@ -512,8 +512,20 @@ app.get('/api/orders', authenticate, async (req, res) => {
 });
 
 app.post('/api/orders', authenticate, async (req, res) => {
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt } = req.body;
+  let { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt } = req.body;
   try {
+    // Auto-assign order number if blank (for address-based cleaners like Laundry Day)
+    if (!order_num || order_num.trim() === '') {
+      const maxResult = await pool.query(
+        "SELECT order_num FROM orders WHERE cleaner_id = $1 AND order_num ~ '^[0-9]+$' ORDER BY CAST(order_num AS INTEGER) DESC LIMIT 1",
+        [cleaner_id]
+      );
+      if (maxResult.rows.length > 0) {
+        order_num = String(parseInt(maxResult.rows[0].order_num) + 1);
+      } else {
+        order_num = '1000';
+      }
+    }
     const result = await pool.query(
       `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
@@ -665,6 +677,7 @@ app.get('/api/orders/find-duplicates', authenticate, async (req, res) => {
     const result = await pool.query(`
       SELECT order_num, COUNT(*) as count FROM orders 
       WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 
+      AND order_num IS NOT NULL AND order_num != ''
       GROUP BY order_num HAVING COUNT(*) > 1
     `, [cleaner_id, start_date, end_date]);
     res.json(result.rows);
@@ -676,6 +689,7 @@ app.get('/api/orders/find-duplicates', authenticate, async (req, res) => {
 // Check if order number is a duplicate for this cleaner
 app.get('/api/orders/check-duplicate', authenticate, async (req, res) => {
   const { order_num, cleaner_id, exclude_id } = req.query;
+  if (!order_num || order_num.trim() === '') return res.json({ isDuplicate: false, existingOrder: null });
   try {
     let query = 'SELECT id, pickup_date FROM orders WHERE order_num = $1 AND cleaner_id = $2';
     const params = [order_num, cleaner_id];
@@ -860,6 +874,45 @@ app.delete('/api/staff-names/:id', authenticate, adminOnly, async (req, res) => 
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Get next sequential order number for a cleaner (used by address-based cleaners)
+app.get('/api/orders/next-number/:cleaner_id', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT order_num FROM orders WHERE cleaner_id = $1 AND order_num ~ '^[0-9]+$' ORDER BY CAST(order_num AS INTEGER) DESC LIMIT 1",
+      [req.params.cleaner_id]
+    );
+    const lastNum = result.rows.length > 0 ? parseInt(result.rows[0].order_num) : 999;
+    res.json({ next: String(lastNum + 1) });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Check if address already has an order this week for this cleaner
+app.get('/api/orders/check-address', authenticate, async (req, res) => {
+  const { cleaner_id, address, pickup_date, exclude_id } = req.query;
+  if (!cleaner_id || !address || !pickup_date) return res.json({ isDuplicate: false });
+  try {
+    // Find Mon-Sat week boundaries for the pickup date
+    const d = new Date(pickup_date + 'T12:00:00');
+    const dow = d.getDay();
+    const mon = new Date(d); mon.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+    const sat = new Date(mon); sat.setDate(mon.getDate() + 5);
+    const monStr = mon.toISOString().split('T')[0];
+    const satStr = sat.toISOString().split('T')[0];
+
+    let query = `SELECT id, order_num, pickup_date, customer_address FROM orders 
+      WHERE cleaner_id = $1 AND LOWER(TRIM(customer_address)) = LOWER(TRIM($2))
+      AND pickup_date >= $3 AND pickup_date <= $4`;
+    const params = [cleaner_id, address, monStr, satStr];
+    if (exclude_id) { query += ' AND id != $5'; params.push(exclude_id); }
+    query += ' LIMIT 1';
+
+    const result = await pool.query(query, params);
+    res.json({ isDuplicate: result.rows.length > 0, existingOrder: result.rows[0] || null, weekStart: monStr, weekEnd: satStr });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 // Cleaner addresses routes
