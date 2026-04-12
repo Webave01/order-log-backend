@@ -443,7 +443,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
 function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave,onClose,lang,t}){
   const getDefaultPickupDate=()=>{const now=new Date();const hour=now.getHours();const target=hour>=6&&hour<9?new Date(now.setDate(now.getDate()-1)):now;const y=target.getFullYear();const m=String(target.getMonth()+1).padStart(2,'0');const dd=String(target.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd};
   const[d,setD]=useState({order_num:order?.order_num||'',weight:order?.weight||'',service_type:order?.service_type||'same-day',pickup_date:order?.pickup_date?.split('T')[0]||getDefaultPickupDate(),bag_color:order?.bag_color||'Blue',cleaner_id:order?.cleaner_id||'',extras:order?.extras||[],notes:order?.notes||'',staff_name:order?.staff_name||staffName,price_adjustment:order?.price_adjustment||'',customer_address:order?.customer_address||'',customer_apt:order?.customer_apt||'',id:order?.id||null});
-  const[saving,setSaving]=useState(false);const[dupWarn,setDupWarn]=useState(null);const[seqWarn,setSeqWarn]=useState(null);const[cleanerSearch,setCleanerSearch]=useState('');const[highlightIdx,setHighlightIdx]=useState(0);
+  const[saving,setSaving]=useState(false);const[dupWarn,setDupWarn]=useState(null);const[seqWarn,setSeqWarn]=useState(null);const[addrDupWarn,setAddrDupWarn]=useState(null);const[cleanerSearch,setCleanerSearch]=useState('');const[highlightIdx,setHighlightIdx]=useState(0);
   const[confirmPopup,setConfirmPopup]=useState(null);
   const[addrList,setAddrList]=useState([]);const[addrSearch,setAddrSearch]=useState('');const[addrHighlight,setAddrHighlight]=useState(0);const[showAddrDrop,setShowAddrDrop]=useState(false);
   const[isNewAddr,setIsNewAddr]=useState(order?.is_new_address||false);
@@ -469,8 +469,18 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
   useEffect(()=>{if(d.customer_apt)setAptError(false)},[d.customer_apt]);
 
   useEffect(()=>{
+    if(isAddrCleaner&&d.customer_address&&d.cleaner_id&&d.pickup_date){
+      var tm=setTimeout(function(){
+        api.get('/orders/check-address?cleaner_id='+d.cleaner_id+'&address='+encodeURIComponent(d.customer_address)+'&pickup_date='+d.pickup_date+(d.id?'&exclude_id='+d.id:''))
+          .then(function(r){setAddrDupWarn(r.isDuplicate?'This address already has an order this week (#'+r.existingOrder.order_num+' on '+fmtD(r.existingOrder.pickup_date)+')':null)})
+          .catch(function(){setAddrDupWarn(null)});
+      },300);return function(){clearTimeout(tm)};
+    }else{setAddrDupWarn(null)}
+  },[d.customer_address,d.cleaner_id,d.pickup_date,d.id,isAddrCleaner]);
+
+  useEffect(()=>{
     if(!isAddrCleaner){
-      const check=async()=>{if(d.order_num&&d.cleaner_id){try{const dup=await api.get('/orders/check-duplicate?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id+(d.id?'&exclude_id='+d.id:''));setDupWarn(dup.isDuplicate?t.repeatOrder+d.order_num+' '+t.existsOn+' ('+fmtD(dup.existingOrder.pickup_date)+')':null);const seq=await api.get('/orders/check-sequence?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id);setSeqWarn(seq.isOutOfSequence?t.checkOrderNum+' #'+seq.lastOrderNum:null)}catch(e){}}else{setDupWarn(null);setSeqWarn(null)}};
+      const check=async()=>{if(d.order_num&&d.cleaner_id&&!isAddrCleaner){try{const dup=await api.get('/orders/check-duplicate?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id+(d.id?'&exclude_id='+d.id:''));setDupWarn(dup.isDuplicate?t.repeatOrder+d.order_num+' '+t.existsOn+' ('+fmtD(dup.existingOrder.pickup_date)+')':null);const seq=await api.get('/orders/check-sequence?order_num='+d.order_num+'&cleaner_id='+d.cleaner_id);setSeqWarn(seq.isOutOfSequence?t.checkOrderNum+' #'+seq.lastOrderNum:null)}catch(e){}}else{setDupWarn(null);setSeqWarn(null)}};
       const tm=setTimeout(check,300);return()=>clearTimeout(tm);
     }else{setDupWarn(null);setSeqWarn(null)}
   },[d.order_num,d.cleaner_id,d.id,isAddrCleaner,t]);
@@ -486,6 +496,7 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
     var warnings=[];
     if(dupWarn)warnings.push(dupWarn);
     if(seqWarn)warnings.push(seqWarn);
+    if(addrDupWarn)warnings.push(addrDupWarn);
     if(d.weight&&parseFloat(d.weight)>100)warnings.push(t.checkWeightHigh+' '+parseFloat(d.weight)+' '+t.lbsSeemsHigh);
     if(d.weight&&parseFloat(d.weight)<0)warnings.push(t.checkWeightNeg);
     if(warnings.length>0){showConfirm(warnings.join('\n\n'),doSave);return}
@@ -506,6 +517,7 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
         d.staff_name&&React.createElement('div',{style:{background:'#065f46',padding:'8px 12px',borderRadius:'6px',marginBottom:'12px',fontSize:'13px'}},'\ud83d\udc64 '+d.staff_name),
         dupWarn&&React.createElement('div',{style:{background:'#7f1d1d',border:'2px solid #ef4444',color:'#fecaca',padding:'12px',borderRadius:'8px',marginBottom:'12px',fontSize:'14px',fontWeight:'bold'}},'\u26a0\ufe0f '+dupWarn),
         seqWarn&&React.createElement('div',{style:{background:'#78350f',border:'2px solid #f59e0b',color:'#fef3c7',padding:'12px',borderRadius:'8px',marginBottom:'12px',fontSize:'14px',fontWeight:'bold'}},'\u26a0\ufe0f '+seqWarn),
+        addrDupWarn&&React.createElement('div',{style:{background:'rgba(139,92,246,0.2)',border:'2px solid #8b5cf6',color:'#c4b5fd',padding:'12px',borderRadius:'8px',marginBottom:'12px',fontSize:'14px',fontWeight:'bold'}},'\ud83c\udfe0 '+addrDupWarn),
         React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}},
           React.createElement('div',null,React.createElement('label',{style:S.lbl},t.cleaner+' *'),
             React.createElement('input',{type:'text',placeholder:selectedCleaner?selectedCleaner.name:t.searchCleaner,value:cleanerSearch,onChange:e=>{setCleanerSearch(e.target.value);setHighlightIdx(0);if(!e.target.value)setD({...d,cleaner_id:'',customer_address:'',customer_apt:''})},onKeyDown:e=>{if(!cleanerSearch||filteredCleaners.length===0)return;if(e.key==='ArrowDown'){e.preventDefault();setHighlightIdx(i=>(i+1)%filteredCleaners.length)}else if(e.key==='ArrowUp'){e.preventDefault();setHighlightIdx(i=>(i-1+filteredCleaners.length)%filteredCleaners.length)}else if(e.key==='Enter'&&filteredCleaners.length>0){e.preventDefault();var sel=filteredCleaners[highlightIdx];setD({...d,cleaner_id:sel.id,customer_address:'',customer_apt:'',bag_color:sel.has_addresses?'Black':d.bag_color});setCleanerSearch('')}},style:{...S.inp,fontSize:'16px',padding:'12px',marginBottom:cleanerSearch?'4px':'0'}}),
@@ -1046,6 +1058,7 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
   const[duplicates,setDuplicates]=useState([]);const[seqErrors,setSeqErrors]=useState([]);const[ld,setLd]=useState(false);
   const[start,setStart]=useState('');const[end,setEnd]=useState('');const[cleanerId,setCleanerId]=useState('');
   const[editOrder,setEditOrder]=useState(null);const[sundayOrders,setSundayOrders]=useState([]);
+  const[addrDups,setAddrDups]=useState([]);const[weightErrors,setWeightErrors]=useState([]);
   
   const setLW=()=>{const n=new Date();const dow=n.getDay();const daysSinceSat=dow===0?1:dow+1;const sat=new Date(n);sat.setDate(n.getDate()-daysSinceSat);const mon=new Date(sat);mon.setDate(sat.getDate()-5);setStart(localDateStr(mon));setEnd(localDateStr(sat))};
   const setTW=()=>{const n=new Date();const dow=n.getDay();const daysToMon=dow===0?6:dow-1;const mon=new Date(n);mon.setDate(n.getDate()-daysToMon);setStart(localDateStr(mon));setEnd(localDateStr(n))};
@@ -1054,9 +1067,11 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
     if(!start||!end){alert('Select dates');return}
     setLd(true);
     try{
-      const allDups=[];const allSeq=[];const allSunday=[];
+      const allDups=[];const allSeq=[];const allSunday=[];const allAddrDups=[];const allWeightErrors=[];
       const cleanersToCheck=cleanerId?cleaners.filter(c=>c.id===parseInt(cleanerId)):cleaners;
       for(const c of cleanersToCheck){
+        // Skip duplicate/sequence checks for address-based cleaners (auto-numbered)
+        if(!c.has_addresses){
         // Get duplicates with full order details
         const dups=await api.get('/orders/find-duplicates?cleaner_id='+c.id+'&start_date='+start+'&end_date='+end);
         if(dups.length>0){
@@ -1083,13 +1098,46 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
           allSeq.push({cleaner:c,warnings:enriched});
           }
         }
+        // Weight checks for all cleaners
+        var badWeights=[];
+        inv.orders&&inv.orders.forEach(function(o){
+          var w=parseFloat(o.weight||0);
+          if(w>100)badWeights.push({...o,issue:'Weight '+w+' lbs seems high',cleaner_name:c.name});
+          if(w===0&&(!o.extras||o.extras.length===0))badWeights.push({...o,issue:'Zero weight with no extras',cleaner_name:c.name});
+        });
+        if(badWeights.length>0)allWeightErrors.push({cleaner:c,errors:badWeights});
         // Find Sunday orders
         inv.orders&&inv.orders.forEach(function(o){
           var d=new Date(o.pickup_date);
           if(d.getUTCDay()===0)allSunday.push({...o,cleaner_name:c.name,cleaner_id:c.id});
         });
+        } else {
+        // Address cleaners: check duplicate addresses per week + weight + Sunday
+        try{const inv=await api.get('/reports/invoice?cleaner_id='+c.id+'&start_date='+start+'&end_date='+end);
+        if(inv.orders&&inv.orders.length>0){
+          // Duplicate address check: same address shouldn't appear twice in same week
+          var addrMap={};
+          inv.orders.forEach(function(o){
+            var addr=(o.customer_address||'').trim().toLowerCase();
+            if(addr){if(!addrMap[addr])addrMap[addr]=[];addrMap[addr].push(o)}
+          });
+          var dupAddrs=[];
+          Object.entries(addrMap).forEach(function(entry){if(entry[1].length>1)dupAddrs.push({address:entry[1][0].customer_address,orders:entry[1]})});
+          if(dupAddrs.length>0)allAddrDups.push({cleaner:c,duplicates:dupAddrs});
+          // Weight checks: >100 lbs suspicious, 0 weight with no extras
+          var badWeights=[];
+          inv.orders.forEach(function(o){
+            var w=parseFloat(o.weight||0);
+            if(w>100)badWeights.push({...o,issue:'Weight '+w+' lbs seems high'});
+            if(w===0&&(!o.extras||o.extras.length===0))badWeights.push({...o,issue:'Zero weight with no extras'});
+          });
+          if(badWeights.length>0)allWeightErrors.push({cleaner:c,errors:badWeights});
+          // Sunday check
+          inv.orders.forEach(function(o){var d=new Date(o.pickup_date);if(d.getUTCDay()===0)allSunday.push({...o,cleaner_name:c.name,cleaner_id:c.id})});
+        }}catch(e){}
+        }
       }
-      setDuplicates(allDups);setSeqErrors(allSeq);setSundayOrders(allSunday);
+      setDuplicates(allDups);setSeqErrors(allSeq);setSundayOrders(allSunday);setAddrDups(allAddrDups);setWeightErrors(allWeightErrors);
     }catch(e){console.error(e);alert(e.message)}
     setLd(false);
   };
@@ -1102,7 +1150,7 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
     try{await api.del('/orders/'+id);notify('Order deleted');scan()}catch(e){alert(e.message)}};
   
   const exportPDF=()=>{
-    if(duplicates.length===0&&seqErrors.length===0&&sundayOrders.length===0){alert('No errors to export');return}
+    if(duplicates.length===0&&seqErrors.length===0&&sundayOrders.length===0&&addrDups.length===0&&weightErrors.length===0){alert('No errors to export');return}
     const{jsPDF}=window.jspdf;const doc=new jsPDF();
     doc.setFontSize(18);doc.setFont(undefined,'bold');doc.text('Error Report',14,20);
     doc.setFontSize(12);doc.setFont(undefined,'normal');doc.text('Period: '+fmtD(start)+' - '+fmtD(end),14,28);
@@ -1189,8 +1237,24 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
           w.toOrder&&React.createElement('div',null,
             React.createElement('span',{style:{color:'#94a3b8',fontSize:'10px',marginRight:'6px'}},'AFTER GAP:'),
             orderRow(w.toOrder,false))))))),
+
+    addrDups.length>0&&React.createElement('div',{style:{...S.card,marginBottom:'20px',background:'rgba(139,92,246,0.15)',border:'2px solid #8b5cf6'}},
+      React.createElement('h3',{style:{color:'#c4b5fd',marginBottom:'12px'}},'\ud83c\udfe0 Duplicate Addresses in Same Week'),
+      addrDups.map(function(d,i){return React.createElement('div',{key:i,style:{marginBottom:'16px'}},
+        React.createElement('div',{style:{fontWeight:'bold',color:'#c4b5fd',marginBottom:'8px',fontSize:'15px'}},d.cleaner.name),
+        d.duplicates.map(function(dup,j){return React.createElement('div',{key:j,style:{marginBottom:'10px',paddingLeft:'8px',borderLeft:'3px solid #8b5cf6'}},
+          React.createElement('div',{style:{color:'#c4b5fd',fontSize:'13px',marginBottom:'6px',fontWeight:'bold'}},'\ud83c\udfe0 '+dup.address+' \u2014 entered '+dup.orders.length+' times'),
+          dup.orders.map(function(o){return orderRow(o,false)}))}))})),
+
+    weightErrors.length>0&&React.createElement('div',{style:{...S.card,marginBottom:'20px',background:'rgba(245,158,11,0.1)',border:'2px solid #f59e0b'}},
+      React.createElement('h3',{style:{color:'#fef3c7',marginBottom:'12px'}},'\u2696\ufe0f Weight Issues'),
+      weightErrors.map(function(d,i){return React.createElement('div',{key:i,style:{marginBottom:'16px'}},
+        React.createElement('div',{style:{fontWeight:'bold',color:'#fef3c7',marginBottom:'8px',fontSize:'15px'}},d.cleaner.name),
+        d.errors.map(function(o,j){return React.createElement('div',{key:j,style:{marginBottom:'6px',paddingLeft:'8px',borderLeft:'3px solid #f59e0b'}},
+          React.createElement('div',{style:{color:'#fde68a',fontSize:'13px',marginBottom:'4px'}},'\u26a0\ufe0f Order #'+o.order_num+' \u2014 '+o.issue+(o.customer_address?' \u2014 '+o.customer_address:'')),
+          orderRow(o,false))}))})),
     
-    duplicates.length===0&&seqErrors.length===0&&sundayOrders.length===0&&(start||end)&&!ld&&React.createElement('div',{style:{...S.card,background:'#065f46',border:'2px solid #10b981',textAlign:'center'}},
+    duplicates.length===0&&seqErrors.length===0&&sundayOrders.length===0&&addrDups.length===0&&weightErrors.length===0&&(start||end)&&!ld&&React.createElement('div',{style:{...S.card,background:'#065f46',border:'2px solid #10b981',textAlign:'center'}},
       React.createElement('div',{style:{fontSize:'24px',marginBottom:'8px'}},'✓'),
       React.createElement('div',{style:{color:'#a7f3d0'}},'No errors found for selected date range')),
 
