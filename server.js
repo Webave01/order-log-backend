@@ -890,9 +890,9 @@ app.get('/api/orders/next-number/:cleaner_id', authenticate, async (req, res) =>
   }
 });
 
-// Check if address already has an order this week for this cleaner
+// Check if address+apt already has an order this week for this cleaner
 app.get('/api/orders/check-address', authenticate, async (req, res) => {
-  const { cleaner_id, address, pickup_date, exclude_id } = req.query;
+  const { cleaner_id, address, apt, pickup_date, exclude_id } = req.query;
   if (!cleaner_id || !address || !pickup_date) return res.json({ isDuplicate: false });
   try {
     // Find Mon-Sat week boundaries for the pickup date
@@ -903,11 +903,12 @@ app.get('/api/orders/check-address', authenticate, async (req, res) => {
     const monStr = mon.toISOString().split('T')[0];
     const satStr = sat.toISOString().split('T')[0];
 
-    let query = `SELECT id, order_num, pickup_date, customer_address FROM orders 
+    let query = `SELECT id, order_num, pickup_date, customer_address, customer_apt FROM orders 
       WHERE cleaner_id = $1 AND LOWER(TRIM(customer_address)) = LOWER(TRIM($2))
-      AND pickup_date >= $3 AND pickup_date <= $4`;
-    const params = [cleaner_id, address, monStr, satStr];
-    if (exclude_id) { query += ' AND id != $5'; params.push(exclude_id); }
+      AND LOWER(TRIM(COALESCE(customer_apt,''))) = LOWER(TRIM($3))
+      AND pickup_date >= $4 AND pickup_date <= $5`;
+    const params = [cleaner_id, address, apt || '', monStr, satStr];
+    if (exclude_id) { query += ' AND id != $6'; params.push(exclude_id); }
     query += ' LIMIT 1';
 
     const result = await pool.query(query, params);
