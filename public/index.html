@@ -471,12 +471,12 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
   useEffect(()=>{
     if(isAddrCleaner&&d.customer_address&&d.cleaner_id&&d.pickup_date){
       var tm=setTimeout(function(){
-        api.get('/orders/check-address?cleaner_id='+d.cleaner_id+'&address='+encodeURIComponent(d.customer_address)+'&pickup_date='+d.pickup_date+(d.id?'&exclude_id='+d.id:''))
-          .then(function(r){setAddrDupWarn(r.isDuplicate?'This address already has an order this week (#'+r.existingOrder.order_num+' on '+fmtD(r.existingOrder.pickup_date)+')':null)})
+        api.get('/orders/check-address?cleaner_id='+d.cleaner_id+'&address='+encodeURIComponent(d.customer_address)+'&apt='+encodeURIComponent(d.customer_apt||'')+'&pickup_date='+d.pickup_date+(d.id?'&exclude_id='+d.id:''))
+          .then(function(r){setAddrDupWarn(r.isDuplicate?'This address+apt already has an order this week (#'+r.existingOrder.order_num+' on '+fmtD(r.existingOrder.pickup_date)+')':null)})
           .catch(function(){setAddrDupWarn(null)});
       },300);return function(){clearTimeout(tm)};
     }else{setAddrDupWarn(null)}
-  },[d.customer_address,d.cleaner_id,d.pickup_date,d.id,isAddrCleaner]);
+  },[d.customer_address,d.customer_apt,d.cleaner_id,d.pickup_date,d.id,isAddrCleaner]);
 
   useEffect(()=>{
     if(!isAddrCleaner){
@@ -1115,14 +1115,16 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
         // Address cleaners: check duplicate addresses per week + weight + Sunday
         try{const inv=await api.get('/reports/invoice?cleaner_id='+c.id+'&start_date='+start+'&end_date='+end);
         if(inv.orders&&inv.orders.length>0){
-          // Duplicate address check: same address shouldn't appear twice in same week
+          // Duplicate address+apt check: same address AND apt shouldn't appear twice in same week
           var addrMap={};
           inv.orders.forEach(function(o){
             var addr=(o.customer_address||'').trim().toLowerCase();
-            if(addr){if(!addrMap[addr])addrMap[addr]=[];addrMap[addr].push(o)}
+            var apt=(o.customer_apt||'').trim().toLowerCase();
+            var key=addr+'|||'+apt;
+            if(addr){if(!addrMap[key])addrMap[key]=[];addrMap[key].push(o)}
           });
           var dupAddrs=[];
-          Object.entries(addrMap).forEach(function(entry){if(entry[1].length>1)dupAddrs.push({address:entry[1][0].customer_address,orders:entry[1]})});
+          Object.entries(addrMap).forEach(function(entry){if(entry[1].length>1)dupAddrs.push({address:entry[1][0].customer_address+(entry[1][0].customer_apt?' Apt '+entry[1][0].customer_apt:''),orders:entry[1]})});
           if(dupAddrs.length>0)allAddrDups.push({cleaner:c,duplicates:dupAddrs});
           // Weight checks: >100 lbs suspicious, 0 weight with no extras
           var badWeights=[];
