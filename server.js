@@ -1118,7 +1118,7 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
         if (cluster.length > 1) {
           for (let i = 1; i < cluster.length; i++) {
             const gap = cluster[i] - cluster[i - 1];
-            if (gap > 10 && gap <= 50) {
+            if (gap > 25 && gap <= 50) {
               // Small gap within cluster — possible missed orders, soft warning
               sequenceWarnings.push({ from: cluster[i - 1], to: cluster[i], gap });
             }
