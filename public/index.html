@@ -679,7 +679,35 @@ function Reports({t}){
             React.createElement('td',{style:{padding:'10px',textAlign:'right'}},Math.round(d.weight)),
             React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#4ade80'}},fmtC(d.amount)),
             React.createElement('td',{style:{padding:'10px',textAlign:'right'}},d.eastOrders+' / '+fmtC(d.eastAmount)),
-            React.createElement('td',{style:{padding:'10px',textAlign:'right'}},d.westOrders+' / '+fmtC(d.westAmount)))))))));
+            React.createElement('td',{style:{padding:'10px',textAlign:'right'}},d.westOrders+' / '+fmtC(d.westAmount)))))),
+      data.staffShifts?.length>0&&React.createElement('div',{style:{...S.card,marginTop:'24px'}},
+        React.createElement('h3',{style:{marginBottom:'16px'}},'\ud83d\udcca Staff Order Log (AM/PM)'),
+        React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
+          React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
+            React.createElement('th',{style:{padding:'10px',textAlign:'left',fontSize:'12px'}},'Staff'),
+            data.staffShifts[0]?.days.map(function(d){return React.createElement('th',{key:d.date,style:{padding:'10px',textAlign:'center',fontSize:'11px'}},fmtD(d.date).replace(/\/26$/,''))}),
+            React.createElement('th',{style:{padding:'10px',textAlign:'center',fontSize:'12px',fontWeight:'bold',background:'#1e3a5f'}},'Total'))),
+          React.createElement('tbody',null,
+            data.staffShifts.map(function(s,i){
+              return React.createElement(React.Fragment,{key:i},
+                React.createElement('tr',{style:{borderBottom:'none',background:i%2===0?'transparent':'rgba(255,255,255,0.02)'}},
+                  React.createElement('td',{rowSpan:2,style:{padding:'10px',fontWeight:'bold',verticalAlign:'middle',borderBottom:'1px solid #334155'}},s.name),
+                  s.days.map(function(d){return React.createElement('td',{key:d.date+'am',style:{padding:'4px 10px',textAlign:'center',color:'#fbbf24',fontSize:'13px'}},d.am>0?'AM: '+d.am:'\u2014')}),
+                  React.createElement('td',{style:{padding:'4px 10px',textAlign:'center',color:'#fbbf24',fontWeight:'bold',fontSize:'13px',background:'rgba(251,191,36,0.1)'}},s.totalAm>0?'AM: '+s.totalAm:'\u2014')),
+                React.createElement('tr',{style:{borderBottom:'1px solid #334155',background:i%2===0?'transparent':'rgba(255,255,255,0.02)'}},
+                  s.days.map(function(d){return React.createElement('td',{key:d.date+'pm',style:{padding:'4px 10px',textAlign:'center',color:'#60a5fa',fontSize:'13px'}},d.pm>0?'PM: '+d.pm:'\u2014')}),
+                  React.createElement('td',{style:{padding:'4px 10px',textAlign:'center',color:'#60a5fa',fontWeight:'bold',fontSize:'13px',background:'rgba(96,165,250,0.1)'}},s.totalPm>0?'PM: '+s.totalPm:'\u2014')))}),
+            React.createElement('tr',{style:{background:'#0f172a',fontWeight:'bold'}},
+              React.createElement('td',{style:{padding:'10px'}},'Total'),
+              data.staffShifts[0]?.days.map(function(d){
+                var dayAm=data.staffShifts.reduce(function(s,st){var dd=st.days.find(function(x){return x.date===d.date});return s+(dd?dd.am:0)},0);
+                var dayPm=data.staffShifts.reduce(function(s,st){var dd=st.days.find(function(x){return x.date===d.date});return s+(dd?dd.pm:0)},0);
+                return React.createElement('td',{key:d.date+'tot',style:{padding:'6px 10px',textAlign:'center',fontSize:'12px'}},
+                  React.createElement('span',{style:{color:'#fbbf24'}},dayAm),
+                  ' / ',
+                  React.createElement('span',{style:{color:'#60a5fa'}},dayPm))}),
+              React.createElement('td',{style:{padding:'6px 10px',textAlign:'center',fontSize:'13px',background:'rgba(74,222,128,0.1)'}},
+                React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold'}},data.staffShifts.reduce(function(s,st){return s+st.totalOrders},0)+' orders')))))))));
 }
 
 function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
