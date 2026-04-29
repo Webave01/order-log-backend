@@ -1330,6 +1330,7 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
     const cleanerStats = {};
     const dailyStats = {};
     const cleanerPickupDates = {};
+    const staffShifts = {}; // staffShifts[staffName][dateKey] = {am: 0, pm: 0}
 
     for (const o of ordersResult.rows) {
       const cleaner = cleanerMap[o.cleaner_id];
@@ -1373,6 +1374,18 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
       dailyStats[dateKey].amount += orderTotal;
       if (cleaner.route === 'east') { dailyStats[dateKey].eastOrders++; dailyStats[dateKey].eastAmount += orderTotal; }
       else { dailyStats[dateKey].westOrders++; dailyStats[dateKey].westAmount += orderTotal; }
+
+      // Staff shift tracking
+      if (o.staff_name) {
+        const staffName = o.staff_name.trim();
+        if (staffName) {
+          if (!staffShifts[staffName]) staffShifts[staffName] = {};
+          if (!staffShifts[staffName][dateKey]) staffShifts[staffName][dateKey] = { am: 0, pm: 0 };
+          const createdHour = o.created_at ? new Date(o.created_at).getHours() : 12;
+          if (createdHour < 12) { staffShifts[staffName][dateKey].am++; }
+          else { staffShifts[staffName][dateKey].pm++; }
+        }
+      }
     }
 
     let totalCongestion = 0;
@@ -1396,7 +1409,14 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
         twenty_four_hour_orders: twentyFourOrders, twenty_four_hour_weight: twentyFourWeight
       },
       cleanerBreakdown: Object.values(cleanerStats).sort((a, b) => b.amount - a.amount),
-      dailyBreakdown: Object.values(dailyStats).sort((a, b) => a.date.localeCompare(b.date))
+      dailyBreakdown: Object.values(dailyStats).sort((a, b) => a.date.localeCompare(b.date)),
+      staffShifts: Object.entries(staffShifts).map(([name, days]) => ({
+        name,
+        days: Object.entries(days).sort((a, b) => a[0].localeCompare(b[0])).map(([date, counts]) => ({ date, am: counts.am, pm: counts.pm, total: counts.am + counts.pm })),
+        totalAm: Object.values(days).reduce((s, d) => s + d.am, 0),
+        totalPm: Object.values(days).reduce((s, d) => s + d.pm, 0),
+        totalOrders: Object.values(days).reduce((s, d) => s + d.am + d.pm, 0)
+      })).sort((a, b) => b.totalOrders - a.totalOrders)
     });
   } catch (err) {
     console.error('Daily stats error:', err);
