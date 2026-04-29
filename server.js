@@ -1410,13 +1410,19 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
       },
       cleanerBreakdown: Object.values(cleanerStats).sort((a, b) => b.amount - a.amount),
       dailyBreakdown: Object.values(dailyStats).sort((a, b) => a.date.localeCompare(b.date)),
-      staffShifts: Object.entries(staffShifts).map(([name, days]) => ({
-        name,
-        days: Object.entries(days).sort((a, b) => a[0].localeCompare(b[0])).map(([date, counts]) => ({ date, am: counts.am, pm: counts.pm, total: counts.am + counts.pm })),
-        totalAm: Object.values(days).reduce((s, d) => s + d.am, 0),
-        totalPm: Object.values(days).reduce((s, d) => s + d.pm, 0),
-        totalOrders: Object.values(days).reduce((s, d) => s + d.am + d.pm, 0)
-      })).sort((a, b) => b.totalOrders - a.totalOrders)
+      staffShifts: (() => {
+        // Collect all dates across all staff
+        const allDates = new Set();
+        Object.values(staffShifts).forEach(days => Object.keys(days).forEach(d => allDates.add(d)));
+        const sortedDates = Array.from(allDates).sort();
+        return Object.entries(staffShifts).map(([name, days]) => ({
+          name,
+          days: sortedDates.map(date => ({ date, am: (days[date] || {}).am || 0, pm: (days[date] || {}).pm || 0, total: ((days[date] || {}).am || 0) + ((days[date] || {}).pm || 0) })),
+          totalAm: Object.values(days).reduce((s, d) => s + d.am, 0),
+          totalPm: Object.values(days).reduce((s, d) => s + d.pm, 0),
+          totalOrders: Object.values(days).reduce((s, d) => s + d.am + d.pm, 0)
+        })).sort((a, b) => b.totalOrders - a.totalOrders);
+      })()
     });
   } catch (err) {
     console.error('Daily stats error:', err);
