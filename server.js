@@ -1377,7 +1377,7 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
 
       // Staff shift tracking
       if (o.staff_name) {
-        const staffName = o.staff_name.trim();
+        const staffName = o.staff_name.trim().charAt(0).toUpperCase() + o.staff_name.trim().slice(1).toLowerCase();
         if (staffName) {
           if (!staffShifts[staffName]) staffShifts[staffName] = {};
           if (!staffShifts[staffName][dateKey]) staffShifts[staffName][dateKey] = { am: 0, pm: 0 };
