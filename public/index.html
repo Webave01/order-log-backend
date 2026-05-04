@@ -685,28 +685,28 @@ function Reports({t}){
         React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
           React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
             React.createElement('th',{style:{padding:'10px',textAlign:'left',fontSize:'12px'}},'Staff'),
-            data.staffShifts[0]?.days.map(function(d){return React.createElement('th',{key:d.date,style:{padding:'10px',textAlign:'center',fontSize:'11px'}},fmtD(d.date).replace(/\/26$/,''))}),
+            data.staffShifts[0]?.days.map(function(d){return React.createElement('th',{key:d.date,style:{padding:'10px',textAlign:'center',fontSize:'12px'}},fmtD(d.date).replace(/\/26$/,''))}),
             React.createElement('th',{style:{padding:'10px',textAlign:'center',fontSize:'12px',fontWeight:'bold',background:'#1e3a5f'}},'Total'))),
           React.createElement('tbody',null,
             data.staffShifts.map(function(s,i){
               return React.createElement(React.Fragment,{key:i},
                 React.createElement('tr',{style:{borderBottom:'none',background:i%2===0?'transparent':'rgba(255,255,255,0.02)'}},
                   React.createElement('td',{rowSpan:2,style:{padding:'10px',fontWeight:'bold',verticalAlign:'middle',borderBottom:'1px solid #334155'}},s.name),
-                  s.days.map(function(d){return React.createElement('td',{key:d.date+'am',style:{padding:'4px 10px',textAlign:'center',color:'#fbbf24',fontSize:'13px'}},d.am>0?'AM: '+d.am:'\u2014')}),
-                  React.createElement('td',{style:{padding:'4px 10px',textAlign:'center',color:'#fbbf24',fontWeight:'bold',fontSize:'13px',background:'rgba(251,191,36,0.1)'}},s.totalAm>0?'AM: '+s.totalAm:'\u2014')),
+                  s.days.map(function(d){return React.createElement('td',{key:d.date+'am',style:{padding:'4px 10px',textAlign:'center',color:'#fbbf24',fontSize:'14px'}},d.am>0?'AM: '+d.am:(d.pm===0?'\u2014':''))}),
+                  React.createElement('td',{style:{padding:'4px 10px',textAlign:'center',color:'#fbbf24',fontWeight:'bold',fontSize:'14px',background:'rgba(251,191,36,0.1)'}},s.totalAm>0?'AM: '+s.totalAm:'')),
                 React.createElement('tr',{style:{borderBottom:'1px solid #334155',background:i%2===0?'transparent':'rgba(255,255,255,0.02)'}},
-                  s.days.map(function(d){return React.createElement('td',{key:d.date+'pm',style:{padding:'4px 10px',textAlign:'center',color:'#60a5fa',fontSize:'13px'}},d.pm>0?'PM: '+d.pm:'\u2014')}),
-                  React.createElement('td',{style:{padding:'4px 10px',textAlign:'center',color:'#60a5fa',fontWeight:'bold',fontSize:'13px',background:'rgba(96,165,250,0.1)'}},s.totalPm>0?'PM: '+s.totalPm:'\u2014')))}),
+                  s.days.map(function(d){return React.createElement('td',{key:d.date+'pm',style:{padding:'4px 10px',textAlign:'center',color:'#60a5fa',fontSize:'14px'}},d.pm>0?'PM: '+d.pm:'')}),
+                  React.createElement('td',{style:{padding:'4px 10px',textAlign:'center',color:'#60a5fa',fontWeight:'bold',fontSize:'14px',background:'rgba(96,165,250,0.1)'}},s.totalPm>0?'PM: '+s.totalPm:'')))}),
             React.createElement('tr',{style:{background:'#0f172a',fontWeight:'bold'}},
               React.createElement('td',{style:{padding:'10px'}},'Total'),
               data.staffShifts[0]?.days.map(function(d){
                 var dayAm=data.staffShifts.reduce(function(s,st){var dd=st.days.find(function(x){return x.date===d.date});return s+(dd?dd.am:0)},0);
                 var dayPm=data.staffShifts.reduce(function(s,st){var dd=st.days.find(function(x){return x.date===d.date});return s+(dd?dd.pm:0)},0);
-                return React.createElement('td',{key:d.date+'tot',style:{padding:'6px 10px',textAlign:'center',fontSize:'12px'}},
+                return React.createElement('td',{key:d.date+'tot',style:{padding:'6px 10px',textAlign:'center',fontSize:'14px'}},
                   React.createElement('span',{style:{color:'#fbbf24'}},dayAm),
                   ' / ',
                   React.createElement('span',{style:{color:'#60a5fa'}},dayPm))}),
-              React.createElement('td',{style:{padding:'6px 10px',textAlign:'center',fontSize:'13px',background:'rgba(74,222,128,0.1)'}},
+              React.createElement('td',{style:{padding:'6px 10px',textAlign:'center',fontSize:'14px',background:'rgba(74,222,128,0.1)'}},
                 React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold'}},data.staffShifts.reduce(function(s,st){return s+st.totalOrders},0)+' orders')))))))));
 }
 
@@ -832,6 +832,7 @@ function Invoices({cleaners,extras,cleanerExtras,settings,t}){
   const[cid,setCid]=useState('');const[start,setStart]=useState('');const[end,setEnd]=useState('');const[inv,setInv]=useState(null);const[dups,setDups]=useState([]);const[seqWarns,setSeqWarns]=useState([]);const[ld,setLd]=useState(false);
   const gen=async()=>{if(!cid||!start||!end){alert('Select all');return}setLd(true);try{const d=await api.get('/reports/invoice?cleaner_id='+cid+'&start_date='+start+'&end_date='+end);const dupRes=await api.get('/orders/find-duplicates?cleaner_id='+cid+'&start_date='+start+'&end_date='+end);setDups(dupRes);setSeqWarns(d.sequenceWarnings||[]);setInv({cleaner:cleaners.find(c=>c.id===parseInt(cid)),start,end,orders:d.orders,ordersTotal:d.ordersTotal,congestionZone:d.congestionZone,congestionRate:d.congestionRate,congestionDays:d.congestionDays,congestionSurcharge:d.congestionSurcharge,total:d.grandTotal})}catch(e){alert(e.message)}setLd(false)};
   const setLW=()=>{const n=new Date();const dow=n.getDay();const daysSinceSat=dow===0?1:dow+1;const sat=new Date(n);sat.setDate(n.getDate()-daysSinceSat);const mon=new Date(sat);mon.setDate(sat.getDate()-5);setStart(localDateStr(mon));setEnd(localDateStr(sat))};
+  const setLM=()=>{const n=new Date();const firstPrev=new Date(n.getFullYear(),n.getMonth()-1,1);const lastPrev=new Date(n.getFullYear(),n.getMonth(),0);setStart(localDateStr(firstPrev));setEnd(localDateStr(lastPrev))};
 
   const exportPDF=()=>{if(!inv)return;const{jsPDF}=window.jspdf;const doc=new jsPDF();const weekNum=Math.ceil((new Date(inv.start).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);const clnIdx=cleaners.findIndex(c=>c.id===inv.cleaner.id)+1;const invoiceId=10000+(weekNum*100)+clnIdx;const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});const cleanerName=invoiceName(inv.cleaner.name);const coName=inv.cleaner.dba_name||settings.companyName||'WEBSTER AVE LAUNDROMAT';const coAddr=inv.cleaner.dba_address||settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456';const coPhone=inv.cleaner.dba_phone||settings.storePhone||'929-263-1560';let isFirstPage=true;doc.setFontSize(8);doc.text(coName+' \u2022 '+coAddr,14,12);doc.text(coPhone+(inv.cleaner.dba_name?'':' \u2022 Manager: '+(settings.managerPhone||'347-632-2024')),14,16);doc.setFontSize(9);doc.text('Invoice #: '+invoiceId,160,12);doc.setFontSize(16);doc.setFont(undefined,'bold');doc.text(cleanerName,14,26);doc.setFont(undefined,'normal');doc.setFontSize(9);doc.text('Period: '+fmtD(inv.start)+' - '+fmtD(inv.end),14,31);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(inv.total),150,26);doc.setFont(undefined,'normal');var hasAddr=inv.cleaner.has_addresses;var rows=inv.orders.map((o,i)=>{var r=[i+1,fmtD(o.pickup_date),fmtC(o.total),o.order_num,o.weight];if(hasAddr){r.push(o.customer_address||'');r.push(o.customer_apt||'')}r.push(o.extras_formatted||'');r.push(o.notes||'');return r});var head=hasAddr?[['#','Date','Amount','Order #','Wt','Address','Apt','Extras','Notes']]:[['#','Date','Amount','Order #','Weight','Extras','Notes']];var colStyles=hasAddr?{0:{cellWidth:10},1:{cellWidth:16},2:{cellWidth:18},3:{cellWidth:16},4:{cellWidth:12},5:{cellWidth:42},6:{cellWidth:14},7:{cellWidth:28},8:{cellWidth:26}}:{0:{cellWidth:14},1:{cellWidth:22},2:{cellWidth:22},3:{cellWidth:22},4:{cellWidth:18},5:{cellWidth:44},6:{cellWidth:44}};doc.autoTable({startY:35,head:head,body:rows,columnStyles:colStyles,styles:{fontSize:(rows.length<=27&&!hasAddr)?10:(hasAddr?6:7),cellPadding:(rows.length<=27&&!hasAddr)?3:1,textColor:[0,0,0],lineColor:[200,200,200],lineWidth:0.1,overflow:'linebreak'},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold',lineWidth:0.5,lineColor:[0,0,0]},alternateRowStyles:{fillColor:[255,255,255]},bodyStyles:{fillColor:[255,255,255]},margin:{top:10,bottom:8},didDrawPage:function(){if(!isFirstPage){doc.setFontSize(9);doc.setFont(undefined,'normal');doc.text(cleanerName+' (cont.)',14,12)}isFirstPage=false}});let fy=doc.lastAutoTable.finalY;doc.setFontSize(11);if(inv.congestionZone&&inv.congestionSurcharge>0){doc.text('Congestion Charge = '+fmtC(inv.congestionSurcharge)+' ('+inv.congestionDays+' days)',14,fy+8);fy+=6}fy+=2;doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(inv.total),14,fy+8);doc.setFont(undefined,'normal');doc.setFontSize(11);doc.setFont(undefined,'italic');doc.text('Thank you for your business!',14,fy+18);doc.save(cleanerName.replace(/\s/g,'_')+'_'+inv.start+'_to_'+inv.end+'.pdf')};
 
@@ -844,7 +845,10 @@ function Invoices({cleaners,extras,cleanerExtras,settings,t}){
     React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}},
         React.createElement('div',null,React.createElement('label',{style:S.lbl},t.cleaner),React.createElement('select',{value:cid,onChange:e=>setCid(e.target.value),style:S.inp},React.createElement('option',{value:''},t.select),cleaners.map(c=>React.createElement('option',{key:c.id,value:c.id},c.name+(c.congestion_zone?' 🚗':''))))),
-        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer',textAlign:'center'}},t.lastWeek)),
+        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),
+          React.createElement('div',{style:{display:'flex',gap:'8px'}},
+            React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer',textAlign:'center',flex:1}},t.lastWeek),
+            React.createElement('button',{onClick:setLM,style:{...S.inp,cursor:'pointer',textAlign:'center',flex:1}},'Last Month'))),
         React.createElement('div',null,React.createElement('label',{style:S.lbl},t.start),React.createElement('input',{type:'date',value:start,onChange:e=>setStart(e.target.value),style:S.inp})),
         React.createElement('div',null,React.createElement('label',{style:S.lbl},t.end),React.createElement('input',{type:'date',value:end,onChange:e=>setEnd(e.target.value),style:S.inp}))),
       React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
@@ -1116,12 +1120,12 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
         const inv=await api.get('/reports/invoice?cleaner_id='+c.id+'&start_date='+start+'&end_date='+end);
         if(inv.sequenceWarnings&&inv.sequenceWarnings.length>0){
           // Attach the actual orders neighboring each gap
-          var enriched=inv.sequenceWarnings.map(function(w){
+          var enriched=inv.sequenceWarnings.filter(function(w){return Math.abs(w.gap)>50}).map(function(w){
             var fromOrder=inv.orders.find(function(o){return parseInt(String(o.order_num).replace(/\D/g,''))===w.from});
             var toOrder=inv.orders.find(function(o){return parseInt(String(o.order_num).replace(/\D/g,''))===w.to});
             return{...w,fromOrder:fromOrder||null,toOrder:toOrder||null};
           });
-          allSeq.push({cleaner:c,warnings:enriched});
+          if(enriched.length>0)allSeq.push({cleaner:c,warnings:enriched});
         }
         // Weight checks for all cleaners
         var badWeights=[];
