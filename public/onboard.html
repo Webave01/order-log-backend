@@ -58,7 +58,7 @@ body{font-family:'DM Sans',sans-serif;background:#0f172a;color:#e2e8f0;min-heigh
 </div>
 <script>
 var API=window.location.origin+'/api';
-var state={rules:'',ack:false,submitting:false,submitted:false,depositType:'bank',
+var state={rules:'1. No speeding or reckless driving. First time is a WARNING. Second time will remove you from the schedule. Remember: the business number is on the van and individuals will call.\n\n2. Be very careful of bus and bike lane tickets. Buses take pictures of your license plate and will result in $60–$250 fine each time. ALL DRIVERS ARE RESPONSIBLE FOR PAYING TICKETS. I will check for tickets each week. First ticket is a warning. Second is your responsibility.\n\n3. Each stop requires a delivery AND a pickup. Follow the routes and do not deviate unless absolutely necessary.\n\n4. Any damage to the van is your liability. If you have driving insurance, you are required to report this to me for the record.\n\n5. Any criminal violations must be disclosed.\n\n6. There is a 48-hour rule for cancelling a pre-scheduled route. If you do not give this required notice then you will be charged a $50 cancellation fee.\n\n7. You must complete your entire day shift. Emergencies must be accompanied by acceptable proof of check-in at a hospital or care professional.',ack:false,submitting:false,submitted:false,depositType:'bank',
   full_name:'',dob:'',address:'',ssn:'',dl_number:'',dl_expiration:'',
   photo_id:null,photo_id_name:'',ssn_card_photo:null,ssn_card_name:'',
   bank_name:'',routing_number:'',account_number:'',account_type:'checking',zelle_info:'',notes:''};
@@ -67,7 +67,7 @@ function $(id){return document.getElementById(id)}
 function set(k,v){state[k]=v;render()}
 
 async function loadRules(){
-  try{var r=await fetch(API+'/driver-rules');var d=await r.json();state.rules=d.rules||'No driver rules have been posted yet.';render()}
+  try{var r=await fetch(API+'/driver-rules');var d=await r.json();if(d.rules&&d.rules.length>10)state.rules=d.rules;render()}
   catch(e){state.rules='Unable to load rules.';render()}
 }
 
