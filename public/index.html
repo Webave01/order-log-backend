@@ -1314,6 +1314,11 @@ function StaffNameManager({notify}){
 function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t}){
   const[f,setF]=useState({...settings,companyName:settings.companyName||'WEBSTER AVE LAUNDROMAT',companyAddress:settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',storePhone:settings.storePhone||'929-263-1560',managerPhone:settings.managerPhone||'347-632-2024',photoRetentionDays:settings.photoRetentionDays||45});
   const[sav,setSav]=useState(false);const[clr,setClr]=useState(false);const[conf,setConf]=useState('');const[exp,setExp]=useState(false);
+  const[driverRules,setDriverRules]=useState('');const[driverApps,setDriverApps]=useState([]);const[showApps,setShowApps]=useState(false);const[viewApp,setViewApp]=useState(null);const[rulesSaving,setRulesSaving]=useState(false);
+  const loadOnboarding=async()=>{try{var r=await api.get('/driver-rules');setDriverRules(r.rules||'');var a=await api.get('/driver-applications');setDriverApps(a)}catch(e){}};
+  useEffect(()=>{if(isAdmin)loadOnboarding()},[]);
+  const saveRules=async()=>{setRulesSaving(true);try{await api.put('/driver-rules',{rules:driverRules});notify('Rules saved')}catch(e){alert(e.message)}setRulesSaving(false)};
+  const deleteApp=async(id)=>{if(!confirm('Delete this application?'))return;try{await api.del('/driver-applications/'+id);setDriverApps(driverApps.filter(a=>a.id!==id));if(viewApp&&viewApp.id===id)setViewApp(null);notify('Deleted')}catch(e){alert(e.message)}};
   const save=async e=>{e.preventDefault();setSav(true);try{await api.put('/settings',{sameDayMult:parseFloat(f.sameDayMult),defaultRate:parseFloat(f.defaultRate),companyName:f.companyName,companyAddress:f.companyAddress,storePhone:f.storePhone,managerPhone:f.managerPhone,photoRetentionDays:parseInt(f.photoRetentionDays)||45});setSettings(f);notify('Saved')}catch(e){alert(e.message)}setSav(false)};
   const clear=async()=>{const need=lang==='es'?'BORRAR':'DELETE';if(conf!==need){alert('Type '+need);return}setClr(true);try{const res=await api.del('/orders/clear-all');alert('Cleared '+res.deleted+' orders!');setConf('');window.location.reload()}catch(e){console.error('Clear error:',e);alert('Error: '+e.message)}setClr(false)};
   const exportDB=async()=>{setExp(true);try{const data=await api.get('/export-database');const wb=XLSX.utils.book_new();if(data.orders&&data.orders.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.orders),'Orders')}if(data.cleaners&&data.cleaners.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.cleaners),'Cleaners')}if(data.extras&&data.extras.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.extras),'Extras')}if(data.cleaner_extras&&data.cleaner_extras.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.cleaner_extras),'CleanerExtras')}if(data.invoice_tracking&&data.invoice_tracking.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.invoice_tracking),'InvoiceTracking')}if(data.settings&&data.settings.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.settings),'Settings')}XLSX.writeFile(wb,'database_backup_'+new Date().toISOString().split('T')[0]+'.xlsx');notify('Backup downloaded!')}catch(e){alert(e.message)}setExp(false)};
@@ -1347,6 +1352,43 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
       React.createElement('h3',{style:{color:'#4ade80',marginBottom:'12px'}},'💾 Database Backup'),
       React.createElement('p',{style:{color:'#94a3b8',fontSize:'14px',marginBottom:'16px'}},'Download all data (orders, cleaners, extras, payments) as Excel file.'),
       React.createElement('button',{onClick:exportDB,disabled:exp,style:{...S.btn,width:'100%',background:'#059669',opacity:exp?0.6:1}},exp?'Exporting...':'Download Backup')),
+    isAdmin&&React.createElement('div',{style:{...S.card,maxWidth:'700px',marginBottom:'20px',border:'1px solid #8b5cf6'}},
+      React.createElement('h3',{style:{color:'#c4b5fd',marginBottom:'4px'}},'🚐 Driver Onboarding'),
+      React.createElement('p',{style:{color:'#64748b',fontSize:'12px',marginBottom:'16px'}},'Share this link with new drivers: ',
+        React.createElement('a',{href:window.location.origin+'/onboard',target:'_blank',style:{color:'#8b5cf6',fontWeight:'bold'}},window.location.origin+'/onboard')),
+      React.createElement('p',{style:{color:'#64748b',fontSize:'12px',marginBottom:'16px'}},'Pay Statement Generator: ',
+        React.createElement('a',{href:window.location.origin+'/paystub',target:'_blank',style:{color:'#10b981',fontWeight:'bold'}},window.location.origin+'/paystub')),
+      React.createElement('div',{style:{marginBottom:'16px'}},
+        React.createElement('label',{style:{...S.lbl,color:'#c4b5fd'}},'Driver Rules (editable — shown on onboarding form)'),
+        React.createElement('textarea',{value:driverRules,onChange:function(e){setDriverRules(e.target.value)},style:{...S.inp,minHeight:'150px',fontFamily:'inherit',lineHeight:'1.6'},placeholder:'Enter driver rules, expectations, pay info, etc.\nNew drivers must acknowledge these before submitting.'}),
+        React.createElement('button',{onClick:saveRules,disabled:rulesSaving,style:{...S.btn,marginTop:'8px',background:'#8b5cf6',opacity:rulesSaving?0.6:1}},rulesSaving?'Saving...':'Save Rules')),
+      React.createElement('div',{style:{borderTop:'1px solid #334155',paddingTop:'16px'}},
+        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
+          React.createElement('h4',{style:{color:'#c4b5fd',margin:0}},'📋 Applications ('+driverApps.length+')'),
+          React.createElement('button',{onClick:loadOnboarding,style:{...S.inp,padding:'6px 12px',cursor:'pointer',fontSize:'12px'}},'⟳ Refresh')),
+        driverApps.length===0&&React.createElement('div',{style:{color:'#64748b',textAlign:'center',padding:'20px'}},'No applications yet'),
+        driverApps.map(function(a){return React.createElement('div',{key:a.id,style:{background:'#0f172a',borderRadius:'8px',border:'1px solid #334155',padding:'12px',marginBottom:'8px'}},
+          React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            React.createElement('div',null,
+              React.createElement('span',{style:{fontWeight:'bold',fontSize:'15px'}},a.full_name),
+              React.createElement('span',{style:{color:'#64748b',fontSize:'12px',marginLeft:'12px'}},fmtD(a.created_at))),
+            React.createElement('div',{style:{display:'flex',gap:'6px'}},
+              React.createElement('button',{onClick:function(){setViewApp(viewApp&&viewApp.id===a.id?null:a)},style:{padding:'4px 10px',borderRadius:'6px',border:'1px solid #3b82f6',background:'transparent',color:'#60a5fa',cursor:'pointer',fontSize:'12px'}},viewApp&&viewApp.id===a.id?'Close':'View'),
+              React.createElement('button',{onClick:function(){deleteApp(a.id)},style:{padding:'4px 10px',borderRadius:'6px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer',fontSize:'12px'}},'✕'))),
+          viewApp&&viewApp.id===a.id&&React.createElement('div',{style:{marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #334155',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',fontSize:'13px'}},
+            React.createElement('div',null,React.createElement('span',{style:{color:'#64748b'}},'DOB: '),a.dob?fmtD(a.dob):'—'),
+            React.createElement('div',null,React.createElement('span',{style:{color:'#64748b'}},'SSN: '),a.ssn_encrypted||'—'),
+            React.createElement('div',{style:{gridColumn:'1/-1'}},React.createElement('span',{style:{color:'#64748b'}},'Address: '),a.address||'—'),
+            React.createElement('div',null,React.createElement('span',{style:{color:'#64748b'}},'DL#: '),a.dl_number||'—'),
+            React.createElement('div',null,React.createElement('span',{style:{color:'#64748b'}},'DL Exp: '),a.dl_expiration?fmtD(a.dl_expiration):'—'),
+            React.createElement('div',null,React.createElement('span',{style:{color:'#64748b'}},'Bank: '),a.bank_name||'—'),
+            React.createElement('div',null,React.createElement('span',{style:{color:'#64748b'}},'Routing: '),a.routing_number||'—'),
+            React.createElement('div',null,React.createElement('span',{style:{color:'#64748b'}},'Account: '),a.account_number||'—'),
+            React.createElement('div',null,React.createElement('span',{style:{color:'#64748b'}},'Type: '),a.account_type||'—'),
+            React.createElement('div',null,React.createElement('span',{style:{color:'#64748b'}},'Zelle: '),a.zelle_info||'—'),
+            a.notes&&React.createElement('div',{style:{gridColumn:'1/-1'}},React.createElement('span',{style:{color:'#64748b'}},'Notes: '),a.notes),
+            a.photo_id&&React.createElement('div',{style:{gridColumn:'1/-1'}},React.createElement('div',{style:{color:'#64748b',marginBottom:'4px'}},'Photo ID:'),React.createElement('img',{src:a.photo_id,style:{maxWidth:'300px',borderRadius:'6px',cursor:'pointer'},onClick:function(){window.open(a.photo_id,'_blank')}})),
+            a.ssn_card_photo&&React.createElement('div',{style:{gridColumn:'1/-1'}},React.createElement('div',{style:{color:'#64748b',marginBottom:'4px'}},'SSN Card:'),React.createElement('img',{src:a.ssn_card_photo,style:{maxWidth:'300px',borderRadius:'6px',cursor:'pointer'},onClick:function(){window.open(a.ssn_card_photo,'_blank')}}))))}))),
     React.createElement('div',{style:{...S.card,maxWidth:'500px',border:'1px solid #7f1d1d'}},
       React.createElement('h3',{style:{color:'#ef4444',marginBottom:'12px'}},t.clearAllOrders),
       React.createElement('p',{style:{color:'#fca5a5',fontSize:'14px',marginBottom:'16px'}},t.clearWarning),

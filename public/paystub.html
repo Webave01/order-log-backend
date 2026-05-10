@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pay Statement Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+.header{background:#1e293b;padding:24px;text-align:center;border-bottom:2px solid #10b981}
+.header h1{font-size:24px;font-weight:700;color:#fff;margin-bottom:2px}
+.header p{color:#64748b;font-size:13px}
+.container{max-width:700px;margin:0 auto;padding:24px 16px 60px}
+.card{background:#1e293b;border-radius:12px;border:1px solid #334155;padding:20px;margin-bottom:16px}
+.card-title{font-size:16px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.green{color:#10b981}.red{color:#f87171}.blue{color:#60a5fa}.purple{color:#c4b5fd}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;font-weight:600;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px}
+.field input,.field select{width:100%;padding:10px 12px;background:#0f172a;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-size:14px;font-family:inherit}
+.field input:focus,.field select:focus{outline:none;border-color:#10b981}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.line-item{display:grid;grid-template-columns:2fr 1fr 40px;gap:8px;align-items:center;margin-bottom:8px}
+.line-item input{padding:8px 10px;background:#0f172a;border:1px solid #475569;border-radius:6px;color:#e2e8f0;font-size:14px;font-family:inherit}
+.line-item input:focus{outline:none;border-color:#10b981}
+.remove-btn{width:36px;height:36px;border-radius:6px;border:1px solid #ef4444;background:transparent;color:#ef4444;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.remove-btn:hover{background:rgba(239,68,68,0.1)}
+.add-btn{padding:8px 16px;border-radius:6px;border:1px dashed #475569;background:transparent;color:#94a3b8;cursor:pointer;font-size:13px;font-family:inherit;width:100%;transition:all 0.2s}
+.add-btn:hover{border-color:#10b981;color:#10b981}
+.total-row{display:flex;justify-content:space-between;padding:10px 0;font-weight:700}
+.total-row.sub{border-top:2px solid #334155;margin-top:8px;font-size:15px}
+.total-row.net{border-top:3px double #8b5cf6;margin-top:12px;font-size:20px;padding:16px 0;color:#fff}
+.tax-row{display:grid;grid-template-columns:24px 1.5fr 70px 80px;gap:8px;align-items:center;margin-bottom:8px;padding:6px 8px;border-radius:6px;background:#0f172a}
+.tax-row input[type=checkbox]{width:18px;height:18px;accent-color:#3b82f6}
+.tax-row .tax-name{font-size:13px;color:#cbd5e1}
+.tax-row input[type=number]{padding:6px 8px;background:#1e293b;border:1px solid #475569;border-radius:4px;color:#e2e8f0;font-size:13px;font-family:inherit;text-align:right;width:100%}
+.tax-row .tax-amt{font-size:13px;color:#f87171;text-align:right;font-weight:600}
+.gen-btn{width:100%;padding:16px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;border-radius:10px;font-size:17px;font-weight:700;cursor:pointer;font-family:inherit;transition:all 0.2s}
+.gen-btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(16,185,129,0.3)}
+@media(max-width:600px){.row{grid-template-columns:1fr}.tax-row{grid-template-columns:24px 1fr 60px 70px}.line-item{grid-template-columns:1fr 80px 36px}}
+</style>
+</head>
+<body>
+<div class="header">
+<h1>💰 Pay Statement Generator</h1>
+<p>Create payroll statement with tax withholdings for Zelle payment</p>
+</div>
+<div class="container" id="app"></div>
+<script>
+var state={
+  companyName:'WEBSTER AVE LAUNDROMAT',companyPhone:'347-632-2024',
+  driverName:'',payPeriodStart:'',payPeriodEnd:'',payDate:'',
+  earnings:[{desc:'Regular Routes',amount:''}],
+  taxes:[
+    {name:'Federal Income Tax',rate:10,enabled:true},
+    {name:'Social Security',rate:6.2,enabled:true},
+    {name:'Medicare',rate:1.45,enabled:true},
+    {name:'NY State Income Tax',rate:4,enabled:true},
+    {name:'NYC Income Tax',rate:3.078,enabled:false},
+    {name:'NY SDI',rate:0.5,enabled:false},
+    {name:'NY Paid Family Leave',rate:0.455,enabled:false}
+  ],
+  deductions:[{desc:'',amount:''}],
+  notes:''
+};
+
+function $(id){return document.getElementById(id)}
+function fmtC(n){return '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function fmtD(d){if(!d)return'';var p=d.split('-');return p[1]+'/'+p[2]+'/'+p[0].slice(2)}
+
+function totalEarnings(){return state.earnings.reduce(function(s,e){return s+(parseFloat(e.amount)||0)},0)}
+function totalTaxes(){var gross=totalEarnings();return state.taxes.filter(function(t){return t.enabled}).reduce(function(s,t){return s+gross*(t.rate/100)},0)}
+function totalDeductions(){return state.deductions.reduce(function(s,d){return s+(parseFloat(d.amount)||0)},0)}
+function netPay(){return totalEarnings()-totalTaxes()-totalDeductions()}
+
+function render(){
+  var te=totalEarnings(),tt=totalTaxes(),td=totalDeductions(),np=netPay();
+  var c=document.getElementById('app');
+  c.innerHTML=
+    '<div class="card">'+
+      '<div class="card-title green">\ud83d\udcc4 Statement Info</div>'+
+      '<div class="field"><label>Driver Name</label><input id="driverName" value="'+esc(state.driverName)+'" placeholder="Driver full name"></div>'+
+      '<div class="row">'+
+        '<div class="field"><label>Pay Period Start</label><input type="date" id="ppStart" value="'+state.payPeriodStart+'"></div>'+
+        '<div class="field"><label>Pay Period End</label><input type="date" id="ppEnd" value="'+state.payPeriodEnd+'"></div>'+
+      '</div>'+
+      '<div class="row">'+
+        '<div class="field"><label>Pay Date</label><input type="date" id="payDate" value="'+state.payDate+'"></div>'+
+        '<div class="field"><label>Payment Method</label><input value="Zelle" disabled style="opacity:0.6"></div>'+
+      '</div>'+
+    '</div>'+
+
+    '<div class="card">'+
+      '<div class="card-title green">\u2795 Earnings</div>'+
+      state.earnings.map(function(e,i){
+        return '<div class="line-item">'+
+          '<input data-field="earnings" data-idx="'+i+'" data-key="desc" value="'+esc(e.desc)+'" placeholder="Description">'+
+          '<input data-field="earnings" data-idx="'+i+'" data-key="amount" value="'+esc(e.amount)+'" placeholder="$0.00" type="number" step="0.01">'+
+          (state.earnings.length>1?'<button class="remove-btn" data-remove="earnings" data-idx="'+i+'">✕</button>':'<div></div>')+
+        '</div>';
+      }).join('')+
+      '<button class="add-btn" id="addEarning">+ Add Earning</button>'+
+      '<div class="total-row sub green"><span>Gross Pay</span><span>'+fmtC(te)+'</span></div>'+
+    '</div>'+
+
+    '<div class="card" style="border-color:#3b82f6">'+
+      '<div class="card-title blue">\ud83c\udfe6 Payroll Taxes</div>'+
+      '<div style="font-size:11px;color:#64748b;margin-bottom:12px">Check/uncheck taxes. Edit rates as needed.</div>'+
+      state.taxes.map(function(t,i){
+        var amt=t.enabled?te*(t.rate/100):0;
+        return '<div class="tax-row">'+
+          '<input type="checkbox" data-tax="'+i+'" '+(t.enabled?'checked':'')+'>'+
+          '<div class="tax-name" style="opacity:'+(t.enabled?1:0.4)+'">'+esc(t.name)+'</div>'+
+          '<input type="number" data-taxrate="'+i+'" value="'+t.rate+'" step="0.01" min="0" style="opacity:'+(t.enabled?1:0.4)+'">'+
+          '<div class="tax-amt" style="opacity:'+(t.enabled?1:0.3)+'">'+(t.enabled?'-'+fmtC(amt):'\u2014')+'</div>'+
+        '</div>';
+      }).join('')+
+      '<button class="add-btn" id="addTax">+ Add Custom Tax</button>'+
+      '<div class="total-row sub blue"><span>Total Taxes</span><span>-'+fmtC(tt)+'</span></div>'+
+    '</div>'+
+
+    '<div class="card" style="border-color:#ef4444">'+
+      '<div class="card-title red">\u2796 Other Deductions</div>'+
+      state.deductions.map(function(d,i){
+        return '<div class="line-item">'+
+          '<input data-field="deductions" data-idx="'+i+'" data-key="desc" value="'+esc(d.desc)+'" placeholder="Gas advance, equipment, etc.">'+
+          '<input data-field="deductions" data-idx="'+i+'" data-key="amount" value="'+esc(d.amount)+'" placeholder="$0.00" type="number" step="0.01">'+
+          '<button class="remove-btn" data-remove="deductions" data-idx="'+i+'">✕</button>'+
+        '</div>';
+      }).join('')+
+      '<button class="add-btn" id="addDeduction">+ Add Deduction</button>'+
+      (td>0?'<div class="total-row sub red"><span>Total Deductions</span><span>-'+fmtC(td)+'</span></div>':'')+
+    '</div>'+
+
+    '<div class="card" style="border-color:#8b5cf6">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:13px;color:#94a3b8;margin-bottom:8px">'+
+        '<div>Gross Pay</div><div style="text-align:right">'+fmtC(te)+'</div>'+
+        '<div>Taxes</div><div style="text-align:right;color:#f87171">-'+fmtC(tt)+'</div>'+
+        (td>0?'<div>Deductions</div><div style="text-align:right;color:#f87171">-'+fmtC(td)+'</div>':'')+
+      '</div>'+
+      '<div class="total-row net"><span>Net Pay (Zelle)</span><span style="color:'+(np>=0?'#4ade80':'#ef4444')+'">'+fmtC(np)+'</span></div>'+
+    '</div>'+
+
+    '<div class="card">'+
+      '<div class="card-title" style="color:#94a3b8">\ud83d\udcdd Notes</div>'+
+      '<div class="field"><textarea id="notes" style="width:100%;padding:10px;background:#0f172a;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-size:14px;font-family:inherit;min-height:60px;resize:vertical" placeholder="Optional notes">'+esc(state.notes)+'</textarea></div>'+
+    '</div>'+
+
+    '<button class="gen-btn" id="genBtn">\ud83d\udce4 Generate PDF Statement</button>';
+
+  $('driverName').oninput=function(){state.driverName=this.value};
+  $('ppStart').onchange=function(){state.payPeriodStart=this.value};
+  $('ppEnd').onchange=function(){state.payPeriodEnd=this.value};
+  $('payDate').onchange=function(){state.payDate=this.value};
+  $('notes').oninput=function(){state.notes=this.value};
+  $('addEarning').onclick=function(){state.earnings.push({desc:'',amount:''});render()};
+  $('addDeduction').onclick=function(){state.deductions.push({desc:'',amount:''});render()};
+  $('addTax').onclick=function(){state.taxes.push({name:'Custom Tax',rate:0,enabled:true});render()};
+  $('genBtn').onclick=generatePDF;
+
+  document.querySelectorAll('[data-field]').forEach(function(el){
+    el.oninput=function(){
+      state[this.dataset.field][parseInt(this.dataset.idx)][this.dataset.key]=this.value;
+      if(this.dataset.key==='amount')render();
+    };
+  });
+  document.querySelectorAll('[data-remove]').forEach(function(el){
+    el.onclick=function(){state[this.dataset.remove].splice(parseInt(this.dataset.idx),1);render()};
+  });
+  document.querySelectorAll('[data-tax]').forEach(function(el){
+    el.onchange=function(){state.taxes[parseInt(this.dataset.tax)].enabled=this.checked;render()};
+  });
+  document.querySelectorAll('[data-taxrate]').forEach(function(el){
+    el.oninput=function(){state.taxes[parseInt(this.dataset.taxrate)].rate=parseFloat(this.value)||0;render()};
+  });
+}
+
+function generatePDF(){
+  if(!state.driverName){alert('Enter driver name');return}
+  var te=totalEarnings(),tt=totalTaxes(),td=totalDeductions(),np=netPay();
+  var doc=new jspdf.jsPDF();
+
+  doc.setFontSize(18);doc.setFont(undefined,'bold');
+  doc.text('PAY STATEMENT',105,20,{align:'center'});
+  doc.setFontSize(10);doc.setFont(undefined,'normal');
+  doc.text(state.companyName,105,27,{align:'center'});
+  doc.text('Phone: '+state.companyPhone,105,32,{align:'center'});
+  doc.setDrawColor(139,92,246);doc.setLineWidth(0.5);doc.line(14,36,196,36);
+
+  var y=44;doc.setFontSize(11);
+  doc.setFont(undefined,'bold');doc.text('Driver:',14,y);doc.setFont(undefined,'normal');doc.text(state.driverName,50,y);
+  doc.setFont(undefined,'bold');doc.text('Pay Date:',120,y);doc.setFont(undefined,'normal');doc.text(state.payDate?fmtD(state.payDate):'',155,y);
+  y+=7;
+  doc.setFont(undefined,'bold');doc.text('Pay Period:',14,y);doc.setFont(undefined,'normal');
+  doc.text((state.payPeriodStart?fmtD(state.payPeriodStart):'')+' - '+(state.payPeriodEnd?fmtD(state.payPeriodEnd):''),50,y);
+  doc.setFont(undefined,'bold');doc.text('Method:',120,y);doc.setFont(undefined,'normal');doc.text('Zelle',155,y);
+  y+=12;
+
+  // Earnings
+  var earningRows=state.earnings.filter(function(e){return e.desc||e.amount}).map(function(e){return[e.desc,fmtC(e.amount)]});
+  earningRows.push([{content:'Gross Pay',styles:{fontStyle:'bold'}},{content:fmtC(te),styles:{fontStyle:'bold'}}]);
+  doc.autoTable({startY:y,head:[['Earnings','Amount']],body:earningRows,
+    headStyles:{fillColor:[16,185,129],textColor:[255,255,255],fontStyle:'bold',fontSize:11},
+    styles:{fontSize:11,cellPadding:5,lineColor:[51,65,85],lineWidth:0.1},
+    columnStyles:{0:{cellWidth:140},1:{cellWidth:42,halign:'right'}},
+    alternateRowStyles:{fillColor:[241,245,249]},bodyStyles:{fillColor:[255,255,255],textColor:[0,0,0]},margin:{left:14,right:14}});
+  y=doc.lastAutoTable.finalY+6;
+
+  // Taxes
+  var activeTaxes=state.taxes.filter(function(t){return t.enabled});
+  if(activeTaxes.length>0){
+    var taxRows=activeTaxes.map(function(t){return[t.name+' ('+t.rate+'%)','-'+fmtC(te*(t.rate/100))]});
+    taxRows.push([{content:'Total Taxes',styles:{fontStyle:'bold'}},{content:'-'+fmtC(tt),styles:{fontStyle:'bold'}}]);
+    doc.autoTable({startY:y,head:[['Payroll Taxes','Amount']],body:taxRows,
+      headStyles:{fillColor:[59,130,246],textColor:[255,255,255],fontStyle:'bold',fontSize:11},
+      styles:{fontSize:11,cellPadding:5,lineColor:[51,65,85],lineWidth:0.1},
+      columnStyles:{0:{cellWidth:140},1:{cellWidth:42,halign:'right'}},
+      alternateRowStyles:{fillColor:[239,246,255]},bodyStyles:{fillColor:[255,255,255],textColor:[0,0,0]},margin:{left:14,right:14}});
+    y=doc.lastAutoTable.finalY+6;
+  }
+
+  // Other deductions
+  var deductionRows=state.deductions.filter(function(d){return d.desc||d.amount}).map(function(d){return[d.desc,'-'+fmtC(d.amount)]});
+  if(deductionRows.length>0){
+    deductionRows.push([{content:'Total Deductions',styles:{fontStyle:'bold'}},{content:'-'+fmtC(td),styles:{fontStyle:'bold'}}]);
+    doc.autoTable({startY:y,head:[['Other Deductions','Amount']],body:deductionRows,
+      headStyles:{fillColor:[239,68,68],textColor:[255,255,255],fontStyle:'bold',fontSize:11},
+      styles:{fontSize:11,cellPadding:5,lineColor:[51,65,85],lineWidth:0.1},
+      columnStyles:{0:{cellWidth:140},1:{cellWidth:42,halign:'right'}},
+      alternateRowStyles:{fillColor:[254,242,242]},bodyStyles:{fillColor:[255,255,255],textColor:[0,0,0]},margin:{left:14,right:14}});
+    y=doc.lastAutoTable.finalY+6;
+  }
+
+  // Summary
+  doc.setFontSize(10);doc.setTextColor(100,100,100);
+  doc.text('Gross Pay:',14,y+2);doc.text(fmtC(te),190,y+2,{align:'right'});
+  if(tt>0){y+=5;doc.text('Taxes:',14,y+2);doc.text('-'+fmtC(tt),190,y+2,{align:'right'})}
+  if(td>0){y+=5;doc.text('Deductions:',14,y+2);doc.text('-'+fmtC(td),190,y+2,{align:'right'})}
+  y+=8;
+  doc.setFillColor(139,92,246);doc.roundedRect(14,y,182,20,3,3,'F');
+  doc.setFontSize(14);doc.setFont(undefined,'bold');doc.setTextColor(255,255,255);
+  doc.text('NET PAY (Zelle)',20,y+13);doc.text(fmtC(np),190,y+13,{align:'right'});
+  doc.setTextColor(0,0,0);
+
+  if(state.notes){y+=28;doc.setFontSize(10);doc.setFont(undefined,'bold');doc.text('Notes:',14,y);
+    doc.setFont(undefined,'normal');doc.text(doc.splitTextToSize(state.notes,175),14,y+6)}
+
+  doc.setFontSize(8);doc.setTextColor(150,150,150);
+  doc.text('This is not an official tax document. For informational purposes only.',105,285,{align:'center'});
+  doc.save('PayStatement_'+state.driverName.replace(/\s/g,'_')+'_'+(state.payDate||'undated')+'.pdf');
+}
+
+function esc(s){return(s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+render();
+</script>
+</body>
+</html>
