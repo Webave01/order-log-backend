@@ -77,6 +77,15 @@ function netPay(){return totalEarnings()-totalTaxes()-totalDeductions()}
 
 function render(){
   var te=totalEarnings(),tt=totalTaxes(),td=totalDeductions(),np=netPay();
+  var scrollY=window.scrollY;
+  var focusInfo=null;
+  var af=document.activeElement;
+  if(af&&af.dataset){
+    focusInfo=af.dataset.field?{sel:'[data-field="'+af.dataset.field+'"][data-idx="'+af.dataset.idx+'"][data-key="'+af.dataset.key+'"]'}:
+              af.dataset.taxrate?{sel:'[data-taxrate="'+af.dataset.taxrate+'"]'}:
+              af.dataset.tax?{sel:'[data-tax="'+af.dataset.tax+'"]'}:
+              af.id?{sel:'#'+af.id}:null;
+  }
   var c=document.getElementById('app');
   c.innerHTML=
     '<div class="card">'+
@@ -113,7 +122,7 @@ function render(){
         return '<div class="tax-row">'+
           '<input type="checkbox" data-tax="'+i+'" '+(t.enabled?'checked':'')+'>'+
           '<div class="tax-name" style="opacity:'+(t.enabled?1:0.4)+'">'+esc(t.name)+'</div>'+
-          '<input type="number" data-taxrate="'+i+'" value="'+t.rate+'" step="0.01" min="0" style="opacity:'+(t.enabled?1:0.4)+'">'+
+          '<div style="display:flex;align-items:center;gap:2px"><input type="number" data-taxrate="'+i+'" value="'+t.rate+'" step="0.01" min="0" style="opacity:'+(t.enabled?1:0.4)+';width:55px"><span style="color:#64748b;font-size:12px">%</span></div>'+
           '<div class="tax-amt" style="opacity:'+(t.enabled?1:0.3)+'">'+(t.enabled?'-'+fmtC(amt):'\u2014')+'</div>'+
         '</div>';
       }).join('')+
@@ -175,6 +184,8 @@ function render(){
   document.querySelectorAll('[data-taxrate]').forEach(function(el){
     el.oninput=function(){state.taxes[parseInt(this.dataset.taxrate)].rate=parseFloat(this.value)||0;render()};
   });
+  window.scrollTo(0,scrollY);
+  if(focusInfo&&focusInfo.sel){var el=document.querySelector(focusInfo.sel);if(el){el.focus();if(el.type==='number'||el.type==='text'){var len=el.value.length;el.setSelectionRange(len,len)}}}
 }
 
 function generatePDF(){
