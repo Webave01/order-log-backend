@@ -160,6 +160,29 @@ async function initDB() {
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'::jsonb;
     `);
 
+    // Driver applications (onboarding)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS driver_applications (
+        id SERIAL PRIMARY KEY,
+        full_name VARCHAR(100) NOT NULL,
+        dob DATE,
+        address TEXT,
+        ssn_encrypted TEXT,
+        dl_number VARCHAR(50),
+        dl_expiration DATE,
+        photo_id TEXT,
+        ssn_card_photo TEXT,
+        bank_name VARCHAR(100),
+        routing_number VARCHAR(20),
+        account_number VARCHAR(30),
+        account_type VARCHAR(20),
+        zelle_info VARCHAR(100),
+        notes TEXT,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // =============================================
     // DRIVER SCHEDULING & PAY TABLES
     // =============================================
@@ -1603,6 +1626,58 @@ app.get('*', (req, res) => {
       res.status(200).send('Webster Orders - Backend running. Deploy index.html to public/ folder.');
     }
   });
+});
+
+// Serve onboarding page at /onboard
+app.get('/onboard', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'onboard.html')); });
+// Serve pay statement generator at /paystub
+app.get('/paystub', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'paystub.html')); });
+
+// Driver onboarding - public form submission (no auth required)
+app.post('/api/driver-apply', async (req, res) => {
+  const { full_name, dob, address, ssn, dl_number, dl_expiration, photo_id, ssn_card_photo, bank_name, routing_number, account_number, account_type, zelle_info, notes, rules_acknowledged } = req.body;
+  if (!full_name) return res.status(400).json({ error: 'Name is required' });
+  if (!rules_acknowledged) return res.status(400).json({ error: 'You must acknowledge the driver rules' });
+  try {
+    await pool.query(
+      `INSERT INTO driver_applications (full_name, dob, address, ssn_encrypted, dl_number, dl_expiration, photo_id, ssn_card_photo, bank_name, routing_number, account_number, account_type, zelle_info, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [full_name, dob || null, address, ssn || null, dl_number, dl_expiration || null, photo_id || null, ssn_card_photo || null, bank_name, routing_number, account_number, account_type, zelle_info, notes]
+    );
+    res.json({ success: true });
+  } catch (err) { console.error('Driver apply error:', err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// Driver onboarding - get rules (public)
+app.get('/api/driver-rules', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT value FROM settings WHERE key = 'driverRules'");
+    res.json({ rules: result.rows.length > 0 ? result.rows[0].value : '' });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// Driver applications - admin list
+app.get('/api/driver-applications', authenticate, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM driver_applications ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// Driver applications - admin delete
+app.delete('/api/driver-applications/:id', authenticate, adminOnly, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM driver_applications WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// Driver rules - admin update
+app.put('/api/driver-rules', authenticate, adminOnly, async (req, res) => {
+  try {
+    await pool.query("INSERT INTO settings (key, value) VALUES ('driverRules', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [req.body.rules || '']);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 initDB().then(() => {
