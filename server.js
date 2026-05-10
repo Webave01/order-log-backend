@@ -1653,7 +1653,7 @@ app.post('/api/driver-apply', async (req, res) => {
 app.get('/api/driver-rules', async (req, res) => {
   try {
     const result = await pool.query("SELECT value FROM settings WHERE key = 'driverRules'");
-    if (result.rows.length === 0) {
+    if (result.rows.length === 0 || !result.rows[0].value || result.rows[0].value.trim().length < 10) {
       const defaultRules = '1. No speeding or reckless driving. First time is a WARNING. Second time will remove you from the schedule. Remember: the business number is on the van and individuals will call.\n\n2. Be very careful of bus and bike lane tickets. Buses take pictures of your license plate and will result in $60–$250 fine each time. ALL DRIVERS ARE RESPONSIBLE FOR PAYING TICKETS. I will check for tickets each week. First ticket is a warning. Second is your responsibility.\n\n3. Each stop requires a delivery AND a pickup. Follow the routes and do not deviate unless absolutely necessary.\n\n4. Any damage to the van is your liability. If you have driving insurance, you are required to report this to me for the record.\n\n5. Any criminal violations must be disclosed.\n\n6. There is a 48-hour rule for cancelling a pre-scheduled route. If you do not give this required notice then you will be charged a $50 cancellation fee.\n\n7. You must complete your entire day shift. Emergencies must be accompanied by acceptable proof of check-in at a hospital or care professional.';
       await pool.query("INSERT INTO settings (key, value) VALUES ('driverRules', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [defaultRules]);
       return res.json({ rules: defaultRules });
