@@ -1616,6 +1616,11 @@ app.get('/api/health', (req, res) => {
 });
 
 // Serve frontend for all non-API routes
+// Serve onboarding page at /onboard
+app.get('/onboard', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'onboard.html')); });
+// Serve pay statement generator at /paystub
+app.get('/paystub', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'paystub.html')); });
+
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ error: 'API endpoint not found' });
@@ -1627,11 +1632,6 @@ app.get('*', (req, res) => {
     }
   });
 });
-
-// Serve onboarding page at /onboard
-app.get('/onboard', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'onboard.html')); });
-// Serve pay statement generator at /paystub
-app.get('/paystub', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'paystub.html')); });
 
 // Driver onboarding - public form submission (no auth required)
 app.post('/api/driver-apply', async (req, res) => {
