@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Driver Onboarding</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+.header{background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);padding:32px 24px;text-align:center;border-bottom:2px solid #8b5cf6}
+.header h1{font-size:28px;font-weight:700;color:#fff;margin-bottom:4px}
+.header p{color:#94a3b8;font-size:14px}
+.container{max-width:680px;margin:0 auto;padding:24px 16px 60px}
+.section{background:#1e293b;border-radius:12px;border:1px solid #334155;padding:24px;margin-bottom:20px}
+.section-title{font-size:18px;font-weight:700;color:#8b5cf6;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.rules-box{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:20px;white-space:pre-wrap;line-height:1.7;font-size:14px;color:#cbd5e1;max-height:400px;overflow-y:auto;margin-bottom:16px}
+.ack-row{display:flex;align-items:center;gap:10px;padding:12px;background:rgba(139,92,246,0.1);border:1px solid #8b5cf6;border-radius:8px}
+.ack-row input[type=checkbox]{width:20px;height:20px;accent-color:#8b5cf6}
+.ack-row label{font-size:14px;font-weight:600;color:#c4b5fd;cursor:pointer}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px}
+.field input,.field select,.field textarea{width:100%;padding:12px 14px;background:#0f172a;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-size:15px;font-family:inherit;transition:border-color 0.2s}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:#8b5cf6;box-shadow:0 0 0 3px rgba(139,92,246,0.15)}
+.field textarea{resize:vertical;min-height:80px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.upload-area{border:2px dashed #475569;border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:all 0.2s;position:relative}
+.upload-area:hover{border-color:#8b5cf6;background:rgba(139,92,246,0.05)}
+.upload-area.has-file{border-color:#10b981;background:rgba(16,185,129,0.05)}
+.upload-area input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.upload-icon{font-size:32px;margin-bottom:8px}
+.upload-label{font-size:14px;color:#94a3b8}
+.upload-name{font-size:13px;color:#10b981;margin-top:6px;font-weight:600}
+.preview-img{max-width:200px;max-height:150px;border-radius:6px;margin-top:10px}
+.required{color:#ef4444}
+.submit-btn{width:100%;padding:16px;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;border:none;border-radius:10px;font-size:17px;font-weight:700;cursor:pointer;transition:all 0.2s;font-family:inherit;letter-spacing:0.3px}
+.submit-btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(139,92,246,0.3)}
+.submit-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+.success-msg{text-align:center;padding:60px 24px;background:#1e293b;border-radius:12px;border:2px solid #10b981}
+.success-msg .icon{font-size:64px;margin-bottom:16px}
+.success-msg h2{color:#10b981;margin-bottom:8px}
+.success-msg p{color:#94a3b8}
+.note{font-size:12px;color:#64748b;margin-top:4px}
+.deposit-toggle{display:flex;gap:8px;margin-bottom:16px}
+.deposit-toggle button{flex:1;padding:10px;border-radius:8px;border:1px solid #475569;background:transparent;color:#94a3b8;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.2s}
+.deposit-toggle button.active{border-color:#8b5cf6;background:rgba(139,92,246,0.2);color:#c4b5fd}
+@media(max-width:600px){.row,.row3{grid-template-columns:1fr}.header h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="header">
+<h1>🚐 Driver Onboarding</h1>
+<p>Complete all fields below to begin the onboarding process</p>
+</div>
+<div class="container" id="app">
+<div style="text-align:center;padding:40px;color:#94a3b8">Loading...</div>
+</div>
+<script>
+var API=window.location.origin+'/api';
+var state={rules:'',ack:false,submitting:false,submitted:false,depositType:'bank',
+  full_name:'',dob:'',address:'',ssn:'',dl_number:'',dl_expiration:'',
+  photo_id:null,photo_id_name:'',ssn_card_photo:null,ssn_card_name:'',
+  bank_name:'',routing_number:'',account_number:'',account_type:'checking',zelle_info:'',notes:''};
+
+function $(id){return document.getElementById(id)}
+function set(k,v){state[k]=v;render()}
+
+async function loadRules(){
+  try{var r=await fetch(API+'/driver-rules');var d=await r.json();state.rules=d.rules||'No driver rules have been posted yet.';render()}
+  catch(e){state.rules='Unable to load rules.';render()}
+}
+
+function compressImage(file,cb){
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var img=new Image();img.onload=function(){
+      var canvas=document.createElement('canvas');var maxW=1200;var scale=Math.min(1,maxW/img.width);
+      canvas.width=img.width*scale;canvas.height=img.height*scale;
+      var ctx=canvas.getContext('2d');ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      cb(canvas.toDataURL('image/jpeg',0.6));
+    };img.src=e.target.result;
+  };reader.readAsDataURL(file);
+}
+
+function handleFile(field,nameField,e){
+  var file=e.target.files[0];if(!file)return;
+  state[nameField]=file.name;
+  compressImage(file,function(data){state[field]=data;render()});
+}
+
+async function submit(){
+  if(!state.full_name){alert('Name is required');return}
+  if(!state.ack){alert('You must acknowledge the driver rules');return}
+  state.submitting=true;render();
+  try{
+    var r=await fetch(API+'/driver-apply',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        full_name:state.full_name,dob:state.dob,address:state.address,ssn:state.ssn,
+        dl_number:state.dl_number,dl_expiration:state.dl_expiration,
+        photo_id:state.photo_id,ssn_card_photo:state.ssn_card_photo,
+        bank_name:state.bank_name,routing_number:state.routing_number,
+        account_number:state.account_number,account_type:state.account_type,
+        zelle_info:state.zelle_info,notes:state.notes,rules_acknowledged:state.ack
+      })});
+    var d=await r.json();
+    if(d.success){state.submitted=true}else{alert(d.error||'Error submitting')}
+  }catch(e){alert('Network error')}
+  state.submitting=false;render();
+}
+
+function render(){
+  var c=document.getElementById('app');
+  if(state.submitted){
+    c.innerHTML='<div class="success-msg"><div class="icon">✅</div><h2>Application Submitted</h2><p>Thank you! We will review your information and be in touch shortly.</p></div>';return;
+  }
+  c.innerHTML=
+    '<div class="section">'+
+      '<div class="section-title">📋 Driver Rules & Expectations</div>'+
+      '<div class="rules-box">'+escHtml(state.rules)+'</div>'+
+      '<div class="ack-row">'+
+        '<input type="checkbox" id="ack" '+(state.ack?'checked':'')+'>'+
+        '<label for="ack">I have read and agree to the driver rules above</label>'+
+      '</div>'+
+    '</div>'+
+
+    '<div class="section">'+
+      '<div class="section-title">👤 Personal Information</div>'+
+      '<div class="field"><label>Full Name <span class="required">*</span></label><input id="full_name" value="'+esc(state.full_name)+'" placeholder="First and Last Name"></div>'+
+      '<div class="row">'+
+        '<div class="field"><label>Date of Birth</label><input type="date" id="dob" value="'+esc(state.dob)+'"></div>'+
+        '<div class="field"><label>SSN</label><input id="ssn" value="'+esc(state.ssn)+'" placeholder="XXX-XX-XXXX" maxlength="11"></div>'+
+      '</div>'+
+      '<div class="field"><label>Address</label><input id="address" value="'+esc(state.address)+'" placeholder="Full mailing address"></div>'+
+      '<div class="row">'+
+        '<div class="field"><label>Driver License #</label><input id="dl_number" value="'+esc(state.dl_number)+'" placeholder="License number"></div>'+
+        '<div class="field"><label>DL Expiration Date</label><input type="date" id="dl_expiration" value="'+esc(state.dl_expiration)+'"></div>'+
+      '</div>'+
+    '</div>'+
+
+    '<div class="section">'+
+      '<div class="section-title">📸 Upload Documents</div>'+
+      '<div class="row">'+
+        '<div class="field"><label>Photo ID (Front)</label>'+
+          '<div class="upload-area '+(state.photo_id?'has-file':'')+'">'+
+            '<input type="file" accept="image/*" id="file_photo_id">'+
+            '<div class="upload-icon">'+(state.photo_id?'✅':'📄')+'</div>'+
+            '<div class="upload-label">'+(state.photo_id_name||'Tap to upload photo ID')+'</div>'+
+            (state.photo_id?'<img class="preview-img" src="'+state.photo_id+'">':'')+
+          '</div></div>'+
+        '<div class="field"><label>SSN Card</label>'+
+          '<div class="upload-area '+(state.ssn_card_photo?'has-file':'')+'">'+
+            '<input type="file" accept="image/*" id="file_ssn_card">'+
+            '<div class="upload-icon">'+(state.ssn_card_photo?'✅':'📄')+'</div>'+
+            '<div class="upload-label">'+(state.ssn_card_name||'Tap to upload SSN card')+'</div>'+
+            (state.ssn_card_photo?'<img class="preview-img" src="'+state.ssn_card_photo+'">':'')+
+          '</div></div>'+
+      '</div>'+
+    '</div>'+
+
+    '<div class="section">'+
+      '<div class="section-title">💰 Payment Information</div>'+
+      '<div class="deposit-toggle">'+
+        '<button id="btn_bank" class="'+(state.depositType==='bank'?'active':'')+'">🏦 Direct Deposit</button>'+
+        '<button id="btn_zelle" class="'+(state.depositType==='zelle'?'active':'')+'">📱 Zelle</button>'+
+      '</div>'+
+      (state.depositType==='bank'?
+        '<div class="field"><label>Bank Name</label><input id="bank_name" value="'+esc(state.bank_name)+'" placeholder="Bank name"></div>'+
+        '<div class="row3">'+
+          '<div class="field"><label>Routing #</label><input id="routing_number" value="'+esc(state.routing_number)+'" placeholder="9 digits" maxlength="9"></div>'+
+          '<div class="field"><label>Account #</label><input id="account_number" value="'+esc(state.account_number)+'" placeholder="Account number"></div>'+
+          '<div class="field"><label>Account Type</label><select id="account_type"><option value="checking" '+(state.account_type==='checking'?'selected':'')+'>Checking</option><option value="savings" '+(state.account_type==='savings'?'selected':'')+'>Savings</option></select></div>'+
+        '</div>'
+      :
+        '<div class="field"><label>Zelle Email or Phone</label><input id="zelle_info" value="'+esc(state.zelle_info)+'" placeholder="Email or phone number for Zelle"></div>'
+      )+
+    '</div>'+
+
+    '<div class="section">'+
+      '<div class="section-title">📝 Additional Notes</div>'+
+      '<div class="field"><label>Anything else we should know?</label><textarea id="notes" placeholder="Experience, availability, vehicle info, etc.">'+esc(state.notes)+'</textarea></div>'+
+    '</div>'+
+
+    '<button class="submit-btn" id="submitBtn" '+(state.submitting?'disabled':'')+'>'+
+      (state.submitting?'Submitting...':'Submit Application')+
+    '</button>';
+
+  // Bind events
+  $('ack').onchange=function(){set('ack',this.checked)};
+  $('full_name').oninput=function(){state.full_name=this.value};
+  $('dob').onchange=function(){state.dob=this.value};
+  $('ssn').oninput=function(){state.ssn=this.value};
+  $('address').oninput=function(){state.address=this.value};
+  $('dl_number').oninput=function(){state.dl_number=this.value};
+  $('dl_expiration').onchange=function(){state.dl_expiration=this.value};
+  $('file_photo_id').onchange=function(e){handleFile('photo_id','photo_id_name',e)};
+  $('file_ssn_card').onchange=function(e){handleFile('ssn_card_photo','ssn_card_name',e)};
+  if(state.depositType==='bank'){
+    $('bank_name').oninput=function(){state.bank_name=this.value};
+    $('routing_number').oninput=function(){state.routing_number=this.value};
+    $('account_number').oninput=function(){state.account_number=this.value};
+    $('account_type').onchange=function(){state.account_type=this.value};
+  }else{
+    $('zelle_info').oninput=function(){state.zelle_info=this.value};
+  }
+  $('btn_bank').onclick=function(){set('depositType','bank')};
+  $('btn_zelle').onclick=function(){set('depositType','zelle')};
+  $('notes').oninput=function(){state.notes=this.value};
+  $('submitBtn').onclick=submit;
+}
+
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function escHtml(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}
+
+loadRules();
+</script>
+</body>
+</html>
