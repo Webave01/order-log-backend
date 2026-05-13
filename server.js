@@ -505,8 +505,8 @@ app.get('/api/orders', authenticate, async (req, res) => {
 
     if (search) {
       query = `SELECT o.* FROM orders o LEFT JOIN cleaners c ON o.cleaner_id = c.id`;
-      params.push('%' + search + '%', '%' + search + '%');
-      conditions.push(`(o.order_num ILIKE $${params.length-1} OR c.name ILIKE $${params.length})`);
+      params.push('%' + search + '%');
+      conditions.push(`(o.order_num ILIKE $${params.length} OR c.name ILIKE $${params.length} OR o.customer_address ILIKE $${params.length} OR o.customer_apt ILIKE $${params.length} OR o.notes ILIKE $${params.length})`);
     }
 
     if (cleaner_id) {
