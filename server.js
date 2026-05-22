@@ -112,7 +112,11 @@ async function initDB() {
         key VARCHAR(50) UNIQUE NOT NULL,
         value VARCHAR(255) NOT NULL
       );
-      ALTER TABLE settings ALTER COLUMN value TYPE TEXT;
+    `);
+    // Expand settings value to TEXT (separate query to ensure it runs)
+    await client.query(`ALTER TABLE settings ALTER COLUMN value TYPE TEXT`);
+    await client.query(`ALTER TABLE settings ALTER COLUMN value DROP NOT NULL`);
+    await client.query(`
       CREATE TABLE IF NOT EXISTS invoice_tracking (
         id SERIAL PRIMARY KEY,
         cleaner_id INTEGER REFERENCES cleaners(id) ON DELETE CASCADE,
@@ -1686,36 +1690,36 @@ app.put('/api/driver-rules', authenticate, adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// Driver names for paystub dropdown (public, names only)
+// Staff names for paystub dropdown - from drivers (schedule tab)
 app.get('/api/driver-names', async (req, res) => {
   try {
     const result = await pool.query("SELECT name FROM drivers WHERE status = 'active' ORDER BY name");
     res.json(result.rows.map(r => r.name));
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-
-// Driver names for paystub dropdown (public, names only)
-app.get('/api/driver-names', async (req, res) => {
-  try {
-    const result = await pool.query("SELECT name FROM drivers WHERE status = 'active' ORDER BY name");
-    res.json(result.rows.map(r => r.name));
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+  } catch (err) { console.error('Driver names error:', err); res.status(500).json({ error: 'Server error' }); }
 });
 
 // Payroll tax rates - public read (paystub page needs it without auth)
 app.get('/api/payroll-taxes', async (req, res) => {
   try {
     const result = await pool.query("SELECT value FROM settings WHERE key = 'payrollTaxes'");
-    res.json({ taxes: result.rows.length > 0 ? JSON.parse(result.rows[0].value) : null });
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+    if (result.rows.length > 0 && result.rows[0].value) {
+      try {
+        const parsed = JSON.parse(result.rows[0].value);
+        return res.json({ taxes: parsed });
+      } catch (parseErr) { console.error('Tax parse error:', parseErr); }
+    }
+    res.json({ taxes: null });
+  } catch (err) { console.error('Get payroll taxes error:', err); res.status(500).json({ error: 'Server error' }); }
 });
 
 // Payroll tax rates - admin save
 app.put('/api/payroll-taxes', authenticate, adminOnly, async (req, res) => {
   try {
-    await pool.query("INSERT INTO settings (key, value) VALUES ('payrollTaxes', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify(req.body.taxes)]);
+    const json = JSON.stringify(req.body.taxes);
+    console.log('Saving payroll taxes, length:', json.length);
+    await pool.query("INSERT INTO settings (key, value) VALUES ('payrollTaxes', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [json]);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+  } catch (err) { console.error('Save payroll taxes error:', err); res.status(500).json({ error: err.message }); }
 });
 
 initDB().then(() => {
