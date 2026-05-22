@@ -184,7 +184,7 @@ function render(){
   $('notes').oninput=function(){state.notes=this.value};
   $('addEarning').onclick=function(){state.earnings.push({desc:'',amount:''});render()};
   $('addDeduction').onclick=function(){state.deductions.push({desc:'',amount:''});render()};
-  $('addTax').onclick=function(){state.taxes.push({name:'Custom Tax',rate:0,enabled:true});render()};
+  $('addTax').onclick=function(){state.taxes.push({name:'Custom Tax',rate:0,enabled:true});saveTaxRates();render()};
   $('genBtn').onclick=generatePDF;
 
   document.querySelectorAll('[data-field]').forEach(function(el){
@@ -197,13 +197,13 @@ function render(){
     el.onclick=function(){state[this.dataset.remove].splice(parseInt(this.dataset.idx),1);render()};
   });
   document.querySelectorAll('[data-tax]').forEach(function(el){
-    el.onchange=function(){state.taxes[parseInt(this.dataset.tax)].enabled=this.checked;render()};
+    el.onchange=function(){state.taxes[parseInt(this.dataset.tax)].enabled=this.checked;saveTaxRates();render()};
   });
   document.querySelectorAll('[data-taxrate]').forEach(function(el){
     el.oninput=function(){
       var idx=parseInt(this.dataset.taxrate);
       state.taxes[idx].rate=parseFloat(this.value)||0;
-      updateTotals();
+      saveTaxRates();updateTotals();
     };
   });
   window.scrollTo(0,scrollY);
@@ -293,6 +293,17 @@ function generatePDF(){
 }
 
 function esc(s){return(s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+// Load saved tax rates
+try{
+  var saved=localStorage.getItem('paystub_taxes');
+  if(saved){state.taxes=JSON.parse(saved)}
+}catch(e){}
+
+// Save tax rates whenever they change
+function saveTaxRates(){
+  try{localStorage.setItem('paystub_taxes',JSON.stringify(state.taxes))}catch(e){}
+}
 
 render();
 </script>
