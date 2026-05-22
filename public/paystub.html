@@ -75,6 +75,24 @@ function totalTaxes(){var gross=totalEarnings();return state.taxes.filter(functi
 function totalDeductions(){return state.deductions.reduce(function(s,d){return s+(parseFloat(d.amount)||0)},0)}
 function netPay(){return totalEarnings()-totalTaxes()-totalDeductions()}
 
+function updateTotals(){
+  var te=totalEarnings(),tt=totalTaxes(),td=totalDeductions(),np=netPay();
+  // Update tax amounts
+  state.taxes.forEach(function(t,i){
+    var el=document.querySelector('.tax-amt-'+i);
+    if(el)el.textContent=t.enabled?'-'+fmtC(te*(t.rate/100)):'\u2014';
+  });
+  // Update all summary values
+  var els=document.querySelectorAll('[data-total]');
+  els.forEach(function(el){
+    var k=el.dataset.total;
+    if(k==='gross')el.textContent=fmtC(te);
+    if(k==='taxes')el.textContent='-'+fmtC(tt);
+    if(k==='deductions')el.textContent='-'+fmtC(td);
+    if(k==='net')el.textContent=fmtC(np);
+    if(k==='net')el.style.color=np>=0?'#4ade80':'#ef4444';
+  });
+}
 function render(){
   var te=totalEarnings(),tt=totalTaxes(),td=totalDeductions(),np=netPay();
   var scrollY=window.scrollY;
@@ -111,7 +129,7 @@ function render(){
         '</div>';
       }).join('')+
       '<button class="add-btn" id="addEarning">+ Add Earning</button>'+
-      '<div class="total-row sub green"><span>Gross Pay</span><span>'+fmtC(te)+'</span></div>'+
+      '<div class="total-row sub green"><span>Gross Pay</span><span data-total="gross">'+fmtC(te)+'</span></div>'+
     '</div>'+
 
     '<div class="card" style="border-color:#3b82f6">'+
@@ -123,11 +141,11 @@ function render(){
           '<input type="checkbox" data-tax="'+i+'" '+(t.enabled?'checked':'')+'>'+
           '<div class="tax-name" style="opacity:'+(t.enabled?1:0.4)+'">'+esc(t.name)+'</div>'+
           '<div style="display:flex;align-items:center;gap:2px"><input type="number" data-taxrate="'+i+'" value="'+t.rate+'" step="0.01" min="0" style="opacity:'+(t.enabled?1:0.4)+';width:55px"><span style="color:#64748b;font-size:12px">%</span></div>'+
-          '<div class="tax-amt" style="opacity:'+(t.enabled?1:0.3)+'">'+(t.enabled?'-'+fmtC(amt):'\u2014')+'</div>'+
+          '<div class="tax-amt tax-amt-'+i+'" style="opacity:'+(t.enabled?1:0.3)+'">'+(t.enabled?'-'+fmtC(amt):'\u2014')+'</div>'+
         '</div>';
       }).join('')+
       '<button class="add-btn" id="addTax">+ Add Custom Tax</button>'+
-      '<div class="total-row sub blue"><span>Total Taxes</span><span>-'+fmtC(tt)+'</span></div>'+
+      '<div class="total-row sub blue"><span>Total Taxes</span><span data-total="taxes">-'+fmtC(tt)+'</span></div>'+
     '</div>'+
 
     '<div class="card" style="border-color:#ef4444">'+
@@ -140,16 +158,16 @@ function render(){
         '</div>';
       }).join('')+
       '<button class="add-btn" id="addDeduction">+ Add Deduction</button>'+
-      (td>0?'<div class="total-row sub red"><span>Total Deductions</span><span>-'+fmtC(td)+'</span></div>':'')+
+      (td>0?'<div class="total-row sub red"><span>Total Deductions</span><span data-total="deductions">-'+fmtC(td)+'</span></div>':'')+
     '</div>'+
 
     '<div class="card" style="border-color:#8b5cf6">'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:13px;color:#94a3b8;margin-bottom:8px">'+
-        '<div>Gross Pay</div><div style="text-align:right">'+fmtC(te)+'</div>'+
-        '<div>Taxes</div><div style="text-align:right;color:#f87171">-'+fmtC(tt)+'</div>'+
-        (td>0?'<div>Deductions</div><div style="text-align:right;color:#f87171">-'+fmtC(td)+'</div>':'')+
+        '<div>Gross Pay</div><div style="text-align:right" data-total="gross">'+fmtC(te)+'</div>'+
+        '<div>Taxes</div><div style="text-align:right;color:#f87171" data-total="taxes">-'+fmtC(tt)+'</div>'+
+        (td>0?'<div>Deductions</div><div style="text-align:right;color:#f87171" data-total="deductions">-'+fmtC(td)+'</div>':'')+
       '</div>'+
-      '<div class="total-row net"><span>Net Pay (Zelle)</span><span style="color:'+(np>=0?'#4ade80':'#ef4444')+'">'+fmtC(np)+'</span></div>'+
+      '<div class="total-row net"><span>Net Pay (Zelle)</span><span data-total="net" style="color:'+(np>=0?'#4ade80':'#ef4444')+'">'+fmtC(np)+'</span></div>'+
     '</div>'+
 
     '<div class="card">'+
@@ -172,7 +190,7 @@ function render(){
   document.querySelectorAll('[data-field]').forEach(function(el){
     el.oninput=function(){
       state[this.dataset.field][parseInt(this.dataset.idx)][this.dataset.key]=this.value;
-      if(this.dataset.key==='amount')render();
+      if(this.dataset.key==='amount')updateTotals();
     };
   });
   document.querySelectorAll('[data-remove]').forEach(function(el){
@@ -182,7 +200,11 @@ function render(){
     el.onchange=function(){state.taxes[parseInt(this.dataset.tax)].enabled=this.checked;render()};
   });
   document.querySelectorAll('[data-taxrate]').forEach(function(el){
-    el.oninput=function(){state.taxes[parseInt(this.dataset.taxrate)].rate=parseFloat(this.value)||0;render()};
+    el.oninput=function(){
+      var idx=parseInt(this.dataset.taxrate);
+      state.taxes[idx].rate=parseFloat(this.value)||0;
+      updateTotals();
+    };
   });
   window.scrollTo(0,scrollY);
   if(focusInfo&&focusInfo.sel){var el=document.querySelector(focusInfo.sel);if(el){el.focus();if(el.type==='number'||el.type==='text'){var len=el.value.length;el.setSelectionRange(len,len)}}}
