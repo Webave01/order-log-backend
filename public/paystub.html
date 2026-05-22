@@ -214,74 +214,81 @@ function generatePDF(){
   if(!state.driverName){alert('Enter driver name');return}
   var te=totalEarnings(),tt=totalTaxes(),td=totalDeductions(),np=netPay();
   var doc=new jspdf.jsPDF();
+  var pw=doc.internal.pageSize.getWidth();
+  var lm=16,rm=pw-16;
 
-  doc.setFontSize(18);doc.setFont(undefined,'bold');
-  doc.text('PAY STATEMENT',105,20,{align:'center'});
-  doc.setFontSize(10);doc.setFont(undefined,'normal');
-  doc.text(state.companyName,105,27,{align:'center'});
-  doc.text('Phone: '+state.companyPhone,105,32,{align:'center'});
-  doc.setDrawColor(139,92,246);doc.setLineWidth(0.5);doc.line(14,36,196,36);
+  doc.setDrawColor(60,60,60);doc.setLineWidth(1.5);doc.line(lm,10,rm,10);
+  doc.setFontSize(12);doc.setFont(undefined,'bold');doc.setTextColor(30,30,30);
+  doc.text(state.companyName,lm,18);
+  doc.setFontSize(8);doc.setFont(undefined,'normal');doc.setTextColor(100,100,100);
+  doc.text(state.companyPhone,lm,22);
+  doc.setFontSize(14);doc.setFont(undefined,'bold');doc.setTextColor(30,30,30);
+  doc.text('PAY STATEMENT',rm,18,{align:'right'});
+  doc.setDrawColor(180,180,180);doc.setLineWidth(0.3);doc.line(lm,25,rm,25);
 
-  var y=44;doc.setFontSize(11);
-  doc.setFont(undefined,'bold');doc.text('Driver:',14,y);doc.setFont(undefined,'normal');doc.text(state.driverName,50,y);
-  doc.setFont(undefined,'bold');doc.text('Pay Date:',120,y);doc.setFont(undefined,'normal');doc.text(state.payDate?fmtD(state.payDate):'',155,y);
-  y+=7;
-  doc.setFont(undefined,'bold');doc.text('Pay Period:',14,y);doc.setFont(undefined,'normal');
-  doc.text((state.payPeriodStart?fmtD(state.payPeriodStart):'')+' - '+(state.payPeriodEnd?fmtD(state.payPeriodEnd):''),50,y);
-  doc.setFont(undefined,'bold');doc.text('Method:',120,y);doc.setFont(undefined,'normal');doc.text('Zelle',155,y);
-  y+=12;
+  var y=31;
+  doc.setFontSize(7);doc.setTextColor(120,120,120);
+  doc.text('EMPLOYEE',lm,y);doc.text('PAY DATE',110,y);
+  y+=4;doc.setFontSize(9);doc.setTextColor(30,30,30);doc.setFont(undefined,'bold');
+  doc.text(state.driverName,lm,y);doc.setFont(undefined,'normal');doc.text(state.payDate?fmtD(state.payDate):'',110,y);
+  y+=6;doc.setFontSize(7);doc.setTextColor(120,120,120);
+  doc.text('PAY PERIOD',lm,y);doc.text('PAYMENT METHOD',110,y);
+  y+=4;doc.setFontSize(9);doc.setTextColor(30,30,30);
+  doc.text((state.payPeriodStart?fmtD(state.payPeriodStart):'')+' - '+(state.payPeriodEnd?fmtD(state.payPeriodEnd):''),lm,y);
+  doc.text('Zelle',110,y);
+  y+=5;doc.setDrawColor(220,220,220);doc.setLineWidth(0.2);doc.line(lm,y,rm,y);y+=4;
 
-  // Earnings
+  var tblHead={fillColor:[50,50,50],textColor:[255,255,255],fontStyle:'bold',fontSize:7,cellPadding:3};
+  var tblStyle={fontSize:8,cellPadding:{top:2.5,bottom:2.5,left:4,right:4},textColor:[40,40,40],lineColor:[230,230,230],lineWidth:0.1};
+  var tblCols={0:{cellWidth:140},1:{cellWidth:40,halign:'right'}};
+  var tblAlt={fillColor:[252,252,252]};
+  var boldRow={fontStyle:'bold',fillColor:[245,245,245]};
+
   var earningRows=state.earnings.filter(function(e){return e.desc||e.amount}).map(function(e){return[e.desc,fmtC(e.amount)]});
-  earningRows.push([{content:'Gross Pay',styles:{fontStyle:'bold'}},{content:fmtC(te),styles:{fontStyle:'bold'}}]);
-  doc.autoTable({startY:y,head:[['Earnings','Amount']],body:earningRows,
-    headStyles:{fillColor:[16,185,129],textColor:[255,255,255],fontStyle:'bold',fontSize:11},
-    styles:{fontSize:11,cellPadding:5,lineColor:[51,65,85],lineWidth:0.1},
-    columnStyles:{0:{cellWidth:140},1:{cellWidth:42,halign:'right'}},
-    alternateRowStyles:{fillColor:[241,245,249]},bodyStyles:{fillColor:[255,255,255],textColor:[0,0,0]},margin:{left:14,right:14}});
-  y=doc.lastAutoTable.finalY+6;
+  earningRows.push([{content:'GROSS PAY',styles:boldRow},{content:fmtC(te),styles:boldRow}]);
+  doc.autoTable({startY:y,head:[['EARNINGS','AMOUNT']],body:earningRows,headStyles:tblHead,styles:tblStyle,columnStyles:tblCols,bodyStyles:{fillColor:[255,255,255]},alternateRowStyles:tblAlt,margin:{left:lm,right:16}});
+  y=doc.lastAutoTable.finalY+3;
 
-  // Taxes
   var activeTaxes=state.taxes.filter(function(t){return t.enabled});
   if(activeTaxes.length>0){
-    var taxRows=activeTaxes.map(function(t){return[t.name+' ('+t.rate+'%)','-'+fmtC(te*(t.rate/100))]});
-    taxRows.push([{content:'Total Taxes',styles:{fontStyle:'bold'}},{content:'-'+fmtC(tt),styles:{fontStyle:'bold'}}]);
-    doc.autoTable({startY:y,head:[['Payroll Taxes','Amount']],body:taxRows,
-      headStyles:{fillColor:[59,130,246],textColor:[255,255,255],fontStyle:'bold',fontSize:11},
-      styles:{fontSize:11,cellPadding:5,lineColor:[51,65,85],lineWidth:0.1},
-      columnStyles:{0:{cellWidth:140},1:{cellWidth:42,halign:'right'}},
-      alternateRowStyles:{fillColor:[239,246,255]},bodyStyles:{fillColor:[255,255,255],textColor:[0,0,0]},margin:{left:14,right:14}});
-    y=doc.lastAutoTable.finalY+6;
+    var taxRows=activeTaxes.map(function(t){return[t.name+' ('+t.rate+'%)','('+fmtC(te*(t.rate/100))+')']});
+    taxRows.push([{content:'TOTAL TAXES',styles:boldRow},{content:'('+fmtC(tt)+')',styles:boldRow}]);
+    doc.autoTable({startY:y,head:[['PAYROLL TAXES','AMOUNT']],body:taxRows,headStyles:tblHead,styles:tblStyle,columnStyles:tblCols,bodyStyles:{fillColor:[255,255,255]},alternateRowStyles:tblAlt,margin:{left:lm,right:16}});
+    y=doc.lastAutoTable.finalY+3;
   }
 
-  // Other deductions
-  var deductionRows=state.deductions.filter(function(d){return d.desc||d.amount}).map(function(d){return[d.desc,'-'+fmtC(d.amount)]});
+  var deductionRows=state.deductions.filter(function(d){return d.desc||d.amount}).map(function(d){return[d.desc,'('+fmtC(d.amount)+')']});
   if(deductionRows.length>0){
-    deductionRows.push([{content:'Total Deductions',styles:{fontStyle:'bold'}},{content:'-'+fmtC(td),styles:{fontStyle:'bold'}}]);
-    doc.autoTable({startY:y,head:[['Other Deductions','Amount']],body:deductionRows,
-      headStyles:{fillColor:[239,68,68],textColor:[255,255,255],fontStyle:'bold',fontSize:11},
-      styles:{fontSize:11,cellPadding:5,lineColor:[51,65,85],lineWidth:0.1},
-      columnStyles:{0:{cellWidth:140},1:{cellWidth:42,halign:'right'}},
-      alternateRowStyles:{fillColor:[254,242,242]},bodyStyles:{fillColor:[255,255,255],textColor:[0,0,0]},margin:{left:14,right:14}});
-    y=doc.lastAutoTable.finalY+6;
+    deductionRows.push([{content:'TOTAL DEDUCTIONS',styles:boldRow},{content:'('+fmtC(td)+')',styles:boldRow}]);
+    doc.autoTable({startY:y,head:[['OTHER DEDUCTIONS','AMOUNT']],body:deductionRows,headStyles:tblHead,styles:tblStyle,columnStyles:tblCols,bodyStyles:{fillColor:[255,255,255]},alternateRowStyles:tblAlt,margin:{left:lm,right:16}});
+    y=doc.lastAutoTable.finalY+3;
   }
 
-  // Summary
-  doc.setFontSize(10);doc.setTextColor(100,100,100);
-  doc.text('Gross Pay:',14,y+2);doc.text(fmtC(te),190,y+2,{align:'right'});
-  if(tt>0){y+=5;doc.text('Taxes:',14,y+2);doc.text('-'+fmtC(tt),190,y+2,{align:'right'})}
-  if(td>0){y+=5;doc.text('Deductions:',14,y+2);doc.text('-'+fmtC(td),190,y+2,{align:'right'})}
-  y+=8;
-  doc.setFillColor(139,92,246);doc.roundedRect(14,y,182,20,3,3,'F');
-  doc.setFontSize(14);doc.setFont(undefined,'bold');doc.setTextColor(255,255,255);
-  doc.text('NET PAY (Zelle)',20,y+13);doc.text(fmtC(np),190,y+13,{align:'right'});
-  doc.setTextColor(0,0,0);
+  y+=2;doc.setDrawColor(50,50,50);doc.setLineWidth(0.5);
+  var boxH=14+(tt>0?4:0)+(td>0?4:0);
+  doc.rect(lm,y,rm-lm,boxH+16);
+  doc.setFillColor(50,50,50);doc.rect(lm,y,rm-lm,7,'F');
+  doc.setFontSize(7);doc.setFont(undefined,'bold');doc.setTextColor(255,255,255);
+  doc.text('PAYMENT SUMMARY',lm+4,y+4.8);
 
-  if(state.notes){y+=28;doc.setFontSize(10);doc.setFont(undefined,'bold');doc.text('Notes:',14,y);
-    doc.setFont(undefined,'normal');doc.text(doc.splitTextToSize(state.notes,175),14,y+6)}
+  y+=10;doc.setFontSize(8);doc.setTextColor(80,80,80);doc.setFont(undefined,'normal');
+  doc.text('Gross Pay',lm+4,y);doc.text(fmtC(te),rm-4,y,{align:'right'});
+  if(tt>0){y+=4;doc.text('Taxes',lm+4,y);doc.text('('+fmtC(tt)+')',rm-4,y,{align:'right'})}
+  if(td>0){y+=4;doc.text('Deductions',lm+4,y);doc.text('('+fmtC(td)+')',rm-4,y,{align:'right'})}
 
-  doc.setFontSize(8);doc.setTextColor(150,150,150);
-  doc.text('This is not an official tax document. For informational purposes only.',105,285,{align:'center'});
+  y+=6;doc.setFillColor(40,40,40);doc.roundedRect(lm+2,y,rm-lm-4,10,1,1,'F');
+  doc.setFontSize(10);doc.setFont(undefined,'bold');doc.setTextColor(255,255,255);
+  doc.text('NET PAY',lm+8,y+7);doc.text(fmtC(np),rm-8,y+7,{align:'right'});
+
+  if(state.notes){y+=18;doc.setFontSize(7);doc.setFont(undefined,'bold');doc.setTextColor(120,120,120);
+    doc.text('NOTES',lm,y);y+=3.5;doc.setFont(undefined,'normal');doc.setTextColor(80,80,80);doc.setFontSize(8);
+    doc.text(doc.splitTextToSize(state.notes,rm-lm),lm,y)}
+
+  doc.setDrawColor(180,180,180);doc.setLineWidth(0.2);doc.line(lm,278,rm,278);
+  doc.setFontSize(6.5);doc.setTextColor(160,160,160);doc.setFont(undefined,'normal');
+  doc.text('This document is for informational purposes only and is not an official tax document.',pw/2,283,{align:'center'});
+  doc.text('Payment via Zelle  |  '+state.companyName+'  |  '+state.companyPhone,pw/2,287,{align:'center'});
+
   doc.save('PayStatement_'+state.driverName.replace(/\s/g,'_')+'_'+(state.payDate||'undated')+'.pdf');
 }
 
