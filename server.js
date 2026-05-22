@@ -1626,18 +1626,6 @@ app.get('/onboard', (req, res) => { res.sendFile(path.join(__dirname, 'public', 
 // Serve pay statement generator at /paystub
 app.get('/paystub', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'paystub.html')); });
 
-app.get('*', (req, res) => {
-  if (req.path.startsWith('/api')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
-  }
-  const indexPath = path.join(__dirname, 'public', 'index.html');
-  res.sendFile(indexPath, (err) => {
-    if (err) {
-      res.status(200).send('Webster Orders - Backend running. Deploy index.html to public/ folder.');
-    }
-  });
-});
-
 // Driver onboarding - public form submission (no auth required)
 app.post('/api/driver-apply', async (req, res) => {
   const { full_name, dob, address, ssn, dl_number, dl_expiration, photo_id, ssn_card_photo, bank_name, routing_number, account_number, account_type, zelle_info, notes, rules_acknowledged } = req.body;
@@ -1720,6 +1708,18 @@ app.put('/api/payroll-taxes', authenticate, adminOnly, async (req, res) => {
     await pool.query("INSERT INTO settings (key, value) VALUES ('payrollTaxes', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [json]);
     res.json({ success: true });
   } catch (err) { console.error('Save payroll taxes error:', err); res.status(500).json({ error: err.message }); }
+});
+
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
+  const indexPath = path.join(__dirname, 'public', 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      res.status(200).send('Webster Orders - Backend running. Deploy index.html to public/ folder.');
+    }
+  });
 });
 
 initDB().then(() => {
