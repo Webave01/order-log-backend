@@ -1328,7 +1328,7 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
   const loadOnboarding=async()=>{try{var r=await api.get('/driver-rules');setDriverRules(r.rules||'');var a=await api.get('/driver-applications');setDriverApps(a);var t=await api.get('/payroll-taxes');if(t.taxes)setPayrollTaxes(t.taxes)}catch(e){}};
   useEffect(()=>{if(isAdmin)loadOnboarding()},[]);
   const saveRules=async()=>{setRulesSaving(true);try{await api.put('/driver-rules',{rules:driverRules});notify('Rules saved')}catch(e){alert(e.message)}setRulesSaving(false)};
-  const saveTaxes=async()=>{setTaxSaving(true);try{await api.put('/payroll-taxes',{taxes:payrollTaxes});notify('Tax rates saved')}catch(e){alert(e.message)}setTaxSaving(false)};
+  const saveTaxes=async()=>{setTaxSaving(true);try{var r=await api.put('/payroll-taxes',{taxes:payrollTaxes});if(r.success){notify('Tax rates saved')}else{alert('Save failed: '+(r.error||'unknown'))}}catch(e){alert('Save error: '+e.message)}setTaxSaving(false)};
   const updateTax=(idx,key,val)=>{var t=[...payrollTaxes];t[idx]={...t[idx],[key]:val};setPayrollTaxes(t)};
   const deleteApp=async(id)=>{if(!confirm('Delete this application?'))return;try{await api.del('/driver-applications/'+id);setDriverApps(driverApps.filter(a=>a.id!==id));if(viewApp&&viewApp.id===id)setViewApp(null);notify('Deleted')}catch(e){alert(e.message)}};
   const save=async e=>{e.preventDefault();setSav(true);try{await api.put('/settings',{sameDayMult:parseFloat(f.sameDayMult),defaultRate:parseFloat(f.defaultRate),companyName:f.companyName,companyAddress:f.companyAddress,storePhone:f.storePhone,managerPhone:f.managerPhone,photoRetentionDays:parseInt(f.photoRetentionDays)||45});setSettings(f);notify('Saved')}catch(e){alert(e.message)}setSav(false)};

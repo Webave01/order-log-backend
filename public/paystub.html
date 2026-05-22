@@ -306,23 +306,18 @@ function generatePDF(){
 function esc(s){return(s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
 // Load tax rates from server
-async function loadDriverNames(){
-  try{var r=await fetch(API+'/driver-names');driverNames=await r.json();render()}catch(e){}
-}
-async function loadTaxRates(){
-  try{
-    var r=await fetch(API+'/payroll-taxes');
-    var d=await r.json();
-    if(d.taxes){state.taxes=d.taxes;render()}
-  }catch(e){}
-}
 function saveTaxRates(){}
 
-loadDriverNames();
-loadTaxRates();
-async function loadDriverNames(){try{var r=await fetch(API+'/driver-names');driverNames=await r.json()}catch(e){}render()}
-loadDriverNames();
-render();
+async function init(){
+  try{var r=await fetch(API+"/payroll-taxes");var d=await r.json();
+    if(d.taxes&&Array.isArray(d.taxes)&&d.taxes.length>0){state.taxes=d.taxes}
+  }catch(e){console.error("Tax load error:",e)}
+  try{var r2=await fetch(API+"/driver-names");var d2=await r2.json();
+    if(Array.isArray(d2))driverNames=d2;
+  }catch(e){console.error("Driver names error:",e)}
+  render();
+}
+init();
 </script>
 </body>
 </html>
