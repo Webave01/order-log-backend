@@ -49,6 +49,8 @@ body{font-family:'DM Sans',sans-serif;background:#0f172a;color:#e2e8f0;min-heigh
 </div>
 <div class="container" id="app"></div>
 <script>
+var API=window.location.origin+'/api';
+var driverNames=[];
 var state={
   companyName:'WEBSTER AVE LAUNDROMAT',companyPhone:'347-632-2024',
   driverName:'',payPeriodStart:'',payPeriodEnd:'',payDate:'',
@@ -108,7 +110,14 @@ function render(){
   c.innerHTML=
     '<div class="card">'+
       '<div class="card-title green">\ud83d\udcc4 Statement Info</div>'+
-      '<div class="field"><label>Driver Name</label><input id="driverName" value="'+esc(state.driverName)+'" placeholder="Driver full name"></div>'+
+      '<div class="field"><label>Driver Name</label>'+
+      '<div style="display:flex;gap:8px">'+
+        '<select id="driverSelect" style="flex:1;padding:10px 12px;background:#0f172a;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-size:14px;font-family:inherit">'+
+          '<option value="">-- Select Driver --</option>'+
+          driverNames.map(function(n){return '<option value="'+esc(n)+'" '+(state.driverName===n?'selected':'')+'>'+esc(n)+'</option>'}).join('')+
+        '</select>'+
+        '<input id="driverName" value="'+esc(state.driverName)+'" placeholder="Or type name" style="flex:1;padding:10px 12px;background:#0f172a;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-size:14px;font-family:inherit">'+
+      '</div></div>'+
       '<div class="row">'+
         '<div class="field"><label>Pay Period Start</label><input type="date" id="ppStart" value="'+state.payPeriodStart+'"></div>'+
         '<div class="field"><label>Pay Period End</label><input type="date" id="ppEnd" value="'+state.payPeriodEnd+'"></div>'+
@@ -177,7 +186,8 @@ function render(){
 
     '<button class="gen-btn" id="genBtn">\ud83d\udce4 Generate PDF Statement</button>';
 
-  $('driverName').oninput=function(){state.driverName=this.value};
+  $('driverSelect').onchange=function(){if(this.value){state.driverName=this.value;$('driverName').value=this.value}};
+  $('driverName').oninput=function(){state.driverName=this.value;$('driverSelect').value=''};
   $('ppStart').onchange=function(){state.payPeriodStart=this.value};
   $('ppEnd').onchange=function(){state.payPeriodEnd=this.value};
   $('payDate').onchange=function(){state.payDate=this.value};
@@ -294,17 +304,21 @@ function generatePDF(){
 
 function esc(s){return(s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
-// Load saved tax rates
-try{
-  var saved=localStorage.getItem('paystub_taxes');
-  if(saved){state.taxes=JSON.parse(saved)}
-}catch(e){}
-
-// Save tax rates whenever they change
-function saveTaxRates(){
-  try{localStorage.setItem('paystub_taxes',JSON.stringify(state.taxes))}catch(e){}
+// Load tax rates from server
+async function loadDriverNames(){
+  try{var r=await fetch(API+'/driver-names');driverNames=await r.json();render()}catch(e){}
 }
+async function loadTaxRates(){
+  try{
+    var r=await fetch(API+'/payroll-taxes');
+    var d=await r.json();
+    if(d.taxes){state.taxes=d.taxes;render()}
+  }catch(e){}
+}
+function saveTaxRates(){}
 
+loadDriverNames();
+loadTaxRates();
 render();
 </script>
 </body>

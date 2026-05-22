@@ -335,7 +335,8 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
   const displayOrders=searchResults!==null?searchResults:orders;
   const filtered=displayOrders.filter(o=>{
     const c=cleaners.find(c=>c.id===o.cleaner_id);
-    const matchesSearch=!search||o.order_num.includes(search)||(c?.name||'').toLowerCase().includes(search.toLowerCase());
+    const s=search.toLowerCase();
+    const matchesSearch=!search||o.order_num.toLowerCase().includes(s)||(c?.name||'').toLowerCase().includes(s)||(o.customer_address||'').toLowerCase().includes(s)||(o.customer_apt||'').toLowerCase().includes(s)||(o.notes||'').toLowerCase().includes(s);
     const matchesCleaner=!filterCleaner||o.cleaner_id===parseInt(filterCleaner);
     return matchesSearch&&matchesCleaner;
   });
@@ -1318,9 +1319,17 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
   const[f,setF]=useState({...settings,companyName:settings.companyName||'WEBSTER AVE LAUNDROMAT',companyAddress:settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',storePhone:settings.storePhone||'929-263-1560',managerPhone:settings.managerPhone||'347-632-2024',photoRetentionDays:settings.photoRetentionDays||45});
   const[sav,setSav]=useState(false);const[clr,setClr]=useState(false);const[conf,setConf]=useState('');const[exp,setExp]=useState(false);
   const[driverRules,setDriverRules]=useState('');const[driverApps,setDriverApps]=useState([]);const[showApps,setShowApps]=useState(false);const[viewApp,setViewApp]=useState(null);const[rulesSaving,setRulesSaving]=useState(false);
-  const loadOnboarding=async()=>{try{var r=await api.get('/driver-rules');setDriverRules(r.rules||'');var a=await api.get('/driver-applications');setDriverApps(a)}catch(e){}};
+  const[payrollTaxes,setPayrollTaxes]=useState([
+    {name:'Federal Income Tax',rate:10,enabled:true},{name:'Social Security',rate:6.2,enabled:true},
+    {name:'Medicare',rate:1.45,enabled:true},{name:'NY State Income Tax',rate:4,enabled:true},
+    {name:'NYC Income Tax',rate:3.078,enabled:false},{name:'NY SDI',rate:0.5,enabled:false},
+    {name:'NY Paid Family Leave',rate:0.455,enabled:false}
+  ]);const[taxSaving,setTaxSaving]=useState(false);
+  const loadOnboarding=async()=>{try{var r=await api.get('/driver-rules');setDriverRules(r.rules||'');var a=await api.get('/driver-applications');setDriverApps(a);var t=await api.get('/payroll-taxes');if(t.taxes)setPayrollTaxes(t.taxes)}catch(e){}};
   useEffect(()=>{if(isAdmin)loadOnboarding()},[]);
   const saveRules=async()=>{setRulesSaving(true);try{await api.put('/driver-rules',{rules:driverRules});notify('Rules saved')}catch(e){alert(e.message)}setRulesSaving(false)};
+  const saveTaxes=async()=>{setTaxSaving(true);try{await api.put('/payroll-taxes',{taxes:payrollTaxes});notify('Tax rates saved')}catch(e){alert(e.message)}setTaxSaving(false)};
+  const updateTax=(idx,key,val)=>{var t=[...payrollTaxes];t[idx]={...t[idx],[key]:val};setPayrollTaxes(t)};
   const deleteApp=async(id)=>{if(!confirm('Delete this application?'))return;try{await api.del('/driver-applications/'+id);setDriverApps(driverApps.filter(a=>a.id!==id));if(viewApp&&viewApp.id===id)setViewApp(null);notify('Deleted')}catch(e){alert(e.message)}};
   const save=async e=>{e.preventDefault();setSav(true);try{await api.put('/settings',{sameDayMult:parseFloat(f.sameDayMult),defaultRate:parseFloat(f.defaultRate),companyName:f.companyName,companyAddress:f.companyAddress,storePhone:f.storePhone,managerPhone:f.managerPhone,photoRetentionDays:parseInt(f.photoRetentionDays)||45});setSettings(f);notify('Saved')}catch(e){alert(e.message)}setSav(false)};
   const clear=async()=>{const need=lang==='es'?'BORRAR':'DELETE';if(conf!==need){alert('Type '+need);return}setClr(true);try{const res=await api.del('/orders/clear-all');alert('Cleared '+res.deleted+' orders!');setConf('');window.location.reload()}catch(e){console.error('Clear error:',e);alert('Error: '+e.message)}setClr(false)};
@@ -1365,6 +1374,18 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
         React.createElement('label',{style:{...S.lbl,color:'#c4b5fd'}},'Driver Rules (editable — shown on onboarding form)'),
         React.createElement('textarea',{value:driverRules,onChange:function(e){setDriverRules(e.target.value)},style:{...S.inp,minHeight:'150px',fontFamily:'inherit',lineHeight:'1.6'},placeholder:'Enter driver rules, expectations, pay info, etc.\nNew drivers must acknowledge these before submitting.'}),
         React.createElement('button',{onClick:saveRules,disabled:rulesSaving,style:{...S.btn,marginTop:'8px',background:'#8b5cf6',opacity:rulesSaving?0.6:1}},rulesSaving?'Saving...':'Save Rules')),
+      React.createElement('div',{style:{marginTop:'16px',paddingTop:'16px',borderTop:'1px solid #334155',marginBottom:'16px'}},
+        React.createElement('h4',{style:{color:'#60a5fa',marginBottom:'12px'}},'🏦 Default Payroll Tax Rates'),
+        React.createElement('div',{style:{fontSize:'11px',color:'#64748b',marginBottom:'10px'}},'These rates are used on the Pay Statement page. Edit rates and click Save.'),
+        payrollTaxes.map(function(t,i){return React.createElement('div',{key:i,style:{display:'flex',gap:'8px',alignItems:'center',marginBottom:'6px',padding:'6px 8px',background:'#0f172a',borderRadius:'6px'}},
+          React.createElement('input',{type:'checkbox',checked:t.enabled,onChange:function(){updateTax(i,'enabled',!t.enabled)},style:{width:'18px',height:'18px',accentColor:'#3b82f6'}}),
+          React.createElement('input',{value:t.name,onChange:function(e){updateTax(i,'name',e.target.value)},style:{...S.inp,flex:1,padding:'6px 8px',fontSize:'13px'}}),
+          React.createElement('input',{type:'number',value:t.rate,step:'0.01',onChange:function(e){updateTax(i,'rate',parseFloat(e.target.value)||0)},style:{...S.inp,width:'70px',padding:'6px 8px',fontSize:'13px',textAlign:'right'}}),
+          React.createElement('span',{style:{color:'#64748b',fontSize:'12px'}},'%'),
+          React.createElement('button',{onClick:function(){var t2=[...payrollTaxes];t2.splice(i,1);setPayrollTaxes(t2)},style:{background:'none',border:'1px solid #ef4444',color:'#ef4444',borderRadius:'4px',padding:'2px 6px',cursor:'pointer',fontSize:'12px'}},'✕'))}),
+        React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'8px'}},
+          React.createElement('button',{onClick:function(){setPayrollTaxes([...payrollTaxes,{name:'Custom Tax',rate:0,enabled:true}])},style:{...S.inp,padding:'6px 12px',cursor:'pointer',fontSize:'12px',flex:1,textAlign:'center'}},'+  Add Tax'),
+          React.createElement('button',{onClick:saveTaxes,disabled:taxSaving,style:{...S.btn,background:'#3b82f6',padding:'6px 16px',fontSize:'12px',opacity:taxSaving?0.6:1}},taxSaving?'Saving...':'Save Tax Rates'))),
       React.createElement('div',{style:{borderTop:'1px solid #334155',paddingTop:'16px'}},
         React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
           React.createElement('h4',{style:{color:'#c4b5fd',margin:0}},'📋 Applications ('+driverApps.length+')'),
