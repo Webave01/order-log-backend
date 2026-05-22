@@ -51,6 +51,7 @@ body{font-family:'DM Sans',sans-serif;background:#0f172a;color:#e2e8f0;min-heigh
 <script>
 var API=window.location.origin+'/api';
 var driverNames=[];
+var driverNames=[];
 var state={
   companyName:'WEBSTER AVE LAUNDROMAT',companyPhone:'347-632-2024',
   driverName:'',payPeriodStart:'',payPeriodEnd:'',payDate:'',
@@ -319,6 +320,8 @@ function saveTaxRates(){}
 
 loadDriverNames();
 loadTaxRates();
+async function loadDriverNames(){try{var r=await fetch(API+'/driver-names');driverNames=await r.json()}catch(e){}render()}
+loadDriverNames();
 render();
 </script>
 </body>
