@@ -1686,6 +1686,30 @@ app.put('/api/driver-rules', authenticate, adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// Driver names for paystub dropdown (public, names only)
+app.get('/api/driver-names', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT name FROM drivers WHERE status = 'active' ORDER BY name");
+    res.json(result.rows.map(r => r.name));
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// Payroll tax rates - public read (paystub page needs it without auth)
+app.get('/api/payroll-taxes', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT value FROM settings WHERE key = 'payrollTaxes'");
+    res.json({ taxes: result.rows.length > 0 ? JSON.parse(result.rows[0].value) : null });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// Payroll tax rates - admin save
+app.put('/api/payroll-taxes', authenticate, adminOnly, async (req, res) => {
+  try {
+    await pool.query("INSERT INTO settings (key, value) VALUES ('payrollTaxes', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify(req.body.taxes)]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 initDB().then(() => {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
