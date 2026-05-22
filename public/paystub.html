@@ -251,7 +251,7 @@ function generatePDF(){
 
   var activeTaxes=state.taxes.filter(function(t){return t.enabled});
   if(activeTaxes.length>0){
-    var taxRows=activeTaxes.map(function(t){return[t.name+' ('+t.rate+'%)','('+fmtC(te*(t.rate/100))+')']});
+    var taxRows=activeTaxes.map(function(t){return[t.name,'('+fmtC(te*(t.rate/100))+')']});
     taxRows.push([{content:'TOTAL TAXES',styles:boldRow},{content:'('+fmtC(tt)+')',styles:boldRow}]);
     doc.autoTable({startY:y,head:[['PAYROLL TAXES','AMOUNT']],body:taxRows,headStyles:tblHead,styles:tblStyle,columnStyles:tblCols,bodyStyles:{fillColor:[255,255,255]},alternateRowStyles:tblAlt,margin:{left:lm,right:16}});
     y=doc.lastAutoTable.finalY+3;
