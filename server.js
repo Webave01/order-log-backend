@@ -1694,6 +1694,14 @@ app.get('/api/driver-names', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// Driver names for paystub dropdown (public, names only)
+app.get('/api/driver-names', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT name FROM drivers WHERE status = 'active' ORDER BY name");
+    res.json(result.rows.map(r => r.name));
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 // Payroll tax rates - public read (paystub page needs it without auth)
 app.get('/api/payroll-taxes', async (req, res) => {
   try {
