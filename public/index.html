@@ -715,9 +715,9 @@ function Reports({t}){
 }
 
 function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
-  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);const[showDba,setShowDba]=useState(false);
+  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);const[showDba,setShowDba]=useState(false);
   const[showAddrs,setShowAddrs]=useState(null);const[addrList,setAddrList]=useState([]);const[newAddr,setNewAddr]=useState('');const[newApt,setNewApt]=useState('');const[editAddr,setEditAddr]=useState(null);
-  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
+  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
   const del=async id=>{if(!confirm(t.delete+'?'))return;try{await api.del('/cleaners/'+id);notify('Deleted');await loadData()}catch(e){alert(e.message)}};
   const loadAddrs=async(cid)=>{try{const a=await api.get('/cleaner-addresses/'+cid);setAddrList(a)}catch(e){setAddrList([])}};
   const addAddr=async()=>{if(!newAddr.trim()){alert('Enter address');return}try{await api.post('/cleaner-addresses',{cleaner_id:showAddrs.id,address:newAddr.trim(),apt:newApt.trim()});setNewAddr('');setNewApt('');loadAddrs(showAddrs.id);notify('Address added')}catch(e){alert(e.message)}};
@@ -725,17 +725,17 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
   const saveAddr=async()=>{if(!editAddr)return;try{await api.put('/cleaner-addresses/'+editAddr.id,{address:editAddr.address,apt:editAddr.apt});setEditAddr(null);loadAddrs(showAddrs.id);notify('Updated')}catch(e){alert(e.message)}};
 
   return React.createElement('div',null,
-    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,dba_name:'',dba_address:'',dba_phone:''});setShowDba(false);setShow(true)},style:S.btn},t.addCleaner)),
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',dba_name:'',dba_address:'',dba_phone:''});setShowDba(false);setShow(true)},style:S.btn},t.addCleaner)),
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
       cleaners.map(c=>React.createElement('div',{key:c.id,style:S.card},
-        React.createElement('div',{style:{fontWeight:'bold',marginBottom:'4px'}},c.name,c.has_addresses&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),c.dba_name&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#f59e0b'}},'\ud83c\udfe2 '+c.dba_name)),
+        React.createElement('div',{style:{fontWeight:'bold',marginBottom:'4px'}},c.name,c.has_addresses&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),c.billing_cycle==='monthly'&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'11px',color:'#fbbf24',background:'rgba(245,158,11,0.15)',padding:'2px 6px',borderRadius:'4px'}},'\ud83d\udcc5 Monthly'),c.dba_name&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#f59e0b'}},'\ud83c\udfe2 '+c.dba_name)),
         React.createElement('div',{style:{fontSize:'24px',color:'#4ade80',fontWeight:'bold'}},fmt$(c.rate)+'/lb'),
         React.createElement('div',{style:{color:'#94a3b8',fontSize:'12px',marginTop:'4px'}},'Min: '+(c.min_weight||10)+' lbs'),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'8px',flexWrap:'wrap'}},
           React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:c.route==='east'?'#3b82f6':'#f59e0b'}},c.route==='east'?'\ud83d\uddfd East':'\ud83c\udf06 West'),
           c.congestion_zone&&React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#dc2626'}},'\ud83d\ude97 Congestion $'+parseFloat(c.congestion_rate||5).toFixed(2)+'/day')),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',flexWrap:'wrap'}},
-          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,address:c.address||'',rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false,dba_name:c.dba_name||'',dba_address:c.dba_address||'',dba_phone:c.dba_phone||''});setShowDba(!!c.dba_name);setShow(true)},style:S.edit},t.edit),
+          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,address:c.address||'',rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false,billing_cycle:c.billing_cycle||'weekly',dba_name:c.dba_name||'',dba_address:c.dba_address||'',dba_phone:c.dba_phone||''});setShowDba(!!c.dba_name);setShow(true)},style:S.edit},t.edit),
           React.createElement('button',{onClick:()=>setShowPrices(c),style:{...S.edit,borderColor:'#f59e0b',color:'#f59e0b'}},t.customPrices),
           c.has_addresses&&React.createElement('button',{onClick:()=>{setShowAddrs(c);loadAddrs(c.id)},style:{...S.edit,borderColor:'#8b5cf6',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),
           React.createElement('button',{onClick:()=>del(c.id),style:S.del},t.delete))))),
@@ -756,6 +756,10 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
             React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
               React.createElement('input',{type:'checkbox',id:'hasAddr',checked:f.has_addresses,onChange:e=>setF({...f,has_addresses:e.target.checked}),style:{width:'20px',height:'20px'}}),
               React.createElement('label',{htmlFor:'hasAddr',style:{color:'#a78bfa',fontWeight:'bold',cursor:'pointer'}},'\ud83c\udfe0 Individual Addresses (Doorman/Residential)')),
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginTop:'8px'}},
+              React.createElement('span',{style:{fontSize:'13px',color:'#94a3b8'}},'\ud83d\udcc5 Billing:'),
+              React.createElement('button',{type:'button',onClick:function(){setF({...f,billing_cycle:'weekly'})},style:{padding:'4px 12px',borderRadius:'6px',border:'1px solid '+(f.billing_cycle==='weekly'?'#3b82f6':'#475569'),background:f.billing_cycle==='weekly'?'rgba(59,130,246,0.2)':'transparent',color:f.billing_cycle==='weekly'?'#60a5fa':'#94a3b8',cursor:'pointer',fontSize:'13px',fontWeight:'600'}},'Weekly'),
+              React.createElement('button',{type:'button',onClick:function(){setF({...f,billing_cycle:'monthly'})},style:{padding:'4px 12px',borderRadius:'6px',border:'1px solid '+(f.billing_cycle==='monthly'?'#f59e0b':'#475569'),background:f.billing_cycle==='monthly'?'rgba(245,158,11,0.2)':'transparent',color:f.billing_cycle==='monthly'?'#fbbf24':'#94a3b8',cursor:'pointer',fontSize:'13px',fontWeight:'600'}},'Monthly')),
             f.has_addresses&&React.createElement('div',{style:{marginTop:'6px',color:'#94a3b8',fontSize:'11px'}},'Staff will pick customer address from a list when entering orders. Bag color auto-set to Black.')),
           React.createElement('div',{style:{marginTop:'12px',padding:'12px',borderRadius:'8px',border:showDba?'1px solid #f59e0b':'1px solid #475569',background:showDba?'rgba(245,158,11,0.05)':'transparent'}},
             React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:showDba?'10px':'0'}},
@@ -918,15 +922,20 @@ function Payments({cleaners,settings,t}){
   const[start,setStart]=useState('');const[end,setEnd]=useState('');const[editing,setEditing]=useState(null);
   const[editPay,setEditPay]=useState('');const[editNote,setEditNote]=useState('');const[editStat,setEditStat]=useState('unpaid');
   const[viewInv,setViewInv]=useState(null);
+  const[payView,setPayView]=useState('weekly');
+  const[paySearch,setPaySearch]=useState('');
   const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   
-  const load=async()=>{setLd(true);try{const[tracking,sum]=await Promise.all([api.get('/invoice-tracking'),api.get('/invoice-tracking/summary')]);setData(tracking);setSummary(sum)}catch(e){console.error(e)}setLd(false)};
+  const load=async(cycle)=>{var bc=cycle||payView;setLd(true);try{const[tracking,sum]=await Promise.all([api.get('/invoice-tracking?billing_cycle='+bc),api.get('/invoice-tracking/summary?billing_cycle='+bc)]);setData(tracking);setSummary(sum)}catch(e){console.error(e)}setLd(false)};
   useEffect(()=>{load()},[]);
+  const switchView=(v)=>{setPayView(v);setStart('');setEnd('');load(v)};
   
   const setLW=()=>{const n=new Date();const dow=n.getDay();const daysSinceSat=dow===0?1:dow+1;const sat=new Date(n);sat.setDate(n.getDate()-daysSinceSat);const mon=new Date(sat);mon.setDate(sat.getDate()-5);setStart(localDateStr(mon));setEnd(localDateStr(sat))};
   const setTW=()=>{const n=new Date();const dow=n.getDay();const daysToMon=dow===0?6:dow-1;const mon=new Date(n);mon.setDate(n.getDate()-daysToMon);setStart(localDateStr(mon));setEnd(localDateStr(n))};
+  const setLM=()=>{const n=new Date();const lastDay=new Date(n.getFullYear(),n.getMonth(),0);const firstDay=new Date(lastDay.getFullYear(),lastDay.getMonth(),1);setStart(localDateStr(firstDay));setEnd(localDateStr(lastDay))};
+  const setTM=()=>{const n=new Date();const firstDay=new Date(n.getFullYear(),n.getMonth(),1);setStart(localDateStr(firstDay));setEnd(localDateStr(n))};
   
-  const generateWeek=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{await api.post('/invoice-tracking/generate-week',{week_start:start,week_end:end});await load()}catch(e){alert(e.message)}setLd(false)};
+  const generateWeek=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{await api.post('/invoice-tracking/generate-week',{week_start:start,week_end:end,billing_cycle:payView});await load()}catch(e){alert(e.message)}setLd(false)};
   
   const updatePayment=async(id,updates)=>{try{await api.put('/invoice-tracking/'+id,updates);await load();setEditing(null)}catch(e){alert(e.message)}};
   
@@ -975,15 +984,19 @@ function Payments({cleaners,settings,t}){
     doc.save(cleanerName.replace(/\s/g,'_')+'_'+viewInv.start+'_to_'+viewInv.end+'.pdf')};
   
   
-  const groupedByWeek={};data.forEach(d=>{const wk=d.week_start?d.week_start.split('T')[0]:'unknown';if(!groupedByWeek[wk])groupedByWeek[wk]=[];groupedByWeek[wk].push(d)});
+  const filteredData=paySearch?data.filter(function(d){return(d.cleaner_name||'').toLowerCase().includes(paySearch.toLowerCase())}):data;
+  const groupedByWeek={};filteredData.forEach(d=>{const wk=d.week_start?d.week_start.split('T')[0]:'unknown';if(!groupedByWeek[wk])groupedByWeek[wk]=[];groupedByWeek[wk].push(d)});
   
-  const unpaidTotal=data.filter(d=>d.status!=='paid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid),0);
-  const cleanerUnpaid={};data.forEach(d=>{if(d.status!=='paid'){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=parseFloat(d.invoice_amount)-parseFloat(d.amount_paid)}});
+  const unpaidTotal=filteredData.filter(d=>d.status!=='paid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid),0);
+  const cleanerUnpaid={};filteredData.forEach(d=>{if(d.status!=='paid'){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=parseFloat(d.invoice_amount)-parseFloat(d.amount_paid)}});
 
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
-      React.createElement('h2',{style:{margin:0}},t.payments+' Tracking'),
-      React.createElement('button',{onClick:exportExcel,style:{...S.btn,background:'#059669'}},'Export Excel')),
+      React.createElement('h2',{style:{margin:0}},t.payments+' Tracking',React.createElement('span',{style:{fontSize:'14px',marginLeft:'8px',color:payView==='weekly'?'#60a5fa':'#fbbf24'}},payView==='weekly'?'(Weekly)':'(Monthly)')),
+      React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
+        React.createElement('input',{value:paySearch,onChange:function(e){setPaySearch(e.target.value)},placeholder:'Filter by cleaner...',style:{...S.inp,width:'200px',padding:'8px 12px',fontSize:'13px'}}),
+        paySearch&&React.createElement('button',{onClick:function(){setPaySearch('')},style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'12px'}},'Clear'),
+        React.createElement('button',{onClick:exportExcel,style:{...S.btn,background:'#059669'}},'Export Excel'))),
     
     summary&&React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
       React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#60a5fa'}},fmtC(summary.overall.total_invoiced)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Invoiced')),
@@ -991,12 +1004,17 @@ function Payments({cleaners,settings,t}){
       React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#ef4444'}},fmtC(unpaidTotal)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Past Due (Unpaid)'))),
     
     React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
-      React.createElement('h3',{style:{marginBottom:'12px'}},'Generate Weekly Invoices'),
-      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'}},
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Week Start'),React.createElement('input',{type:'date',value:start,onChange:e=>setStart(e.target.value),style:S.inp})),
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Week End'),React.createElement('input',{type:'date',value:end,onChange:e=>setEnd(e.target.value),style:S.inp})),
-        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setTW,style:{...S.inp,cursor:'pointer'}},t.thisWeek)),
-        React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer'}},t.lastWeek))),
+      React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px'}},
+        React.createElement('button',{onClick:function(){switchView('weekly')},style:{flex:1,padding:'12px',borderRadius:'8px',border:'none',cursor:'pointer',fontWeight:'bold',fontSize:'15px',fontFamily:'inherit',background:payView==='weekly'?'linear-gradient(90deg,#3b82f6,#8b5cf6)':'#0f172a',color:payView==='weekly'?'#fff':'#64748b'}},'Weekly Clients'),
+        React.createElement('button',{onClick:function(){switchView('monthly')},style:{flex:1,padding:'12px',borderRadius:'8px',border:'none',cursor:'pointer',fontWeight:'bold',fontSize:'15px',fontFamily:'inherit',background:payView==='monthly'?'linear-gradient(90deg,#f59e0b,#ef4444)':'#0f172a',color:payView==='monthly'?'#fff':'#64748b'}},'Monthly Clients')),
+      React.createElement('h3',{style:{marginBottom:'12px'}},payView==='weekly'?'Generate Weekly Invoices':'Generate Monthly Invoices'),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr auto auto',gap:'12px',marginBottom:'12px'}},
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},payView==='weekly'?'Week Start':'Month Start'),React.createElement('input',{type:'date',value:start,onChange:e=>setStart(e.target.value),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},payView==='weekly'?'Week End':'Month End'),React.createElement('input',{type:'date',value:end,onChange:e=>setEnd(e.target.value),style:S.inp})),
+        payView==='weekly'&&React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setTW,style:{...S.inp,cursor:'pointer'}},t.thisWeek)),
+        payView==='weekly'&&React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer'}},t.lastWeek)),
+        payView==='monthly'&&React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setTM,style:{...S.inp,cursor:'pointer'}},'This Month')),
+        payView==='monthly'&&React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLM,style:{...S.inp,cursor:'pointer'}},'Last Month'))),
       React.createElement('button',{onClick:generateWeek,disabled:ld,style:{...S.btn,width:'100%',opacity:ld?0.6:1}},ld?t.loading:'Generate from Orders')),
     
     summary&&summary.cleaners&&React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
@@ -1014,7 +1032,7 @@ function Payments({cleaners,settings,t}){
           React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#ef4444',fontWeight:'bold'}},fmtC(cleanerUnpaid[c.cleaner_name]||0))))))),
     
     Object.keys(groupedByWeek).sort().reverse().map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
-      React.createElement('h3',{style:{marginBottom:'12px'}},'Week of '+fmtD(week)),
+      React.createElement('h3',{style:{marginBottom:'12px'}},(payView==='monthly'?'Month of ':'Week of ')+fmtD(week)),
       React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
         React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
           React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Cleaner'),
@@ -1135,7 +1153,7 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
         var badWeights=[];
         inv.orders&&inv.orders.forEach(function(o){
           var w=parseFloat(o.weight||0);
-          if(w>100)badWeights.push({...o,issue:'Weight '+w+' lbs seems high',cleaner_name:c.name});
+          if(w>50)badWeights.push({...o,issue:'Weight '+w+' lbs - verify',cleaner_name:c.name});
           if(w===0&&(!o.extras||o.extras.length===0))badWeights.push({...o,issue:'Zero weight with no extras',cleaner_name:c.name});
         });
         if(badWeights.length>0)allWeightErrors.push({cleaner:c,errors:badWeights});
@@ -1159,11 +1177,11 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
           var dupAddrs=[];
           Object.entries(addrMap).forEach(function(entry){if(entry[1].length>1)dupAddrs.push({address:entry[1][0].customer_address+(entry[1][0].customer_apt?' Apt '+entry[1][0].customer_apt:''),orders:entry[1]})});
           if(dupAddrs.length>0)allAddrDups.push({cleaner:c,duplicates:dupAddrs});
-          // Weight checks: >100 lbs suspicious, 0 weight with no extras
+          // Weight checks: >50 lbs flagged, 0 weight with no extras
           var badWeights=[];
           inv.orders.forEach(function(o){
             var w=parseFloat(o.weight||0);
-            if(w>100)badWeights.push({...o,issue:'Weight '+w+' lbs seems high'});
+            if(w>50)badWeights.push({...o,issue:'Weight '+w+' lbs - verify'});
             if(w===0&&(!o.extras||o.extras.length===0))badWeights.push({...o,issue:'Zero weight with no extras'});
           });
           if(badWeights.length>0)allWeightErrors.push({cleaner:c,errors:badWeights});
