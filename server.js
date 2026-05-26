@@ -142,6 +142,7 @@ async function initDB() {
     // DBA / address columns
     await client.query(`
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS has_addresses BOOLEAN DEFAULT false;
+      ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20) DEFAULT 'weekly';
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_name VARCHAR(255);
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_address VARCHAR(255);
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_phone VARCHAR(50);
@@ -771,11 +772,11 @@ app.get('/api/cleaners', authenticate, async (req, res) => {
 });
 
 app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, dba_name, dba_address, dba_phone } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, dba_name, dba_address, dba_phone } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, dba_name, dba_address, dba_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
-      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, dba_name || null, dba_address || null, dba_phone || null]
+      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, dba_name, dba_address, dba_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *',
+      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', dba_name || null, dba_address || null, dba_phone || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -785,11 +786,11 @@ app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res
 
 app.put('/api/cleaners/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { id } = req.params;
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, dba_name, dba_address, dba_phone } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, dba_name, dba_address, dba_phone } = req.body;
   try {
     const result = await pool.query(
-      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, has_addresses=$8, dba_name=$9, dba_address=$10, dba_phone=$11 WHERE id=$12 RETURNING *',
-      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, dba_name || null, dba_address || null, dba_phone || null, id]
+      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, has_addresses=$8, billing_cycle=$9, dba_name=$10, dba_address=$11, dba_phone=$12 WHERE id=$13 RETURNING *',
+      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', dba_name || null, dba_address || null, dba_phone || null, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Cleaner not found' });
     res.json(result.rows[0]);
@@ -1461,11 +1462,13 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
 // Invoice tracking routes
 app.get('/api/invoice-tracking', authenticate, requirePerm('invoices'), async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT it.*, c.name as cleaner_name, c.route 
-      FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id 
-      ORDER BY it.week_start DESC, c.name
-    `);
+    const { billing_cycle } = req.query;
+    let query = `SELECT it.*, c.name as cleaner_name, c.route, COALESCE(c.billing_cycle, 'weekly') as billing_cycle
+      FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id`;
+    const params = [];
+    if (billing_cycle) { params.push(billing_cycle); query += ` WHERE COALESCE(c.billing_cycle, 'weekly') = $1`; }
+    query += ' ORDER BY it.week_start DESC, c.name';
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -1474,18 +1477,22 @@ app.get('/api/invoice-tracking', authenticate, requirePerm('invoices'), async (r
 
 app.get('/api/invoice-tracking/summary', authenticate, requirePerm('invoices'), async (req, res) => {
   try {
+    const { billing_cycle } = req.query;
+    const bcFilter = billing_cycle ? " WHERE COALESCE(c.billing_cycle, 'weekly') = $1" : "";
+    const bcFilter2 = billing_cycle ? " WHERE it.cleaner_id IN (SELECT id FROM cleaners WHERE COALESCE(billing_cycle, 'weekly') = $1)" : "";
+    const params = billing_cycle ? [billing_cycle] : [];
     const result = await pool.query(`
       SELECT c.name as cleaner_name, c.route,
         SUM(it.invoice_amount) as total_invoiced,
         SUM(it.amount_paid) as total_paid,
         SUM(it.invoice_amount - it.amount_paid) as total_due
-      FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id
+      FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id${bcFilter}
       GROUP BY c.id, c.name, c.route ORDER BY c.name
-    `);
+    `, params);
     const overall = await pool.query(`
       SELECT SUM(invoice_amount) as total_invoiced, SUM(amount_paid) as total_paid, SUM(invoice_amount - amount_paid) as total_due
-      FROM invoice_tracking
-    `);
+      FROM invoice_tracking it${bcFilter2}
+    `, params);
     res.json({ cleaners: result.rows, overall: overall.rows[0] });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -1493,9 +1500,15 @@ app.get('/api/invoice-tracking/summary', authenticate, requirePerm('invoices'), 
 });
 
 app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoices'), async (req, res) => {
-  const { week_start, week_end } = req.body;
+  const { week_start, week_end, billing_cycle } = req.body;
   try {
-    const cleaners = await pool.query('SELECT * FROM cleaners');
+    let cleanerQuery = 'SELECT * FROM cleaners';
+    const cleanerParams = [];
+    if (billing_cycle) {
+      cleanerQuery += " WHERE COALESCE(billing_cycle, 'weekly') = $1";
+      cleanerParams.push(billing_cycle);
+    }
+    const cleaners = await pool.query(cleanerQuery, cleanerParams);
     const extrasResult = await pool.query('SELECT * FROM extras');
     const extrasMap = {};
     extrasResult.rows.forEach(e => { extrasMap[e.id] = e; });
