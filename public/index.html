@@ -924,6 +924,7 @@ function Payments({cleaners,settings,t}){
   const[viewInv,setViewInv]=useState(null);
   const[payView,setPayView]=useState('weekly');
   const[paySearch,setPaySearch]=useState('');
+  const[showUnpaidOnly,setShowUnpaidOnly]=useState(false);
   const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   
   const load=async(cycle)=>{var bc=cycle||payView;setLd(true);try{const[tracking,sum]=await Promise.all([api.get('/invoice-tracking?billing_cycle='+bc),api.get('/invoice-tracking/summary?billing_cycle='+bc)]);setData(tracking);setSummary(sum)}catch(e){console.error(e)}setLd(false)};
@@ -996,7 +997,11 @@ function Payments({cleaners,settings,t}){
     doc.save(cleanerName.replace(/\s/g,'_')+'_'+viewInv.start+'_to_'+viewInv.end+'.pdf')};
   
   
-  const filteredData=paySearch?data.filter(function(d){return(d.cleaner_name||'').toLowerCase().includes(paySearch.toLowerCase())}):data;
+  const filteredData=data.filter(function(d){
+    if(paySearch&&!(d.cleaner_name||'').toLowerCase().includes(paySearch.toLowerCase()))return false;
+    if(showUnpaidOnly&&d.status==='paid')return false;
+    return true;
+  });
   const groupedByWeek={};filteredData.forEach(d=>{const wk=d.week_start?d.week_start.split('T')[0]:'unknown';if(!groupedByWeek[wk])groupedByWeek[wk]=[];groupedByWeek[wk].push(d)});
   
   const unpaidTotal=filteredData.filter(d=>d.status!=='paid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid),0);
@@ -1007,7 +1012,8 @@ function Payments({cleaners,settings,t}){
       React.createElement('h2',{style:{margin:0}},t.payments+' Tracking',React.createElement('span',{style:{fontSize:'14px',marginLeft:'8px',color:payView==='weekly'?'#60a5fa':'#fbbf24'}},payView==='weekly'?'(Weekly)':'(Monthly)')),
       React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
         React.createElement('input',{value:paySearch,onChange:function(e){setPaySearch(e.target.value)},placeholder:'Filter by cleaner...',style:{...S.inp,width:'200px',padding:'8px 12px',fontSize:'13px'}}),
-        paySearch&&React.createElement('button',{onClick:function(){setPaySearch('')},style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'12px'}},'Clear'),
+        React.createElement('button',{onClick:function(){setShowUnpaidOnly(!showUnpaidOnly)},style:{padding:'8px 12px',borderRadius:'6px',border:'1px solid '+(showUnpaidOnly?'#ef4444':'#475569'),background:showUnpaidOnly?'rgba(239,68,68,0.2)':'transparent',color:showUnpaidOnly?'#fca5a5':'#94a3b8',cursor:'pointer',fontSize:'12px',fontWeight:'600',whiteSpace:'nowrap'}},showUnpaidOnly?'🔴 Unpaid':'Unpaid'),
+        (paySearch||showUnpaidOnly)&&React.createElement('button',{onClick:function(){setPaySearch('');setShowUnpaidOnly(false)},style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'12px'}},'Clear'),
         React.createElement('button',{onClick:exportExcel,style:{...S.btn,background:'#059669'}},'Export Excel'))),
     
     summary&&React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
