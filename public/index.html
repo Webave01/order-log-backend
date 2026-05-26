@@ -961,8 +961,20 @@ function Payments({cleaners,settings,t}){
     const cleaner=cleaners.find(c=>c.id===inv.cleaner_id);
     const weekNum=Math.ceil((new Date(wkStart).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);
     const clnIdx=cleaners.findIndex(c=>c.id===inv.cleaner_id)+1;
-    const invoiceId=10000+(weekNum*100)+clnIdx;
-    setViewInv({cleaner:cleaner||{name:inv.cleaner_name},displayName:invoiceName(cleaner?.name||inv.cleaner_name),start:wkStart,end:wkEnd,orders:d.orders,ordersTotal:d.ordersTotal,congestionZone:d.congestionZone,congestionDays:d.congestionDays,congestionSurcharge:d.congestionSurcharge,total:d.grandTotal,invoiceId});
+    const invoiceId=payView==='monthly'?20000+(new Date(wkStart).getMonth()+1)*100+clnIdx:10000+(weekNum*100)+clnIdx;
+    // Group orders by week for monthly view
+    var weeklyBreakdown=null;
+    if(payView==='monthly'&&d.orders&&d.orders.length>0){
+      weeklyBreakdown={};
+      d.orders.forEach(function(o){
+        var dt=new Date(o.pickup_date);var dow=dt.getDay();var monOffset=dow===0?6:dow-1;
+        var weekMon=new Date(dt);weekMon.setDate(dt.getDate()-monOffset);
+        var wk=localDateStr(weekMon);
+        if(!weeklyBreakdown[wk])weeklyBreakdown[wk]={orders:[],total:0};
+        weeklyBreakdown[wk].orders.push(o);weeklyBreakdown[wk].total+=parseFloat(o.total||0);
+      });
+    }
+    setViewInv({cleaner:cleaner||{name:inv.cleaner_name},displayName:invoiceName(cleaner?.name||inv.cleaner_name),start:wkStart,end:wkEnd,orders:d.orders,ordersTotal:d.ordersTotal,congestionZone:d.congestionZone,congestionDays:d.congestionDays,congestionSurcharge:d.congestionSurcharge,total:d.grandTotal,invoiceId,weeklyBreakdown,isMonthly:payView==='monthly'});
     }catch(e){alert('Error loading invoice: '+e.message)}setLd(false)};
   
   const exportViewPDF=()=>{if(!viewInv)return;
@@ -1092,7 +1104,23 @@ function Payments({cleaners,settings,t}){
               React.createElement('th',{style:{padding:'8px',textAlign:'right',borderBottom:'2px solid #000'}},'Weight'),
               React.createElement('th',{style:{padding:'8px',textAlign:'left',borderBottom:'2px solid #000'}},'Extras'),
               React.createElement('th',{style:{padding:'8px',textAlign:'left',borderBottom:'2px solid #000'}},'Notes'))),
-            React.createElement('tbody',null,viewInv.orders.map((o,i)=>React.createElement('tr',{key:i,style:{borderBottom:'1px solid #ddd'}},
+            React.createElement('tbody',null,
+              viewInv.isMonthly&&viewInv.weeklyBreakdown?
+                Object.keys(viewInv.weeklyBreakdown).sort().map(function(wk){
+                  var wb=viewInv.weeklyBreakdown[wk];var wkEnd=new Date(wk);wkEnd.setDate(wkEnd.getDate()+5);
+                  var rows=[];
+                  rows.push(React.createElement('tr',{key:wk+'h',style:{background:'#e0e7ff'}},
+                    React.createElement('td',{colSpan:7,style:{padding:'8px',fontWeight:'bold',fontSize:'13px',color:'#3730a3'}},'Week of '+fmtD(wk)+' - '+fmtD(localDateStr(wkEnd))+' ('+wb.orders.length+' orders, '+fmtC(wb.total)+')')));
+                  wb.orders.forEach(function(o,i){rows.push(React.createElement('tr',{key:wk+'-'+i,style:{borderBottom:'1px solid #ddd'}},
+                    React.createElement('td',{style:{padding:'6px 8px',fontSize:'13px'}},i+1),
+                    React.createElement('td',{style:{padding:'6px 8px',fontSize:'13px'}},fmtD(o.pickup_date)),
+                    React.createElement('td',{style:{padding:'6px 8px',textAlign:'right',fontSize:'13px'}},fmtC(o.total)),
+                    React.createElement('td',{style:{padding:'6px 8px',fontSize:'13px'}},o.order_num),
+                    React.createElement('td',{style:{padding:'6px 8px',textAlign:'right',fontSize:'13px'}},o.weight),
+                    React.createElement('td',{style:{padding:'6px 8px',fontSize:'11px'}},o.extras_formatted||''),
+                    React.createElement('td',{style:{padding:'6px 8px',fontSize:'11px'}},o.notes||'')))});
+                  return rows}):
+                viewInv.orders.map((o,i)=>React.createElement('tr',{key:i,style:{borderBottom:'1px solid #ddd'}},
               React.createElement('td',{style:{padding:'8px'}},i+1),
               React.createElement('td',{style:{padding:'8px'}},fmtD(o.pickup_date)),
               React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmtC(o.total)),
