@@ -1480,44 +1480,46 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
 
 
 function Schedule({isAdmin,notify,t,user}){
-  const canManageSched0=!isAdmin&&user&&user.permissions&&user.permissions.indexOf('manage_schedule')!==-1;
-  const[subView,setSubView]=useState(isAdmin?'drivers':canManageSched0?'schedule':'myschedule');
-  const[drivers,setDrivers]=useState([]);const[routes,setRoutes]=useState([]);const[shifts,setShifts]=useState([]);
-  const[schedData,setSchedData]=useState({assignments:[],exceptions:[],time_entries:[]});
-  const[weekOf,setWeekOf]=useState(getMonday(new Date()));
-  const[ld,setLd]=useState(false);
+  const[tab,setTab]=useState('grid');
+  const[drivers,setDrivers]=useState([]);
+  const[shifts,setShifts]=useState([]);
+  const[assignments,setAssignments]=useState([]);
+  const[requests,setRequests]=useState([]);
+  const[weekOf,setWeekOf]=useState('');
+  const canManage=isAdmin||(user&&user.permissions&&user.permissions.includes('manage_schedule'));
 
-  function getMonday(d){const dt=new Date(d);const day=dt.getDay();const diff=dt.getDate()-day+(day===0?-6:1);dt.setDate(diff);return localDateStr(dt)}
-  function addDays(dateStr,n){const d=new Date(dateStr+'T12:00:00');d.setDate(d.getDate()+n);return localDateStr(d)}
+  function getMonday(d){const dt=new Date(d);const day=dt.getDay();const diff=dt.getDate()-(day===0?6:day-1);dt.setDate(diff);return localDateStr(dt)}
+  function addDays(ds,n){const d=new Date(ds+'T12:00:00');d.setDate(d.getDate()+n);return localDateStr(d)}
+
+  useEffect(()=>{setWeekOf(getMonday(new Date()));loadAll()},[]);
+  const loadAll=async()=>{
+    try{var d=await api.get('/drivers');setDrivers(d)}catch(e){}
+    try{var s=await api.get('/shifts');setShifts(s)}catch(e){}
+    try{var r=await api.get('/shift-requests');setRequests(r)}catch(e){}
+  };
+  const loadAssignments=async(wk)=>{
+    var w=wk||weekOf;if(!w)return;
+    var end=addDays(w,5);
+    try{var a=await api.get('/shift-assignments?start_date='+w+'&end_date='+end);setAssignments(a)}catch(e){}
+  };
+  useEffect(()=>{if(weekOf)loadAssignments()},[weekOf]);
+
   const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat'];
-  const dayNums=[1,2,3,4,5,6];
+  const dayDates=Array.from({length:6},(_,i)=>addDays(weekOf,i));
 
-  const loadAll=async()=>{setLd(true);try{
-    const[d,r,s]=await Promise.all([api.get('/drivers'),api.get('/routes'),api.get('/shifts')]);
-    setDrivers(d);setRoutes(r);setShifts(s);
-    
-  }catch(e){console.error('Schedule load error:',e)}setLd(false)};
-
-  useEffect(()=>{loadAll()},[weekOf]);
-
-  const canManageSched=!isAdmin&&user&&user.permissions&&user.permissions.indexOf('manage_schedule')!==-1;
-  const adminTabs=['drivers','schedule','payroll'];
-  const managerTabs=['schedule','myschedule','myprofile'];
-  const staffTabs=['myschedule','myprofile'];
-  const subTabs=isAdmin?adminTabs:canManageSched?managerTabs:staffTabs;
-  const subLabels={schedule:'\ud83d\udcc5 Schedule',drivers:'\ud83d\ude97 Drivers',payroll:'\ud83d\udcb0 Payroll',myschedule:'\ud83d\udcc5 My Schedule',myprofile:'\ud83d\udc64 My Profile'};
+  const tabs=['grid','drivers'];
+  if(canManage)tabs.push('requests');
+  if(isAdmin)tabs.push('shifts');
 
   return React.createElement('div',null,
-    React.createElement('div',{className:'nav-tabs',style:{display:'flex',gap:'8px',marginBottom:'20px',flexWrap:'wrap'}},
-      subTabs.map(st=>React.createElement('button',{key:st,onClick:()=>setSubView(st),style:{padding:'10px 16px',borderRadius:'8px',border:subView===st?'2px solid #3b82f6':'1px solid #475569',background:subView===st?'rgba(59,130,246,0.2)':'transparent',color:subView===st?'#fff':'#94a3b8',cursor:'pointer',fontWeight:'600',fontSize:'14px'}},subLabels[st]))),
-    ld&&React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'#94a3b8'}},'Loading...'),
-    subView==='drivers'&&isAdmin&&React.createElement(DriversPanel,{drivers,notify,onRefresh:loadAll}),
-    subView==='schedule'&&(isAdmin||canManageSched)&&React.createElement(AvailabilityPanel,{drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh:loadAll,isAdmin,t,user}),
-    subView==='payroll'&&isAdmin&&React.createElement(PayrollPanel,{drivers,notify}),
-    subView==='myschedule'&&(!isAdmin||canManageSched)&&React.createElement(MySchedulePanel,{schedData,weekOf,setWeekOf,addDays,dayNames,dayNums,routes,shifts,drivers,myDriverId:user&&user.driver_id,t}),
-    subView==='myprofile'&&!isAdmin&&React.createElement(DriverProfilePanel,{notify}));
+    React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'20px',flexWrap:'wrap'}},
+      tabs.map(tb=>React.createElement('button',{key:tb,onClick:()=>setTab(tb),style:{padding:'10px 16px',borderRadius:'8px',border:'none',cursor:'pointer',fontWeight:'500',background:tab===tb?'linear-gradient(90deg,#3b82f6,#8b5cf6)':'transparent',color:tab===tb?'#fff':'#94a3b8'}},
+        tb==='grid'?'\ud83d\udcc5 Schedule':tb==='drivers'?'\ud83d\ude97 Drivers':tb==='requests'?'\ud83d\udce8 Requests ('+requests.filter(r=>r.status==='pending').length+')':'\u2699\ufe0f Shifts'))),
+    tab==='grid'&&React.createElement(ShiftGrid,{shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames,dayDates,isAdmin,canManage,notify,onRefresh:loadAssignments,loadAll}),
+    tab==='drivers'&&React.createElement(DriversPanel,{drivers,notify,onRefresh:loadAll}),
+    tab==='requests'&&React.createElement(ShiftRequests,{requests,shifts,drivers,notify,onRefresh:function(){loadAll();loadAssignments()}}),
+    tab==='shifts'&&React.createElement(ShiftEditor,{shifts,notify,onRefresh:loadAll}));
 }
-
 function DriversPanel({drivers,notify,onRefresh}){
   const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[tab,setTab]=useState('basic');const[expand,setExpand]=useState(null);
   const[showRates,setShowRates]=useState(false);
@@ -1683,472 +1685,141 @@ function DriversPanel({drivers,notify,onRefresh}){
             React.createElement('button',{type:'submit',style:S.btn},ed?'Update':'Add'))))));
 }
 
-function ScheduleGrid({drivers,routes,shifts,schedData,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh}){
+function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames,dayDates,isAdmin,canManage,notify,onRefresh,loadAll}){
   const[assigning,setAssigning]=useState(null);
-  const activeDrivers=drivers.filter(d=>d.status==='active');
+  const[generating,setGenerating]=useState(false);
+  const fmtC=n=>'$'+Number(n||0).toFixed(0);
 
-  const prevWeek=()=>setWeekOf(addDays(weekOf,-7));
-  const nextWeek=()=>setWeekOf(addDays(weekOf,7));
-  const today=()=>{const d=new Date();const day=d.getDay();const diff=d.getDate()-day+(day===0?-6:1);d.setDate(diff);setWeekOf(localDateStr(d))};
+  const genWeek=async()=>{setGenerating(true);try{await api.post('/shift-assignments/generate-week',{start_date:weekOf});await onRefresh();notify('Week generated')}catch(e){alert(e.message)}setGenerating(false)};
 
-  const getAssignment=(routeId,dayNum,shiftId)=>{
-    return(schedData.assignments||[]).find(a=>a.route_id===routeId&&a.day_of_week===dayNum&&(a.shift_template_id===shiftId||a.shift_id===shiftId));
+  const assign=async(shiftId,date,driverId)=>{
+    try{await api.post('/shift-assignments',{shift_id:shiftId,driver_id:driverId||null,work_date:date});await onRefresh();notify('Assigned');setAssigning(null)}catch(e){alert(e.message)}};
+
+  const remove=async(id)=>{try{await api.del('/shift-assignments/'+id);await onRefresh();notify('Removed')}catch(e){alert(e.message)}};
+
+  const toggleLock=async(id,current)=>{try{await api.put('/shift-assignments/'+id+'/confirm',{confirmed:!current});await onRefresh()}catch(e){alert(e.message)}};
+
+  const getAssignment=(shiftId,date)=>assignments.find(a=>a.shift_id===shiftId&&a.work_date&&a.work_date.split('T')[0]===date);
+
+  const getPay=(shift,dow)=>{
+    var pay=parseFloat(shift.base_pay||0);
+    if(shift.heavy_pay&&shift.heavy_days){var hd=shift.heavy_days.split(',').map(d=>parseInt(d.trim()));if(hd.includes(dow))pay=parseFloat(shift.heavy_pay)}
+    return pay;
   };
-  const getException=(assignId,dateStr)=>{
-    return(schedData.exceptions||[]).find(e=>e.assignment_id===assignId&&e.exception_date&&e.exception_date.split('T')[0]===dateStr);
-  };
 
-  const assign=async(routeId,dayNum,shiftId,driverId)=>{
-    try{await api.post('/schedule/assign',{driver_id:driverId,route_id:routeId,shift_template_id:shiftId,day_of_week:dayNum,start_date:weekOf});
-    notify('Assigned');await onRefresh();setAssigning(null)}catch(e){alert(e.message)}};
-
-  const removeAssign=async(id)=>{
-    try{await api.del('/schedule/assign/'+id);notify('Removed');await onRefresh()}catch(e){alert(e.message)}};
+  const catColors={west:'#3b82f6',east:'#10b981',morris:'#f59e0b',laundry:'#8b5cf6',other:'#64748b'};
 
   return React.createElement('div',null,
-    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'8px'}},
-      React.createElement('h2',{style:{margin:0}},'📅 Weekly Schedule'),
-      React.createElement('div',{style:{display:'flex',gap:'8px'}},
-        React.createElement('button',{onClick:prevWeek,style:{...S.cancel,padding:'8px 16px'}},'← Prev'),
-        React.createElement('button',{onClick:today,style:{...S.btn,padding:'8px 16px'}},'Today'),
-        React.createElement('button',{onClick:nextWeek,style:{...S.cancel,padding:'8px 16px'}},'Next →'))),
-    React.createElement('div',{style:{textAlign:'center',marginBottom:'16px',color:'#60a5fa',fontSize:'16px',fontWeight:'bold'}},'Week of '+fmtD(weekOf)+' - '+fmtD(addDays(weekOf,5))),
-    routes.map(route=>React.createElement('div',{key:route.id,style:{...S.card,marginBottom:'16px'}},
-      React.createElement('h3',{style:{marginBottom:'12px',color:'#f59e0b'}},route.name+' Route'),
-      React.createElement('div',{style:{overflowX:'auto'}},
-        React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'600px'}},
-          React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
-            React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px',width:'80px'}},'Shift'),
-            dayNums.map((dn,i)=>{
-              const dateStr=addDays(weekOf,i);
-              const isToday=dateStr===localDateStr(new Date());
-              const isActive=route.active_days&&route.active_days.includes(dn);
-              return React.createElement('th',{key:dn,style:{padding:'8px',textAlign:'center',fontSize:'12px',background:isToday?'rgba(59,130,246,0.2)':'transparent',color:isActive?'#fff':'#475569'}},dayNames[i]+' '+fmtD(dateStr))}))),
-          React.createElement('tbody',null,shifts.map(shift=>React.createElement('tr',{key:shift.id,style:{borderBottom:'1px solid #334155'}},
-            React.createElement('td',{style:{padding:'8px',fontWeight:'bold',fontSize:'13px'}},shift.name),
-            dayNums.map((dn,i)=>{
-              const dateStr=addDays(weekOf,i);
-              const isActive=route.active_days&&route.active_days.includes(dn);
-              if(!isActive)return React.createElement('td',{key:dn,style:{padding:'8px',textAlign:'center',background:'#1a1a2e',color:'#475569',fontSize:'12px'}},'—');
-              const asgn=getAssignment(route.id,dn,shift.id);
-              const exc=asgn?getException(asgn.id,dateStr):null;
-              const driver=asgn?drivers.find(d=>d.id===asgn.driver_id):null;
-              const cellKey=route.id+'-'+dn+'-'+shift.id;
-              const isAssigning=assigning===cellKey;
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
+        React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,-7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'8px 12px',cursor:'pointer',fontSize:'16px'}},'\u25c0'),
+        React.createElement('h3',{style:{margin:0}},'Week of '+fmtD(weekOf)),
+        React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'8px 12px',cursor:'pointer',fontSize:'16px'}},'\u25b6'),
+        React.createElement('button',{onClick:()=>{var dt=new Date();var day=dt.getDay();setWeekOf(addDays(localDateStr(dt),-(day===0?6:day-1)))},style:{...S.inp,padding:'6px 12px',cursor:'pointer',fontSize:'12px'}},'Today')),
+      canManage&&React.createElement('button',{onClick:genWeek,disabled:generating,style:{...S.btn,opacity:generating?0.6:1}},generating?'Generating...':'Generate Week')),
 
-              if(isAssigning){
-                return React.createElement('td',{key:dn,style:{padding:'4px',background:'rgba(59,130,246,0.1)'}},
-                  React.createElement('select',{onChange:e=>{if(e.target.value==='remove'&&asgn){removeAssign(asgn.id)}else if(e.target.value){assign(route.id,dn,shift.id,parseInt(e.target.value))}setAssigning(null)},style:{...S.inp,fontSize:'12px',padding:'4px'},autoFocus:true,onBlur:()=>setTimeout(()=>setAssigning(null),200)},
-                    React.createElement('option',{value:''},'Select...'),
-                    activeDrivers.map(d=>React.createElement('option',{key:d.id,value:d.id},d.name)),
-                    asgn&&React.createElement('option',{value:'remove'},'❌ Remove')));
-              }
-              return React.createElement('td',{key:dn,onClick:()=>setAssigning(cellKey),style:{padding:'8px',textAlign:'center',cursor:'pointer',background:exc?'rgba(239,68,68,0.1)':asgn?'rgba(34,197,94,0.1)':'rgba(245,158,11,0.1)',borderRadius:'4px',fontSize:'13px',fontWeight:'500'}},
-                exc?React.createElement('span',{style:{color:'#ef4444'}},exc.exception_type):
-                asgn?React.createElement('span',{style:{color:'#4ade80'}},driver?.name||'?'):
-                React.createElement('span',{style:{color:'#f59e0b'}},'+ Assign'));
-            })))))))),
-    assigning&&React.createElement('div',{style:{position:'fixed',bottom:20,left:'50%',transform:'translateX(-50%)',background:'#1e40af',color:'#fff',padding:'12px 24px',borderRadius:'8px',zIndex:50}},'Click a cell to assign, or click elsewhere to cancel'));
-}
-
-function AvailabilityPanel({drivers,routes,shifts,weekOf,setWeekOf,addDays,dayNames,dayNums,notify,onRefresh,isAdmin,t,user}){
-  const[avail,setAvail]=useState([]);const[assignments,setAssignments]=useState([]);const[ld,setLd]=useState(false);
-  const[viewWeek,setViewWeek]=useState(0);const[showRouteManager,setShowRouteManager]=useState(false);
-  const[newRouteName,setNewRouteName]=useState('');const[newRouteShifts,setNewRouteShifts]=useState(false);const[newRouteDays,setNewRouteDays]=useState([1,2,3,4,5,6]);
-  const[editRoute,setEditRoute]=useState(null);
-  const[overrideModal,setOverrideModal]=useState(null);const[overrideSelections,setOverrideSelections]=useState([]);const[overrideNotes,setOverrideNotes]=useState('');
-  const[showDebug,setShowDebug]=useState(false);const[loadError,setLoadError]=useState(null);const[lastLoad,setLastLoad]=useState(null);
-  var userPerms=user&&user.permissions||[];
-  var canExport=isAdmin||userPerms.indexOf('sched_export')!==-1;
-  var canDebug=isAdmin||userPerms.indexOf('sched_debug')!==-1;
-  var canManageRoutes=isAdmin||userPerms.indexOf('sched_routes')!==-1;
-  var currentWeekOf=addDays(weekOf,viewWeek*7);
-
-  var routeColors={'East Cleaners':'#3b82f6','West Cleaners':'#8b5cf6','Laundry Day':'#06b6d4','Schools':'#f59e0b','Sleepy':'#ec4899','Panda':'#22c55e'};
-  var getRouteColor=function(name){return routeColors[name]||'#94a3b8'};
-
-  var normalizeDate=function(d){if(!d)return'';return d.toString().split('T')[0]};
-
-  var loadData=async function(){setLd(true);setLoadError(null);
-    var start=currentWeekOf;var end=addDays(currentWeekOf,5);
-    try{
-      var availResult=await api.get('/availability?start_date='+start+'&end_date='+end);
-      console.log('ADMIN SCHEDULE: Loaded',availResult.length,'entries for',start,'to',end,availResult);
-      setAvail(availResult);
-      setLastLoad({time:new Date().toLocaleTimeString(),start:start,end:end,count:availResult.length,
-        entries:availResult.map(function(a){return{id:a.id,driver:a.driver_name,driver_id:a.driver_id,date:normalizeDate(a.work_date),confirmed:a.confirmed,admin_confirmed:a.admin_confirmed,routes:(a.route_selections||[]).map(function(s){return s.route_name||('id:'+s.route_id)}).join(', ')||a.route_name||'none'}})});
-      try{var covResult=await api.get('/availability/coverage?week_of='+start);
-        setAssignments(covResult.assignments||[]);}catch(e){}
-    }catch(e){console.error('ADMIN SCHEDULE LOAD ERROR:',e);setLoadError(e.message);setAvail([])}setLd(false)};
-  useEffect(function(){loadData()},[viewWeek,weekOf]);
-
-  var activeDrivers=drivers.filter(function(d){return d.status==='active'});
-  var getDriverAvail=function(driverId,dateStr){
-    var normDate=normalizeDate(dateStr);
-    return avail.find(function(a){return String(a.driver_id)===String(driverId)&&normalizeDate(a.work_date)===normDate})};
-  var getDriverAssigned=function(driverId,dayNum){return assignments.find(function(a){return String(a.driver_id)===String(driverId)&&a.day_of_week===dayNum})};
-
-  var availCount=0;var assignedCount=0;var gapCount=0;var confirmedCount=0;
-  dayNums.forEach(function(dn,i){var dateStr=addDays(currentWeekOf,i);
-    activeDrivers.forEach(function(d){var av=getDriverAvail(d.id,dateStr);var asgn=getDriverAssigned(d.id,dn);
-      if(asgn)assignedCount++;else if(av&&av.confirmed){availCount++;if(av.admin_confirmed)confirmedCount++}else gapCount++})});
-
-  var confirmOne=async function(id){try{await api.put('/availability/'+id+'/confirm');notify(t.confirmed);loadData()}catch(e){alert(tErr(t,e.message))}};
-  var confirmAll=async function(){
-    var start=currentWeekOf;var end=addDays(currentWeekOf,5);
-    if(!confirm('Confirm ALL driver availability for this week as final? Drivers will not be able to cancel.'))return;
-    try{var res=await api.put('/availability/confirm-week',{start_date:start,end_date:end});notify(res.confirmed+' '+t.confirmed);loadData()}catch(e){alert(tErr(t,e.message))}};
-
-  var adminOverride=async function(){
-    if(!overrideModal||overrideSelections.length===0){alert(t.errSelectRoute);return}
-    var finalSelections=overrideSelections.map(function(s){return{route_id:s.route_id,shift:s.shift||'Full Day'}});
-    try{await api.post('/availability',{
-      driver_id:overrideModal.driverId,work_date:overrideModal.date,status:'available',
-      route_selections:finalSelections,
-      notes:overrideNotes||null,confirmed:true,admin_confirmed:isAdmin});
-    setOverrideModal(null);notify(t.scheduleAssigned);loadData()}catch(e){alert(tErr(t,e.message))}};
-
-  var toggleOverrideRoute=function(routeId){
-    var rid=parseInt(routeId);var existing=overrideSelections.find(function(s){return parseInt(s.route_id)===rid});
-    if(existing){setOverrideSelections(overrideSelections.filter(function(s){return parseInt(s.route_id)!==rid}))}
-    else{
-      var newRoute=routes.find(function(r){return r.id===rid});var newName=(newRoute?newRoute.name:'').toLowerCase();
-      var conflict=false;
-      overrideSelections.forEach(function(s){var r=routes.find(function(rt){return rt.id===parseInt(s.route_id)});var rName=(r?r.name:'').toLowerCase();
-        if((newName.includes('east')&&rName.includes('west'))||(newName.includes('west')&&rName.includes('east')))conflict=true});
-      if(conflict){alert(t.errEastWest);return}
-      setOverrideSelections(overrideSelections.concat([{route_id:rid,shift:null}]))}};
-
-  var setOverrideRouteShift=function(routeId,shift){
-    setOverrideSelections(overrideSelections.map(function(s){return parseInt(s.route_id)===parseInt(routeId)?{...s,shift:shift}:s}))};
-
-  var addRoute=async function(){if(!newRouteName.trim()){alert('Route name required');return}
-    if(newRouteDays.length===0){alert('Select at least one active day');return}
-    try{await api.post('/routes',{name:newRouteName.trim(),has_shifts:newRouteShifts,active_days:newRouteDays});setNewRouteName('');setNewRouteShifts(false);setNewRouteDays([1,2,3,4,5,6]);notify('Route added');onRefresh()}catch(e){alert(e.message)}};
-  var updateRoute=async function(id,data){try{await api.put('/routes/'+id,data);notify('Saved');onRefresh()}catch(e){alert(e.message)}};
-  var deactivateRoute=async function(id){if(!confirm('Deactivate this route?'))return;try{await api.put('/routes/'+id,{status:'inactive'});notify('Route deactivated');onRefresh()}catch(e){alert(e.message)}};
-
-  var exportDriverPDF=function(driverFilter){
-    var jsPDF=window.jspdf.jsPDF;
-    var doc=new jsPDF({orientation:'landscape',unit:'mm',format:'letter'});
-    var margin=14;
-    var weekLabel=function(){
-      var s=new Date(currentWeekOf+'T12:00:00');var e=new Date(addDays(currentWeekOf,5)+'T12:00:00');
-      var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      return months[s.getMonth()]+' '+s.getDate()+' - '+months[e.getMonth()]+' '+e.getDate()+', '+e.getFullYear()};
-    var driversToExport=driverFilter?activeDrivers.filter(function(d){return d.id===driverFilter}):
-      activeDrivers.filter(function(d){return dayNums.some(function(dn,i){var av=getDriverAvail(d.id,addDays(currentWeekOf,i));return av&&av.admin_confirmed})});
-    if(driversToExport.length===0){alert('No locked schedules to export. Lock driver schedules first.');return}
-
-    driversToExport.forEach(function(driver,dIdx){
-      if(dIdx>0)doc.addPage();
-
-      doc.setFontSize(26);doc.setFont(undefined,'bold');doc.setTextColor(30,41,59);
-      doc.text(driver.name,margin,18);
-      doc.setFontSize(14);doc.setFont(undefined,'normal');doc.setTextColor(100,116,139);
-      doc.text('Week of '+weekLabel(),margin,27);
-
-      var rows=[];
-      dayNums.forEach(function(dn,i){
-        var dateStr=addDays(currentWeekOf,i);
-        var av=getDriverAvail(driver.id,dateStr);
-        var dayDate=new Date(dateStr+'T12:00:00');
-        var dayName=['','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dn]||'';
-        var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        var dateLabel=dayName+'  '+months[dayDate.getMonth()]+' '+dayDate.getDate();
-
-        if(av&&av.confirmed&&av.admin_confirmed){
-          var sels=(av.route_selections)||[];
-          if(typeof sels==='string')try{sels=JSON.parse(sels)}catch(e){sels=[]}
-          if(sels.length>0){
-            var routeParts=sels.map(function(s){return(s.route_name||'Route')+' ('+(s.shift||'Full Day')+')'});
-            rows.push([dateLabel,routeParts.join('   |   '),'Confirmed']);
-          }else{
-            rows.push([dateLabel,'—','—']);
-          }
-        }else{
-          rows.push([dateLabel,'Off','—']);
-        }
-      });
-
-      doc.autoTable({
-        startY:34,
-        head:[['Day','Route','Status']],
-        body:rows,
-        theme:'grid',
-        styles:{fontSize:14,cellPadding:{top:6,bottom:6,left:8,right:8},textColor:[30,41,59],lineColor:[203,213,225],lineWidth:0.3,overflow:'visible'},
-        headStyles:{fillColor:[30,64,175],textColor:[255,255,255],fontStyle:'bold',fontSize:14,cellPadding:{top:6,bottom:6,left:8,right:8}},
-        columnStyles:{
-          0:{cellWidth:70,fontStyle:'bold'},
-          1:{cellWidth:130},
-          2:{cellWidth:50,halign:'center',fontStyle:'bold'}
-        },
-        bodyStyles:{fillColor:[255,255,255]},
-        alternateRowStyles:{fillColor:[245,247,250]},
-        didParseCell:function(data){
-          if(data.section==='body'&&data.column.index===2){
-            var val=data.cell.raw;
-            if(val==='Confirmed'){data.cell.styles.textColor=[5,150,105]}
-            else if(val==='Requested'){data.cell.styles.textColor=[245,158,11]}
-            else{data.cell.styles.textColor=[180,180,180]}}
-          if(data.section==='body'&&data.column.index===1){
-            if(data.cell.raw==='Off'||data.cell.raw==='No route assigned'){data.cell.styles.textColor=[180,180,180];data.cell.styles.fontStyle='italic'}}}
-      });
-    });
-
-    var fileName=driverFilter?driversToExport[0].name.replace(/\s/g,'_')+'_schedule.pdf':'All_Driver_Schedules_'+currentWeekOf+'.pdf';
-    doc.save(fileName);
-    notify(driverFilter?'PDF exported for '+driversToExport[0].name:'PDF exported for '+driversToExport.length+' drivers');
-  };
-
-  var[showExportMenu,setShowExportMenu]=useState(false);
-
-  return React.createElement('div',null,
-    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'8px'}},
-      React.createElement('h2',{style:{margin:0}},'\u2705 Driver Availability'),
-      React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
-        React.createElement('button',{onClick:async function(){await onRefresh();await loadData();notify('Schedule refreshed')},disabled:ld,style:{...S.cancel,fontSize:'13px',padding:'8px 16px',opacity:ld?0.5:1}},ld?'↻ Loading...':'↻ Refresh'),
-        canExport&&React.createElement('div',{style:{position:'relative'}},
-          React.createElement('button',{onClick:function(){setShowExportMenu(!showExportMenu)},style:{...S.btn,background:'#7c3aed',fontSize:'13px',padding:'8px 16px'}},'\ud83d\udcc4 Export PDF'),
-          showExportMenu&&React.createElement('div',{style:{position:'absolute',top:'100%',left:0,marginTop:'4px',background:'#1e293b',border:'1px solid #475569',borderRadius:'8px',padding:'8px',zIndex:100,minWidth:'220px',boxShadow:'0 8px 24px rgba(0,0,0,0.4)'}},
-            React.createElement('button',{onClick:function(){exportDriverPDF(null);setShowExportMenu(false)},style:{display:'block',width:'100%',padding:'10px 12px',background:'rgba(124,58,237,0.15)',border:'1px solid #7c3aed',borderRadius:'6px',color:'#c4b5fd',cursor:'pointer',fontWeight:'bold',fontSize:'13px',marginBottom:'6px',textAlign:'left'}},'\ud83d\udcc4 All Drivers (one PDF)'),
-            React.createElement('div',{style:{color:'#64748b',fontSize:'10px',padding:'4px 0 6px',textTransform:'uppercase',fontWeight:'600'}},'Individual Driver:'),
-            activeDrivers.map(function(d){
-              var hasLocked=dayNums.some(function(dn,i){var av=getDriverAvail(d.id,addDays(currentWeekOf,i));return av&&av.admin_confirmed});
-              var hasRequested=!hasLocked&&dayNums.some(function(dn,i){return getDriverAvail(d.id,addDays(currentWeekOf,i))});
-              return React.createElement('button',{key:d.id,onClick:function(){exportDriverPDF(d.id);setShowExportMenu(false)},
-                style:{display:'block',width:'100%',padding:'8px 12px',background:'transparent',border:'1px solid '+(hasLocked?'#059669':hasRequested?'#334155':'#1e293b'),borderRadius:'6px',color:hasLocked?'#4ade80':hasRequested?'#e2e8f0':'#475569',cursor:'pointer',fontSize:'13px',marginBottom:'3px',textAlign:'left'}},
-                d.name+(hasLocked?' 🔒':hasRequested?' (not locked)':' (no schedule)'))}),
-            React.createElement('button',{onClick:function(){setShowExportMenu(false)},style:{display:'block',width:'100%',padding:'6px',background:'transparent',border:'none',color:'#64748b',cursor:'pointer',fontSize:'11px',marginTop:'4px'}},'Cancel'))),
-        canDebug&&React.createElement('button',{onClick:function(){setShowDebug(!showDebug)},style:{...S.cancel,fontSize:'13px',padding:'8px 16px',background:showDebug?'rgba(239,68,68,0.2)':'transparent',border:'1px solid '+(showDebug?'#ef4444':'#475569')}},showDebug?'Hide Debug':'\ud83d\udd0d Debug'),
-        viewWeek>=0&&isAdmin&&React.createElement('button',{onClick:confirmAll,style:{...S.btn,background:'#059669',fontSize:'13px',padding:'8px 16px'}},'\ud83d\udd12 Confirm All This Week'),
-        canManageRoutes&&React.createElement('button',{onClick:function(){setShowRouteManager(!showRouteManager)},style:{...S.btn,background:showRouteManager?'#475569':'#f59e0b',fontSize:'13px',padding:'8px 16px'}},
-          showRouteManager?'Hide Routes':'\ud83d\udea3 Manage Routes'))),
-
-    showRouteManager&&React.createElement('div',{style:{...S.card,marginBottom:'16px',border:'1px solid #f59e0b'}},
-      React.createElement('h3',{style:{color:'#f59e0b',marginBottom:'12px'}},'\ud83d\udea3 Route Options'),
-      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:'8px',marginBottom:'16px'}},
-        routes.filter(function(r){return r.status==='active'}).map(function(r){
-          var clr=getRouteColor(r.name);var days=r.active_days||[];
-          var dayLabels={1:'M',2:'Tu',3:'W',4:'Th',5:'F',6:'Sa'};
-          return React.createElement('div',{key:r.id,style:{background:'rgba(255,255,255,0.05)',borderRadius:'8px',padding:'12px',borderLeft:'4px solid '+clr}},
-            editRoute&&editRoute.id===r.id?React.createElement('div',null,
-              React.createElement('input',{value:editRoute.name,onChange:function(e){setEditRoute({...editRoute,name:e.target.value})},
-                onBlur:function(){if(editRoute.name.trim()&&editRoute.name!==r.name)updateRoute(editRoute.id,{name:editRoute.name})},
-                onKeyPress:function(e){if(e.key==='Enter'){e.target.blur()}},
-                style:{...S.inp,marginBottom:'6px',fontSize:'13px'}}),
-              React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:'#94a3b8',marginBottom:'4px'}},
-                React.createElement('input',{type:'checkbox',checked:editRoute.has_shifts,onChange:function(e){var v=e.target.checked;setEditRoute({...editRoute,has_shifts:v});updateRoute(editRoute.id,{has_shifts:v})}}),
-                'AM/PM/Full Day shifts'),
-              React.createElement('div',{style:{display:'flex',gap:'4px',marginBottom:'6px',flexWrap:'wrap'}},
-                [1,2,3,4,5,6].map(function(d){var active=(editRoute.active_days||[]).indexOf(d)!==-1;
-                  return React.createElement('button',{key:d,type:'button',onClick:function(){var nd=active?(editRoute.active_days||[]).filter(function(x){return x!==d}):(editRoute.active_days||[]).concat([d]).sort();setEditRoute({...editRoute,active_days:nd});updateRoute(editRoute.id,{active_days:nd})},
-                    style:{padding:'4px 8px',borderRadius:'4px',fontSize:'11px',border:active?'1px solid #3b82f6':'1px solid #475569',background:active?'rgba(59,130,246,0.3)':'transparent',color:active?'#fff':'#64748b',cursor:'pointer'}},dayLabels[d])})),
-              React.createElement('button',{onClick:function(){setEditRoute(null)},style:{...S.cancel,fontSize:'11px',padding:'4px 8px'}},'Done'))
-            :React.createElement('div',null,
-              React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-                React.createElement('span',{style:{fontWeight:'bold',color:'#fff'}},r.name),
-                React.createElement('div',{style:{display:'flex',gap:'4px'}},
-                  React.createElement('button',{onClick:function(){setEditRoute({id:r.id,name:r.name,has_shifts:r.has_shifts,active_days:r.active_days||[]})},style:{background:'none',border:'none',color:'#60a5fa',cursor:'pointer',fontSize:'12px'}},'Edit'),
-                  React.createElement('button',{onClick:function(){deactivateRoute(r.id)},style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'12px'}},'Remove'))),
-              React.createElement('div',{style:{fontSize:'11px',color:'#94a3b8',marginTop:'4px'}},
-                'Days: '+days.map(function(d){return dayLabels[d]||d}).join(', ')+(r.has_shifts?' | \u23f0 Shifts':''))
-            ))})),
-      React.createElement('div',{style:{background:'rgba(255,255,255,0.03)',borderRadius:'8px',padding:'12px',marginBottom:'8px'}},
-        React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap',marginBottom:'8px'}},
-          React.createElement('input',{value:newRouteName,onChange:function(e){setNewRouteName(e.target.value)},style:{...S.inp,flex:1,minWidth:'150px'},placeholder:'New route name...',onKeyPress:function(e){if(e.key==='Enter')addRoute()}}),
-          React.createElement('label',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',color:'#94a3b8',whiteSpace:'nowrap'}},
-            React.createElement('input',{type:'checkbox',checked:newRouteShifts,onChange:function(e){setNewRouteShifts(e.target.checked)}}),
-            'AM/PM Shifts'),
-          React.createElement('button',{onClick:addRoute,style:{...S.btn,whiteSpace:'nowrap'}},'+ Add Route')),
-        React.createElement('div',{style:{display:'flex',gap:'4px',alignItems:'center',flexWrap:'wrap'}},
-          React.createElement('span',{style:{fontSize:'11px',color:'#94a3b8',marginRight:'4px'}},'Days:'),
-          [{d:1,l:'M'},{d:2,l:'Tu'},{d:3,l:'W'},{d:4,l:'Th'},{d:5,l:'F'},{d:6,l:'Sa'}].map(function(x){
-            var active=newRouteDays.indexOf(x.d)!==-1;
-            return React.createElement('button',{key:x.d,type:'button',onClick:function(){setNewRouteDays(active?newRouteDays.filter(function(v){return v!==x.d}):newRouteDays.concat([x.d]).sort())},
-              style:{padding:'4px 10px',borderRadius:'4px',fontSize:'12px',fontWeight:'bold',border:active?'1px solid #3b82f6':'1px solid #475569',background:active?'rgba(59,130,246,0.3)':'transparent',color:active?'#fff':'#64748b',cursor:'pointer'}},x.l)})))),
-
-    React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px',justifyContent:'center',flexWrap:'wrap'}},
-      React.createElement('button',{onClick:function(){setViewWeek(viewWeek-1)},style:{...S.cancel,padding:'8px 16px'}},'\u2190 Prev'),
-      React.createElement('span',{style:{padding:'8px 16px',color:viewWeek===0?'#60a5fa':viewWeek>0?'#f59e0b':'#94a3b8',fontWeight:'bold'}},
-        fmtD(currentWeekOf)+' - '+fmtD(addDays(currentWeekOf,5))+
-        (viewWeek===0?' (This Week)':viewWeek===1?' (Next Week)':viewWeek>1?' ('+viewWeek+' Weeks Out)':'')),
-      React.createElement('button',{onClick:function(){setViewWeek(viewWeek+1)},style:{...S.cancel,padding:'8px 16px'}},'Next \u2192'),
-      viewWeek!==0&&React.createElement('button',{onClick:function(){setViewWeek(0)},style:{...S.btn,padding:'8px 16px',fontSize:'12px'}},'This Week')),
-
-    loadError&&React.createElement('div',{style:{...S.card,background:'rgba(239,68,68,0.1)',border:'2px solid #ef4444',marginBottom:'16px'}},
-      React.createElement('div',{style:{fontWeight:'bold',color:'#ef4444',marginBottom:'4px'}},'⚠️ Load Error'),
-      React.createElement('div',{style:{color:'#fca5a5',fontSize:'13px'}},loadError)),
-
-    showDebug&&React.createElement('div',{style:{...S.card,background:'rgba(59,130,246,0.05)',border:'1px solid #3b82f6',marginBottom:'16px',fontSize:'12px'}},
-      React.createElement('div',{style:{fontWeight:'bold',color:'#60a5fa',marginBottom:'8px'}},'🔍 Debug Panel'),
-      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'12px'}},
-        React.createElement('div',null,
-          React.createElement('div',{style:{color:'#94a3b8'}},'Query Range:'),
-          React.createElement('div',{style:{color:'#fff',fontWeight:'bold'}},lastLoad?lastLoad.start+' to '+lastLoad.end:'Not loaded yet')),
-        React.createElement('div',null,
-          React.createElement('div',{style:{color:'#94a3b8'}},'Last Loaded:'),
-          React.createElement('div',{style:{color:'#fff',fontWeight:'bold'}},lastLoad?lastLoad.time:'Never')),
-        React.createElement('div',null,
-          React.createElement('div',{style:{color:'#94a3b8'}},'API Entries Returned:'),
-          React.createElement('div',{style:{fontSize:'20px',fontWeight:'bold',color:avail.length>0?'#4ade80':'#ef4444'}},avail.length)),
-        React.createElement('div',null,
-          React.createElement('div',{style:{color:'#94a3b8'}},'Active Drivers in Matrix:'),
-          React.createElement('div',{style:{fontSize:'20px',fontWeight:'bold',color:activeDrivers.length>0?'#4ade80':'#ef4444'}},activeDrivers.length))),
-      lastLoad&&lastLoad.entries&&lastLoad.entries.length>0&&React.createElement('div',null,
-        React.createElement('div',{style:{fontWeight:'bold',color:'#60a5fa',marginBottom:'4px'}},'Entries Found:'),
-        React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'11px'}},
-          React.createElement('thead',null,React.createElement('tr',{style:{borderBottom:'1px solid #334155'}},
-            React.createElement('th',{style:{textAlign:'left',padding:'4px',color:'#94a3b8'}},'Driver'),
-            React.createElement('th',{style:{textAlign:'left',padding:'4px',color:'#94a3b8'}},'ID'),
-            React.createElement('th',{style:{textAlign:'left',padding:'4px',color:'#94a3b8'}},'Date'),
-            React.createElement('th',{style:{textAlign:'left',padding:'4px',color:'#94a3b8'}},'Confirmed'),
-            React.createElement('th',{style:{textAlign:'left',padding:'4px',color:'#94a3b8'}},'Admin OK'),
-            React.createElement('th',{style:{textAlign:'left',padding:'4px',color:'#94a3b8'}},'Routes'))),
-          React.createElement('tbody',null,lastLoad.entries.map(function(e,i){
-            return React.createElement('tr',{key:i,style:{borderBottom:'1px solid #1e293b'}},
-              React.createElement('td',{style:{padding:'4px',color:'#e2e8f0'}},e.driver||'?'),
-              React.createElement('td',{style:{padding:'4px',color:'#94a3b8'}},e.driver_id),
-              React.createElement('td',{style:{padding:'4px',color:'#e2e8f0'}},e.date),
-              React.createElement('td',{style:{padding:'4px',color:e.confirmed?'#4ade80':'#ef4444'}},e.confirmed?'YES':'NO'),
-              React.createElement('td',{style:{padding:'4px',color:e.admin_confirmed?'#4ade80':'#f59e0b'}},e.admin_confirmed?'YES':'NO'),
-              React.createElement('td',{style:{padding:'4px',color:'#60a5fa'}},e.routes))})))),
-      lastLoad&&lastLoad.entries&&lastLoad.entries.length===0&&React.createElement('div',{style:{color:'#f59e0b',padding:'8px'}},'⚠️ No availability entries found for this date range. Drivers may not have confirmed availability for this week.'),
-      React.createElement('div',{style:{marginTop:'8px',color:'#475569',fontSize:'10px'}},'Drivers list IDs: '+activeDrivers.map(function(d){return d.name+'('+d.id+')'}).join(', '))),
-
-    React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'12px',marginBottom:'20px'}},
-      React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#22c55e'}},availCount),React.createElement('div',{style:{color:'#94a3b8',fontSize:'12px'}},'Requested')),
-      React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#059669'}},confirmedCount),React.createElement('div',{style:{color:'#94a3b8',fontSize:'12px'}},'Admin Confirmed')),
-      React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:gapCount>0?'#ef4444':'#22c55e'}},gapCount),React.createElement('div',{style:{color:'#94a3b8',fontSize:'12px'}},'No Response')),
-      React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#f59e0b'}},activeDrivers.length),React.createElement('div',{style:{color:'#94a3b8',fontSize:'12px'}},'Active Drivers')),
-      React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#60a5fa'}},avail.length),React.createElement('div',{style:{color:'#94a3b8',fontSize:'12px'}},'Raw Entries Loaded'))),
-
-    React.createElement('div',{style:{...S.card,overflowX:'auto'}},
-      React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'700px'}},
+    React.createElement('div',{style:{overflowX:'auto'}},
+      React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'800px'}},
         React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
-          React.createElement('th',{style:{padding:'10px',textAlign:'left',fontSize:'13px',minWidth:'120px',position:'sticky',left:0,background:'#0f172a',zIndex:2}},'Driver'),
-          dayNums.map(function(dn,i){var dateStr=addDays(currentWeekOf,i);
-            return React.createElement('th',{key:dn,style:{padding:'10px',textAlign:'center',fontSize:'12px'}},
-              React.createElement('div',{style:{fontWeight:'bold'}},dayNames[i]),
-              React.createElement('div',{style:{fontSize:'11px',color:'#94a3b8'}},fmtD(dateStr)))}))),
-        React.createElement('tbody',null,activeDrivers.map(function(d){
-          return React.createElement('tr',{key:d.id,style:{borderBottom:'1px solid #334155'}},
-            React.createElement('td',{style:{padding:'8px',fontWeight:'500',position:'sticky',left:0,background:'#1e293b',zIndex:1}},d.name),
-            dayNums.map(function(dn,i){
-              var dateStr=addDays(currentWeekOf,i);
-              var av=getDriverAvail(d.id,dateStr);
-              var asgn=getDriverAssigned(d.id,dn);
-              var isConfirmed=av&&av.admin_confirmed;
-              var bg,icon;
-              var selections=(av&&av.route_selections)||[];
-              if(typeof selections==='string')try{selections=JSON.parse(selections)}catch(e){selections=[]}
+          React.createElement('th',{style:{padding:'10px',textAlign:'left',minWidth:'160px',fontSize:'13px'}},'Shift'),
+          React.createElement('th',{style:{padding:'10px',textAlign:'center',fontSize:'11px'}},'Pay'),
+          dayDates.map((d,i)=>React.createElement('th',{key:d,style:{padding:'10px',textAlign:'center',fontSize:'13px',background:localDateStr(new Date())===d?'rgba(59,130,246,0.2)':'transparent'}},
+            dayNames[i],React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},fmtD(d).replace(/\/26$/,'')))))),
+        React.createElement('tbody',null,
+          shifts.map(shift=>{
+            var cat=catColors[shift.category]||'#64748b';
+            return React.createElement('tr',{key:shift.id,style:{borderBottom:'1px solid #1e293b'}},
+              React.createElement('td',{style:{padding:'10px',borderLeft:'3px solid '+cat}},
+                React.createElement('div',{style:{fontWeight:'bold',fontSize:'14px'}},shift.name),
+                React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},(shift.start_time||'')+' - '+(shift.end_time||''),shift.hours?' ('+shift.hours+'h)':'')),
+              React.createElement('td',{style:{padding:'6px',textAlign:'center',fontSize:'12px',color:'#4ade80'}},shift.base_pay?fmtC(shift.base_pay)+(shift.heavy_pay?'/'+fmtC(shift.heavy_pay):''):'$20/hr'),
+              dayDates.map((date,di)=>{
+                var dow=new Date(date+'T12:00:00').getDay();
+                if(shift.name==='Laundry Day Fri'&&dow!==5)return React.createElement('td',{key:date,style:{padding:'6px',background:'#0f172a'}});
+                if(shift.name==='Laundry Day Sat'&&dow!==6)return React.createElement('td',{key:date,style:{padding:'6px',background:'#0f172a'}});
+                var a=getAssignment(shift.id,date);
+                var pay=getPay(shift,dow);
+                var isToday=localDateStr(new Date())===date;
+                return React.createElement('td',{key:date,style:{padding:'4px',textAlign:'center',background:isToday?'rgba(59,130,246,0.05)':'transparent',minWidth:'110px'},
+                  onClick:canManage&&!a?.admin_confirmed?function(){setAssigning({shift,date,current:a})}:undefined},
+                  a&&a.driver_id?React.createElement('div',{style:{background:a.admin_confirmed?'rgba(16,185,129,0.15)':'rgba(59,130,246,0.1)',borderRadius:'6px',padding:'6px',cursor:canManage?'pointer':'default',border:'1px solid '+(a.admin_confirmed?'#10b981':'#334155')}},
+                    React.createElement('div',{style:{fontWeight:'bold',fontSize:'13px',color:a.admin_confirmed?'#4ade80':'#e2e8f0'}},a.driver_name),
+                    React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},fmtC(parseFloat(a.pay_override||pay))),
+                    a.admin_confirmed&&React.createElement('span',{style:{fontSize:'10px'}},'\ud83d\udd12'))
+                  :a?React.createElement('div',{style:{borderRadius:'6px',padding:'8px',cursor:canManage?'pointer':'default',border:'1px dashed #475569',color:'#475569',fontSize:'12px'}},'Open')
+                  :React.createElement('div',{style:{padding:'8px',color:'#1e293b',fontSize:'12px'}},canManage?'+':''))}))})))),
 
-              if(isConfirmed){bg='rgba(5,150,105,0.2)';icon='\ud83d\udd12'}
-              else if(av&&av.confirmed){bg='rgba(34,197,94,0.15)';icon='\u2705'}
-              else{bg='rgba(239,68,68,0.05)';icon='\u2014'}
-
-              return React.createElement('td',{key:dn,style:{padding:'3px',textAlign:'center'}},
-                React.createElement('div',{style:{background:bg,borderRadius:'6px',padding:'4px 2px',fontSize:'10px',position:'relative'}},
-                  React.createElement('div',{style:{fontSize:'13px'}},icon),
-                  av&&av.confirmed&&selections.length>0&&selections.map(function(sel,si){
-                    return React.createElement('div',{key:si,style:{marginBottom:'2px'}},
-                      sel.route_name&&React.createElement('div',{style:{padding:'1px 3px',borderRadius:'3px',fontSize:'9px',fontWeight:'bold',background:getRouteColor(sel.route_name),color:'#fff',display:'inline-block'}},sel.route_name),
-                      sel.shift&&React.createElement('span',{style:{fontSize:'8px',color:'#60a5fa',marginLeft:'2px'}},sel.shift))}),
-                  av&&av.confirmed&&selections.length===0&&av.route_name&&React.createElement('div',{style:{padding:'1px 3px',borderRadius:'3px',fontSize:'9px',fontWeight:'bold',background:getRouteColor(av.route_name),color:'#fff',display:'inline-block'}},av.route_name),
-                  av&&av.confirmed&&av.notes&&React.createElement('div',{style:{fontSize:'8px',color:'#94a3b8',fontStyle:'italic',maxWidth:'80px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:'0 auto'}},av.notes),
-                  React.createElement('div',{style:{display:'flex',gap:'2px',justifyContent:'center',marginTop:'3px'}},
-                    isAdmin&&av&&av.confirmed&&!isConfirmed&&React.createElement('button',{onClick:function(e){e.stopPropagation();confirmOne(av.id)},
-                      style:{padding:'2px 6px',borderRadius:'4px',border:'1px solid #059669',background:'rgba(5,150,105,0.2)',color:'#4ade80',cursor:'pointer',fontSize:'9px',fontWeight:'bold'}},'\ud83d\udd12 Lock'),
-                    React.createElement('button',{onClick:function(e){e.stopPropagation();
-                      var existingSels=[];if(av&&selections.length>0){existingSels=selections.map(function(s){return{route_id:parseInt(s.route_id),shift:s.shift||null}})}
-                      setOverrideModal({driverId:d.id,driverName:d.name,date:dateStr,dayName:dayNames[i],existing:av||null});setOverrideSelections(existingSels);setOverrideNotes(av&&av.notes?av.notes:'')},
-                      style:{padding:'2px 6px',borderRadius:'4px',border:'1px solid '+(av&&av.confirmed?'#60a5fa':'#f59e0b'),background:'transparent',color:av&&av.confirmed?'#60a5fa':'#f59e0b',cursor:'pointer',fontSize:'9px'}},av&&av.confirmed?'\u270f\ufe0f Edit':'\u270f\ufe0f Assign'),
-                    av&&av.confirmed&&React.createElement('button',{onClick:function(e){e.stopPropagation();if(confirm(t.errRemoveConfirm.replace('{name}',d.name).replace('{day}',dayNames[i]))){api.del('/availability/'+av.id).then(function(){notify(t.removed);loadData()}).catch(function(err){alert(tErr(t,err.message))})}},
-                      style:{padding:'2px 4px',borderRadius:'4px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer',fontSize:'9px'}},'\u2715'))))}))})))),
-
-    React.createElement('div',{style:{...S.card,marginTop:'16px',background:'rgba(245,158,11,0.05)',border:'1px solid #f59e0b'}},
-      React.createElement('h3',{style:{color:'#f59e0b',marginBottom:'12px'}},'\u26a0\ufe0f Route Coverage'),
-      function(){
-        var activeRoutes=routes.filter(function(r){return r.status==='active'});
-        var allCovered=true;var rows=[];
-        dayNums.forEach(function(dn,i){
-          var dateStr=addDays(currentWeekOf,i);
-          var dayAvails=avail.filter(function(a){return normalizeDate(a.work_date)===normalizeDate(dateStr)&&a.confirmed});
-          var gaps=[];
-          activeRoutes.forEach(function(route){
-            if(route.active_days&&route.active_days.indexOf(dn)===-1)return;
-            var routeName=route.name;var rNameLower=routeName.toLowerCase();
-            var isShiftRoute=route.has_shifts||(rNameLower.includes('east')||rNameLower.includes('west'));
-            if(isShiftRoute){
-              var hasAM=false;var hasPM=false;var hasFull=false;var assignedDrivers=[];
-              dayAvails.forEach(function(a){
-                var sels=(a.route_selections)||[];if(typeof sels==='string')try{sels=JSON.parse(sels)}catch(e){sels=[]}
-                sels.forEach(function(s){
-                  if(parseInt(s.route_id)===route.id){
-                    assignedDrivers.push(a.driver_name);
-                    var sh=(s.shift||'Full Day').toLowerCase();
-                    if(sh==='am')hasAM=true;else if(sh==='pm')hasPM=true;else if(sh.includes('full'))hasFull=true}})});
-              var missing=[];
-              if(!hasFull&&!hasAM)missing.push('AM');
-              if(!hasFull&&!hasPM)missing.push('PM');
-              if(missing.length>0){allCovered=false;gaps.push({route:routeName,color:getRouteColor(routeName),missing:missing.join(' + '),drivers:assignedDrivers})}
-            }else{
-              var assigned=[];
-              dayAvails.forEach(function(a){
-                var sels=(a.route_selections)||[];if(typeof sels==='string')try{sels=JSON.parse(sels)}catch(e){sels=[]}
-                sels.forEach(function(s){if(parseInt(s.route_id)===route.id)assigned.push(a.driver_name)})});
-              if(assigned.length===0){allCovered=false;gaps.push({route:routeName,color:getRouteColor(routeName),missing:'No driver',drivers:[]})}}});
-          if(gaps.length>0)rows.push({day:dayNames[i],date:dateStr,gaps:gaps})});
-        if(allCovered)return React.createElement('div',{style:{color:'#22c55e',fontSize:'15px',padding:'8px'}},'\u2705 All routes are covered for the week!');
-        return React.createElement('div',null,rows.map(function(row){
-          return React.createElement('div',{key:row.date,style:{marginBottom:'12px',padding:'10px',background:'rgba(239,68,68,0.05)',borderRadius:'8px',border:'1px solid #7f1d1d'}},
-            React.createElement('div',{style:{fontWeight:'bold',fontSize:'14px',marginBottom:'6px',color:'#f59e0b'}},row.day+' \u2014 '+fmtD(row.date)),
-            row.gaps.map(function(g,gi){
-              return React.createElement('div',{key:gi,style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px',paddingLeft:'8px'}},
-                React.createElement('span',{style:{padding:'2px 8px',borderRadius:'4px',fontSize:'11px',fontWeight:'bold',background:g.color,color:'#fff'}},g.route),
-                React.createElement('span',{style:{color:'#ef4444',fontSize:'13px',fontWeight:'bold'}},'\u274c '+g.missing),
-                g.drivers.length>0&&React.createElement('span',{style:{color:'#94a3b8',fontSize:'11px'}},'(has: '+g.drivers.join(', ')+')'))}))}))}()),
-
-    overrideModal&&React.createElement('div',{style:S.modal,onClick:function(e){if(e.target===e.currentTarget)setOverrideModal(null)}},
-      React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'440px',border:'1px solid #f59e0b',maxHeight:'90vh',overflowY:'auto'}},
-        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},
-          React.createElement('h3',{style:{margin:0}},(isAdmin?'Admin':'Manager')+' Assign: '+overrideModal.driverName),
-          React.createElement('button',{onClick:function(){setOverrideModal(null)},style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'\u00d7')),
+    assigning&&React.createElement('div',{style:S.modal,onClick:e=>{if(e.target===e.currentTarget)setAssigning(null)}},
+      React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'400px',border:'1px solid #334155'}},
+        React.createElement('div',{style:{padding:'16px',borderBottom:'1px solid #334155',display:'flex',justifyContent:'space-between'}},
+          React.createElement('h3',{style:{margin:0}},assigning.shift.name+' - '+fmtD(assigning.date)),
+          React.createElement('button',{onClick:()=>setAssigning(null),style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'\u00d7')),
         React.createElement('div',{style:{padding:'16px'}},
-          React.createElement('div',{style:{textAlign:'center',marginBottom:'16px'}},
-            React.createElement('div',{style:{fontSize:'18px',fontWeight:'bold'}},overrideModal.dayName+' \u2014 '+fmtD(overrideModal.date))),
-          React.createElement('div',{style:{marginBottom:'12px'}},
-            React.createElement('label',{style:S.lbl},'Routes (tap to toggle)'),
-            React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}},
-              routes.filter(function(r){return r.status==='active'}).map(function(r){
-                var isSel=overrideSelections.some(function(s){return parseInt(s.route_id)===r.id});var clr=getRouteColor(r.name);
-                var schoolsBlocked=null;
-                if(r.name.toLowerCase().indexOf('schools')!==-1&&overrideModal){
-                  var wd=new Date(overrideModal.date+'T12:00:00');var dow=wd.getDay();
-                  if(dow===5||dow===6){var otherD=new Date(wd);otherD.setDate(wd.getDate()+(dow===5?1:-1));var otherStr=localDateStr(otherD);
-                    var otherAvail=avail.find(function(a){return normalizeDate(a.work_date)===otherStr&&a.confirmed&&a.route_selections&&a.route_selections.some(function(s){return parseInt(s.route_id)===r.id})});
-                    if(otherAvail)schoolsBlocked='Pickup '+(dow===5?'Sat':'Fri')+' \u2192 '+otherAvail.driver_name}}
-                return React.createElement('button',{key:r.id,type:'button',onClick:function(){if(!schoolsBlocked)toggleOverrideRoute(r.id)},
-                  style:{padding:'10px',borderRadius:'8px',border:isSel?'2px solid '+clr:schoolsBlocked?'1px solid #ef4444':'1px solid #475569',background:isSel?clr+'22':schoolsBlocked?'rgba(239,68,68,0.1)':'transparent',color:isSel?'#fff':schoolsBlocked?'#ef4444':'#94a3b8',cursor:schoolsBlocked?'not-allowed':'pointer',fontWeight:'bold',fontSize:'13px',position:'relative',opacity:schoolsBlocked?0.6:1}},
-                  schoolsBlocked?r.name+' \u2014 \u2705 '+schoolsBlocked:isSel?'\u2705 '+r.name:r.name)}))),
-          overrideSelections.length>0&&React.createElement('div',{style:{marginBottom:'12px'}},
-            React.createElement('label',{style:S.lbl},'Selected Routes & Shifts'),
-            overrideSelections.map(function(sel){
-              var rt=routes.find(function(r){return r.id===parseInt(sel.route_id)});if(!rt)return null;
-              var clr=getRouteColor(rt.name);
-              return React.createElement('div',{key:sel.route_id,style:{padding:'8px',borderRadius:'8px',border:'1px solid '+clr,background:clr+'11',marginBottom:'6px'}},
-                React.createElement('div',{style:{fontWeight:'bold',fontSize:'13px',color:'#fff',marginBottom:rt.has_shifts?'6px':'0'}},'\ud83d\udea3 '+rt.name),
-                rt.has_shifts&&React.createElement('div',{style:{display:'flex',gap:'6px'}},
-                  [{v:'Full Day',l:'Full Day'},{v:'AM',l:'AM'},{v:'PM',l:'PM'}].map(function(o){return React.createElement('button',{key:o.v,type:'button',onClick:function(){setOverrideRouteShift(sel.route_id,o.v)},
-                    style:{flex:1,padding:'6px',borderRadius:'6px',border:sel.shift===o.v?'2px solid #3b82f6':'1px solid #475569',background:sel.shift===o.v?'rgba(59,130,246,0.2)':'transparent',color:'#fff',cursor:'pointer',fontWeight:'bold',fontSize:'11px'}},o.l)})))})),
-          React.createElement('div',{style:{marginBottom:'16px'}},
-            React.createElement('label',{style:S.lbl},'Notes'),
-            React.createElement('textarea',{value:overrideNotes,onChange:function(e){setOverrideNotes(e.target.value)},style:{...S.inp,height:'50px'},placeholder:''})),
-          React.createElement('div',{style:{display:'flex',gap:'12px'}},
-            React.createElement('button',{onClick:function(){setOverrideModal(null)},style:{...S.cancel,flex:1,padding:'12px'}},'Cancel'),
-            React.createElement('button',{onClick:adminOverride,style:{...S.btn,flex:1,padding:'12px',background:'#f59e0b',opacity:overrideSelections.length>0?1:0.5}},'\ud83d\udd12 Assign & Confirm ('+overrideSelections.length+')'))))));
+          React.createElement('div',{style:{marginBottom:'12px',fontSize:'13px',color:'#94a3b8'}},'Select driver:'),
+          drivers.filter(d=>d.status==='active').map(d=>React.createElement('button',{key:d.id,onClick:()=>assign(assigning.shift.id,assigning.date,d.id),style:{display:'block',width:'100%',padding:'10px',marginBottom:'6px',borderRadius:'6px',border:'1px solid #475569',background:'transparent',color:'#e2e8f0',cursor:'pointer',textAlign:'left',fontSize:'14px'}},d.name)),
+          assigning.current&&assigning.current.driver_id&&React.createElement('div',{style:{borderTop:'1px solid #334155',paddingTop:'12px',marginTop:'8px',display:'flex',gap:'8px'}},
+            React.createElement('button',{onClick:()=>{remove(assigning.current.id);setAssigning(null)},style:{flex:1,padding:'8px',borderRadius:'6px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer'}},'Remove Driver'),
+            isAdmin&&React.createElement('button',{onClick:()=>{toggleLock(assigning.current.id,assigning.current.admin_confirmed);setAssigning(null)},style:{flex:1,padding:'8px',borderRadius:'6px',border:'1px solid #f59e0b',background:'transparent',color:'#fbbf24',cursor:'pointer'}},assigning.current.admin_confirmed?'\ud83d\udd13 Unlock':'\ud83d\udd12 Lock'))))));
 }
 
+function ShiftRequests({requests,shifts,drivers,notify,onRefresh}){
+  const pending=requests.filter(r=>r.status==='pending');
+  const handled=requests.filter(r=>r.status!=='pending');
+  const handleRequest=async(id,status)=>{try{await api.put('/shift-requests/'+id,{status});await onRefresh();notify(status==='approved'?'Approved':'Denied')}catch(e){alert(e.message)}};
+  return React.createElement('div',null,
+    React.createElement('h3',{style:{marginBottom:'16px'}},'\ud83d\udce8 Pending Requests ('+pending.length+')'),
+    pending.length===0&&React.createElement('div',{style:{...S.card,textAlign:'center',color:'#64748b'}},'No pending requests'),
+    pending.map(r=>React.createElement('div',{key:r.id,style:{...S.card,display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+      React.createElement('div',null,
+        React.createElement('div',{style:{fontWeight:'bold'}},r.driver_name),
+        React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8'}},r.shift_name+' - '+fmtD(r.work_date)),
+        r.notes&&React.createElement('div',{style:{fontSize:'12px',color:'#64748b',marginTop:'4px'}},r.notes)),
+      React.createElement('div',{style:{display:'flex',gap:'6px'}},
+        React.createElement('button',{onClick:()=>handleRequest(r.id,'approved'),style:{padding:'6px 16px',borderRadius:'6px',border:'none',background:'#10b981',color:'#fff',cursor:'pointer',fontWeight:'bold'}},'\u2713 Approve'),
+        React.createElement('button',{onClick:()=>handleRequest(r.id,'denied'),style:{padding:'6px 16px',borderRadius:'6px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer'}},'Deny')))),
+    handled.length>0&&React.createElement('details',{style:{marginTop:'20px'}},
+      React.createElement('summary',{style:{cursor:'pointer',color:'#64748b'}},'Handled ('+handled.length+')'),
+      handled.map(r=>React.createElement('div',{key:r.id,style:{padding:'8px',borderBottom:'1px solid #1e293b',fontSize:'13px',color:'#64748b'}},
+        r.driver_name+' - '+r.shift_name+' - '+fmtD(r.work_date)+' - ',
+        React.createElement('span',{style:{color:r.status==='approved'?'#10b981':'#ef4444'}},r.status)))));
+}
+
+function ShiftEditor({shifts,notify,onRefresh}){
+  const[editing,setEditing]=useState(null);
+  const[f,setF]=useState({name:'',start_time:'',end_time:'',hours:'',base_pay:'',heavy_pay:'',heavy_days:'',category:'regular',sort_order:99,notes:''});
+  const save=async()=>{
+    try{if(editing){await api.put('/shifts/'+editing,f)}else{await api.post('/shifts',f)}
+    await onRefresh();notify('Saved');setEditing(null);setF({name:'',start_time:'',end_time:'',hours:'',base_pay:'',heavy_pay:'',heavy_days:'',category:'regular',sort_order:99,notes:''})}catch(e){alert(e.message)}};
+  const del=async(id)=>{if(!confirm('Deactivate this shift?'))return;try{await api.del('/shifts/'+id);await onRefresh();notify('Deactivated')}catch(e){alert(e.message)}};
+  const catColors={west:'#3b82f6',east:'#10b981',morris:'#f59e0b',laundry:'#8b5cf6',other:'#64748b'};
+  return React.createElement('div',null,
+    React.createElement('h3',{style:{marginBottom:'16px'}},'\u2699\ufe0f Manage Shifts'),
+    shifts.map(s=>React.createElement('div',{key:s.id,style:{...S.card,marginBottom:'8px',display:'flex',justifyContent:'space-between',alignItems:'center',borderLeft:'3px solid '+(catColors[s.category]||'#64748b')}},
+      React.createElement('div',null,
+        React.createElement('div',{style:{fontWeight:'bold'}},s.name),
+        React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8'}},(s.start_time||'?')+' - '+(s.end_time||'?')+' | $'+(s.base_pay||0)+(s.heavy_pay?'/$'+s.heavy_pay:'')+' | '+s.category),
+        s.notes&&React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},s.notes)),
+      React.createElement('div',{style:{display:'flex',gap:'6px'}},
+        React.createElement('button',{onClick:()=>{setEditing(s.id);setF({name:s.name,start_time:s.start_time||'',end_time:s.end_time||'',hours:s.hours||'',base_pay:s.base_pay||'',heavy_pay:s.heavy_pay||'',heavy_days:s.heavy_days||'',category:s.category||'regular',sort_order:s.sort_order||0,notes:s.notes||''})},style:S.edit},'Edit'),
+        React.createElement('button',{onClick:()=>del(s.id),style:S.del},'\u2715')))),
+    React.createElement('div',{style:{...S.card,marginTop:'16px',border:'1px solid #8b5cf6'}},
+      React.createElement('h4',{style:{marginBottom:'12px'}},editing?'Edit Shift':'Add Shift'),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}},
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Name'),React.createElement('input',{value:f.name,onChange:e=>setF({...f,name:e.target.value}),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Category'),React.createElement('select',{value:f.category,onChange:e=>setF({...f,category:e.target.value}),style:S.inp},
+          ['west','east','morris','laundry','other'].map(c=>React.createElement('option',{key:c,value:c},c)))),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Start Time'),React.createElement('input',{value:f.start_time,onChange:e=>setF({...f,start_time:e.target.value}),style:S.inp,placeholder:'7:30'})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'End Time'),React.createElement('input',{value:f.end_time,onChange:e=>setF({...f,end_time:e.target.value}),style:S.inp,placeholder:'12:30'})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Hours'),React.createElement('input',{type:'number',value:f.hours,onChange:e=>setF({...f,hours:e.target.value}),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Base Pay $'),React.createElement('input',{type:'number',value:f.base_pay,onChange:e=>setF({...f,base_pay:e.target.value}),style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Heavy Day Pay $'),React.createElement('input',{type:'number',value:f.heavy_pay,onChange:e=>setF({...f,heavy_pay:e.target.value}),style:S.inp,placeholder:'Leave blank if same'})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Heavy Days (dow#)'),React.createElement('input',{value:f.heavy_days,onChange:e=>setF({...f,heavy_days:e.target.value}),style:S.inp,placeholder:'2,3 for Tue/Wed'})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Sort Order'),React.createElement('input',{type:'number',value:f.sort_order,onChange:e=>setF({...f,sort_order:e.target.value}),style:S.inp}))),
+      React.createElement('div',{style:{marginTop:'8px'}},React.createElement('label',{style:S.lbl},'Notes'),React.createElement('input',{value:f.notes,onChange:e=>setF({...f,notes:e.target.value}),style:S.inp})),
+      React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px'}},
+        React.createElement('button',{onClick:save,style:{...S.btn,flex:1}},editing?'Update Shift':'Add Shift'),
+        editing&&React.createElement('button',{onClick:()=>{setEditing(null);setF({name:'',start_time:'',end_time:'',hours:'',base_pay:'',heavy_pay:'',heavy_days:'',category:'regular',sort_order:99,notes:''})},style:{...S.cancel,flex:1}},'Cancel'))));
+}
 
 function PayrollPanel({drivers,notify}){
   const[periods,setPeriods]=useState([]);const[current,setCurrent]=useState(null);const[records,setRecords]=useState([]);
