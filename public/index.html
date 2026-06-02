@@ -1506,8 +1506,7 @@ function Schedule({isAdmin,notify,t,user}){
   const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat'];
   const dayDates=Array.from({length:6},(_,i)=>addDays(weekOf,i));
 
-  const tabs=['grid','drivers'];
-  if(canManage)tabs.push('requests');
+  const tabs=['grid','drivers','requests'];
   if(isAdmin)tabs.push('shifts');
 
   return React.createElement('div',null,
@@ -1516,7 +1515,7 @@ function Schedule({isAdmin,notify,t,user}){
         tb==='grid'?'\ud83d\udcc5 Schedule':tb==='drivers'?'\ud83d\ude97 Drivers':tb==='requests'?'\ud83d\udce8 Requests ('+requests.filter(r=>r.status==='pending').length+')':'\u2699\ufe0f Shifts'))),
     tab==='grid'&&React.createElement(ShiftGrid,{shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames,dayDates,isAdmin,canManage,notify,onRefresh:loadAssignments,loadAll}),
     tab==='drivers'&&React.createElement(DriversPanel,{drivers,notify,onRefresh:loadAll,isAdmin}),
-    tab==='requests'&&React.createElement(ShiftRequests,{requests,shifts,drivers,notify,onRefresh:function(){loadAll();loadAssignments()}}),
+    tab==='requests'&&React.createElement(ShiftRequests,{requests,shifts,drivers,notify,onRefresh:function(){loadAll();loadAssignments()},isAdmin,canManage}),
     tab==='shifts'&&React.createElement(ShiftEditor,{shifts,notify,onRefresh:loadAll}));
 }
 function DriversPanel({drivers,notify,onRefresh,isAdmin}){
@@ -1751,7 +1750,8 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
                     React.createElement('div',{style:{fontWeight:'bold',fontSize:'13px',color:a.admin_confirmed?'#4ade80':'#e2e8f0'}},a.driver_name),
                     isAdmin&&React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},fmtC(parseFloat(a.pay_override||pay))),
                     a.admin_confirmed&&React.createElement('span',{style:{fontSize:'10px'}},'\ud83d\udd12'))
-                  :a?React.createElement('div',{style:{borderRadius:'6px',padding:'8px',cursor:canManage?'pointer':'default',border:'1px dashed #475569',color:'#475569',fontSize:'12px'}},'Open')
+                  :a?React.createElement('div',{style:{borderRadius:'6px',padding:'8px',cursor:canManage?'pointer':'default',border:'1px dashed #475569',color:'#475569',fontSize:'12px'}},
+                    canManage?'Open':React.createElement('button',{onClick:function(e){e.stopPropagation();var dName=prompt('Enter your name to request this shift:');if(dName){api.post('/shift-requests',{shift_id:shift.id,work_date:date,driver_name:dName}).then(function(){onRefresh();loadAll();notify('Request submitted')}).catch(function(err){alert(err.message)})}},style:{background:'none',border:'1px solid #8b5cf6',color:'#c4b5fd',borderRadius:'4px',padding:'4px 8px',cursor:'pointer',fontSize:'11px'}},'Request'))
                   :React.createElement('div',{style:{padding:'8px',color:'#1e293b',fontSize:'12px'}},canManage?'+':''))}))})))),
 
     assigning&&React.createElement('div',{style:S.modal,onClick:e=>{if(e.target===e.currentTarget)setAssigning(null)}},
@@ -1772,7 +1772,7 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
             isAdmin&&React.createElement('button',{onClick:()=>{toggleLock(assigning.current.id,assigning.current.admin_confirmed);setAssigning(null)},style:{flex:1,padding:'8px',borderRadius:'6px',border:'1px solid #f59e0b',background:'transparent',color:'#fbbf24',cursor:'pointer'}},assigning.current.admin_confirmed?'\ud83d\udd13 Unlock':'\ud83d\udd12 Lock'))))));
 }
 
-function ShiftRequests({requests,shifts,drivers,notify,onRefresh}){
+function ShiftRequests({requests,shifts,drivers,notify,onRefresh,isAdmin,canManage}){
   const pending=requests.filter(r=>r.status==='pending');
   const handled=requests.filter(r=>r.status!=='pending');
   const handleRequest=async(id,status)=>{try{await api.put('/shift-requests/'+id,{status});await onRefresh();notify(status==='approved'?'Approved':'Denied')}catch(e){alert(e.message)}};
@@ -1784,7 +1784,7 @@ function ShiftRequests({requests,shifts,drivers,notify,onRefresh}){
         React.createElement('div',{style:{fontWeight:'bold'}},r.driver_name),
         React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8'}},r.shift_name+' - '+fmtD(r.work_date)),
         r.notes&&React.createElement('div',{style:{fontSize:'12px',color:'#64748b',marginTop:'4px'}},r.notes)),
-      React.createElement('div',{style:{display:'flex',gap:'6px'}},
+      canManage&&React.createElement('div',{style:{display:'flex',gap:'6px'}},
         React.createElement('button',{onClick:()=>handleRequest(r.id,'approved'),style:{padding:'6px 16px',borderRadius:'6px',border:'none',background:'#10b981',color:'#fff',cursor:'pointer',fontWeight:'bold'}},'\u2713 Approve'),
         React.createElement('button',{onClick:()=>handleRequest(r.id,'denied'),style:{padding:'6px 16px',borderRadius:'6px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer'}},'Deny')))),
     handled.length>0&&React.createElement('details',{style:{marginTop:'20px'}},
