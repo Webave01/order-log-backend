@@ -189,6 +189,70 @@ async function initDB() {
       )
     `);
 
+    // Shifts definition
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS shifts (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        start_time VARCHAR(10),
+        end_time VARCHAR(10),
+        hours DECIMAL(4,1),
+        base_pay DECIMAL(10,2),
+        heavy_pay DECIMAL(10,2),
+        heavy_days TEXT DEFAULT '',
+        day_of_week INTEGER,
+        category VARCHAR(50) DEFAULT 'regular',
+        sort_order INTEGER DEFAULT 0,
+        active BOOLEAN DEFAULT true,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Shift assignments (who works what shift on what date)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS shift_assignments (
+        id SERIAL PRIMARY KEY,
+        shift_id INTEGER REFERENCES shifts(id) ON DELETE CASCADE,
+        driver_id INTEGER REFERENCES drivers(id) ON DELETE CASCADE,
+        work_date DATE NOT NULL,
+        status VARCHAR(20) DEFAULT 'assigned',
+        pay_override DECIMAL(10,2),
+        admin_confirmed BOOLEAN DEFAULT false,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(shift_id, work_date)
+      )
+    `);
+
+    // Shift requests from drivers
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS shift_requests (
+        id SERIAL PRIMARY KEY,
+        shift_id INTEGER REFERENCES shifts(id) ON DELETE CASCADE,
+        driver_name VARCHAR(100) NOT NULL,
+        work_date DATE NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Seed default shifts if empty
+    const shiftCount = await client.query('SELECT COUNT(*) FROM shifts');
+    if (parseInt(shiftCount.rows[0].count) === 0) {
+      await client.query(`INSERT INTO shifts (name, start_time, end_time, hours, base_pay, heavy_pay, heavy_days, category, sort_order, notes) VALUES
+        ('West AM', '7:30', '12:30', 5, 75, 80, '2,3', 'west', 1, 'Includes Morris pickup'),
+        ('West PM', '14:00', '18:00', 4, 65, NULL, '', 'west', 2, 'West side last trip'),
+        ('East AM', '7:00', '12:00', 5, 75, NULL, '', 'east', 3, 'East side + Skyblue/Riverside'),
+        ('East PM', '12:30', '17:30', 5, 75, NULL, '', 'east', 4, 'East side + last trip upper west'),
+        ('Morris PM', '16:30', '18:30', 2, 50, NULL, '', 'morris', 5, 'Morris/west side daily'),
+        ('Laundry Day Fri', '10:30', '13:30', 3, 75, 100, '', 'laundry', 6, '<30 bags = $75, 30+ = $100'),
+        ('Laundry Day Sat', '10:30', '13:30', 3, 75, 100, '', 'laundry', 7, '<30 bags = $75, 30+ = $100'),
+        ('Schools/Other', NULL, NULL, NULL, NULL, NULL, '', 'other', 8, '$20/hr based on route times')
+      `);
+    }
+
     // =============================================
     // DRIVER SCHEDULING & PAY TABLES
     // =============================================
@@ -207,6 +271,14 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+      ALTER TABLE drivers ADD COLUMN IF NOT EXISTS day_rate DECIMAL(10,2);
+      ALTER TABLE drivers ADD COLUMN IF NOT EXISTS pay_type VARCHAR(20) DEFAULT 'hourly';
+      ALTER TABLE drivers ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) DEFAULT 'cash';
+      ALTER TABLE drivers ADD COLUMN IF NOT EXISTS dl_number VARCHAR(50);
+      ALTER TABLE drivers ADD COLUMN IF NOT EXISTS dl_expiration DATE;
+      ALTER TABLE drivers ADD COLUMN IF NOT EXISTS address TEXT;
+      ALTER TABLE drivers ADD COLUMN IF NOT EXISTS ssn VARCHAR(20);
+      ALTER TABLE drivers ADD COLUMN IF NOT EXISTS zelle_info VARCHAR(100);
       CREATE TABLE IF NOT EXISTS routes (
         id SERIAL PRIMARY KEY,
         name VARCHAR(50) NOT NULL,
