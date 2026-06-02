@@ -1515,11 +1515,11 @@ function Schedule({isAdmin,notify,t,user}){
       tabs.map(tb=>React.createElement('button',{key:tb,onClick:()=>setTab(tb),style:{padding:'10px 16px',borderRadius:'8px',border:'none',cursor:'pointer',fontWeight:'500',background:tab===tb?'linear-gradient(90deg,#3b82f6,#8b5cf6)':'transparent',color:tab===tb?'#fff':'#94a3b8'}},
         tb==='grid'?'\ud83d\udcc5 Schedule':tb==='drivers'?'\ud83d\ude97 Drivers':tb==='requests'?'\ud83d\udce8 Requests ('+requests.filter(r=>r.status==='pending').length+')':'\u2699\ufe0f Shifts'))),
     tab==='grid'&&React.createElement(ShiftGrid,{shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames,dayDates,isAdmin,canManage,notify,onRefresh:loadAssignments,loadAll}),
-    tab==='drivers'&&React.createElement(DriversPanel,{drivers,notify,onRefresh:loadAll}),
+    tab==='drivers'&&React.createElement(DriversPanel,{drivers,notify,onRefresh:loadAll,isAdmin}),
     tab==='requests'&&React.createElement(ShiftRequests,{requests,shifts,drivers,notify,onRefresh:function(){loadAll();loadAssignments()}}),
     tab==='shifts'&&React.createElement(ShiftEditor,{shifts,notify,onRefresh:loadAll}));
 }
-function DriversPanel({drivers,notify,onRefresh}){
+function DriversPanel({drivers,notify,onRefresh,isAdmin}){
   const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[tab,setTab]=useState('basic');const[expand,setExpand]=useState(null);
   const[showRates,setShowRates]=useState(false);
   const[showDeactivated,setShowDeactivated]=useState(false);const[deactivated,setDeactivated]=useState([]);
@@ -1555,15 +1555,21 @@ function DriversPanel({drivers,notify,onRefresh}){
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px'}},
       React.createElement('h2',{style:{margin:0}},'\ud83d\ude97 Drivers'),
       React.createElement('div',{style:{display:'flex',gap:'8px'}},
-        React.createElement('button',{onClick:function(){setShowRates(!showRates)},style:{background:'none',border:'1px solid #475569',borderRadius:'8px',padding:'6px 14px',cursor:'pointer',color:showRates?'#4ade80':'#64748b',fontSize:'13px'}},showRates?'\ud83d\udc41\ufe0f Hide Pay':'\ud83d\udc41\ufe0f Show Pay'),
-        React.createElement('button',{onClick:function(){setShowDeactivated(!showDeactivated)},style:{background:'none',border:showDeactivated?'1px solid #ef4444':'1px solid #475569',borderRadius:'8px',padding:'6px 14px',cursor:'pointer',color:showDeactivated?'#ef4444':'#64748b',fontSize:'13px'}},showDeactivated?'\u2715 Hide Deactivated':'\ud83d\udcc2 Show Deactivated'),
-        React.createElement('button',{onClick:()=>{setEd(null);setF({...emptyF});setTab('basic');setShow(true)},style:S.btn},'+ Add Driver'),
-        !drivers.some(function(d){return d.name.toLowerCase().includes('manager')})&&
+        isAdmin&&React.createElement('button',{onClick:function(){setShowRates(!showRates)},style:{background:'none',border:'1px solid #475569',borderRadius:'8px',padding:'6px 14px',cursor:'pointer',color:showRates?'#4ade80':'#64748b',fontSize:'13px'}},showRates?'\ud83d\udc41\ufe0f Hide Pay':'\ud83d\udc41\ufe0f Show Pay'),
+        isAdmin&&React.createElement('button',{onClick:function(){setShowDeactivated(!showDeactivated)},style:{background:'none',border:showDeactivated?'1px solid #ef4444':'1px solid #475569',borderRadius:'8px',padding:'6px 14px',cursor:'pointer',color:showDeactivated?'#ef4444':'#64748b',fontSize:'13px'}},showDeactivated?'\u2715 Hide Deactivated':'\ud83d\udcc2 Show Deactivated'),
+        isAdmin&&React.createElement('button',{onClick:()=>{setEd(null);setF({...emptyF});setTab('basic');setShow(true)},style:S.btn},'+ Add Driver'),
+        isAdmin&&!drivers.some(function(d){return d.name.toLowerCase().includes('manager')})&&
           React.createElement('button',{onClick:async function(){
             try{await api.post('/drivers',{name:'Manager (Admin)',phone:'',pay_type:'flat_day',day_rate:0,payment_method:'cash',worker_type:'1099',status:'active',notes:'Admin driver - no login needed. Assign routes directly from schedule.'});
             notify('Manager driver added');await onRefresh()}catch(e){alert(e.message)}},
             style:{...S.btn,background:'#f59e0b',fontSize:'12px'}},'\ud83d\udc51 Add Manager'))),
 
+    !isAdmin?
+    React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
+      drivers.filter(function(d){return d.status==='active'}).map(function(d){return React.createElement('div',{key:d.id,style:{...S.card,borderLeft:'4px solid #22c55e'}},
+        React.createElement('div',{style:{fontWeight:'bold',fontSize:'16px',marginBottom:'6px'}},d.name),
+        d.phone&&React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8',marginBottom:'4px'}},'\ud83d\udcf1 '+d.phone),
+        d.email&&React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8'}},'\u2709\ufe0f '+d.email))})):
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))',gap:'12px'}},
       drivers.map(d=>React.createElement('div',{key:d.id,style:{...S.card,borderLeft:d.status==='active'?'4px solid #22c55e':'4px solid #64748b',cursor:'pointer'},onClick:()=>setExpand(expand===d.id?null:d.id)},
         React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
@@ -1610,7 +1616,7 @@ function DriversPanel({drivers,notify,onRefresh}){
               React.createElement('button',{onClick:function(e){e.stopPropagation();openEdit(d)},style:S.edit},'Edit'),
               React.createElement('button',{onClick:function(e){e.stopPropagation();reactivate(d.id)},style:{...S.btn,background:'#22c55e',padding:'6px 16px',fontSize:'13px'}},'\u2714 Reactivate'))))}))),
 
-    show&&React.createElement('div',{style:S.modal},
+    isAdmin&&show&&React.createElement('div',{style:S.modal},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'520px',maxHeight:'90vh',overflow:'auto',border:'1px solid #334155'}},
         React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155',position:'sticky',top:0,background:'#1e293b',zIndex:5}},
           React.createElement('h3',{style:{margin:0}},(ed?'Edit':'Add')+' Driver'),
