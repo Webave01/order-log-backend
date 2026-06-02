@@ -1485,13 +1485,12 @@ function Schedule({isAdmin,notify,t,user}){
   const[shifts,setShifts]=useState([]);
   const[assignments,setAssignments]=useState([]);
   const[requests,setRequests]=useState([]);
-  const[weekOf,setWeekOf]=useState('');
-  const canManage=isAdmin||(user&&user.permissions&&user.permissions.includes('manage_schedule'));
-
   function getMonday(d){const dt=new Date(d);const day=dt.getDay();const diff=dt.getDate()-(day===0?6:day-1);dt.setDate(diff);return localDateStr(dt)}
+  const[weekOf,setWeekOf]=useState(getMonday(new Date()));
+  const canManage=isAdmin||(user&&user.permissions&&user.permissions.includes('manage_schedule'));
   function addDays(ds,n){const d=new Date(ds+'T12:00:00');d.setDate(d.getDate()+n);return localDateStr(d)}
 
-  useEffect(()=>{setWeekOf(getMonday(new Date()));loadAll()},[]);
+  useEffect(()=>{loadAll()},[]);
   const loadAll=async()=>{
     try{var d=await api.get('/drivers');setDrivers(d)}catch(e){}
     try{var s=await api.get('/shifts');setShifts(s)}catch(e){}
@@ -1756,7 +1755,12 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
           React.createElement('button',{onClick:()=>setAssigning(null),style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'\u00d7')),
         React.createElement('div',{style:{padding:'16px'}},
           React.createElement('div',{style:{marginBottom:'12px',fontSize:'13px',color:'#94a3b8'}},'Select driver:'),
+          drivers.filter(d=>d.status==='active').length===0&&React.createElement('div',{style:{color:'#f87171',marginBottom:'12px',fontSize:'13px'}},'No drivers added yet. Add one below.'),
           drivers.filter(d=>d.status==='active').map(d=>React.createElement('button',{key:d.id,onClick:()=>assign(assigning.shift.id,assigning.date,d.id),style:{display:'block',width:'100%',padding:'10px',marginBottom:'6px',borderRadius:'6px',border:'1px solid #475569',background:'transparent',color:'#e2e8f0',cursor:'pointer',textAlign:'left',fontSize:'14px'}},d.name)),
+          React.createElement('div',{style:{borderTop:'1px solid #334155',paddingTop:'12px',marginTop:'8px'}},
+            React.createElement('div',{style:{display:'flex',gap:'6px'}},
+              React.createElement('input',{id:'quickAddDriver',placeholder:'New driver name',style:{...S.inp,flex:1,padding:'8px',fontSize:'13px'}}),
+              React.createElement('button',{onClick:async function(){var el=document.getElementById('quickAddDriver');var name=el.value.trim();if(!name)return;try{await api.post('/drivers',{name:name});await loadAll();el.value='';notify('Driver added')}catch(e){alert(e.message)}},style:{...S.btn,padding:'8px 16px',fontSize:'13px',whiteSpace:'nowrap'}},'+ Add'))),
           assigning.current&&assigning.current.driver_id&&React.createElement('div',{style:{borderTop:'1px solid #334155',paddingTop:'12px',marginTop:'8px',display:'flex',gap:'8px'}},
             React.createElement('button',{onClick:()=>{remove(assigning.current.id);setAssigning(null)},style:{flex:1,padding:'8px',borderRadius:'6px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer'}},'Remove Driver'),
             isAdmin&&React.createElement('button',{onClick:()=>{toggleLock(assigning.current.id,assigning.current.admin_confirmed);setAssigning(null)},style:{flex:1,padding:'8px',borderRadius:'6px',border:'1px solid #f59e0b',background:'transparent',color:'#fbbf24',cursor:'pointer'}},assigning.current.admin_confirmed?'\ud83d\udd13 Unlock':'\ud83d\udd12 Lock'))))));
