@@ -1700,7 +1700,7 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
   const assign=async(shiftId,date,driverId)=>{
     try{await api.post('/shift-assignments',{shift_id:shiftId,driver_id:driverId||null,work_date:date});await onRefresh();notify('Assigned');setAssigning(null)}catch(e){alert(e.message)}};
 
-  const remove=async(id)=>{try{await api.del('/shift-assignments/'+id);await onRefresh();notify('Removed')}catch(e){alert(e.message)}};
+  const remove=async(id)=>{try{await api.post('/shift-assignments',{shift_id:assignments.find(a=>a.id===id)?.shift_id,driver_id:null,work_date:assignments.find(a=>a.id===id)?.work_date?.split('T')[0]});await onRefresh();notify('Driver removed')}catch(e){alert(e.message)}};
 
   const toggleLock=async(id,current)=>{try{await api.put('/shift-assignments/'+id+'/confirm',{confirmed:!current});await onRefresh()}catch(e){alert(e.message)}};
 
@@ -1726,18 +1726,18 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
     React.createElement('div',{style:{overflowX:'auto'}},
       React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'800px'}},
         React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
-          React.createElement('th',{style:{padding:'10px',textAlign:'left',minWidth:'160px',fontSize:'13px'}},'Shift'),
-          isAdmin&&React.createElement('th',{style:{padding:'10px',textAlign:'center',fontSize:'11px'}},'Pay'),
+          React.createElement('th',{style:{padding:'10px',textAlign:'left',minWidth:'140px',fontSize:'13px',position:'sticky',left:0,background:'#0f172a',zIndex:2}},'Shift'),
+          isAdmin&&React.createElement('th',{style:{padding:'10px',textAlign:'center',fontSize:'11px',position:'sticky',left:'140px',background:'#0f172a',zIndex:2}},'Pay'),
           dayDates.map((d,i)=>React.createElement('th',{key:d,style:{padding:'10px',textAlign:'center',fontSize:'13px',background:localDateStr(new Date())===d?'rgba(59,130,246,0.2)':'transparent'}},
             dayNames[i],React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},fmtD(d).replace(/\/26$/,'')))))),
         React.createElement('tbody',null,
           shifts.map(shift=>{
             var cat=catColors[shift.category]||'#64748b';
             return React.createElement('tr',{key:shift.id,style:{borderBottom:'1px solid #1e293b'}},
-              React.createElement('td',{style:{padding:'10px',borderLeft:'3px solid '+cat}},
+              React.createElement('td',{style:{padding:'10px',borderLeft:'3px solid '+cat,position:'sticky',left:0,background:'#1e293b',zIndex:1}},
                 React.createElement('div',{style:{fontWeight:'bold',fontSize:'14px'}},shift.name),
                 React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},(shift.start_time||'')+' - '+(shift.end_time||''),shift.hours?' ('+shift.hours+'h)':'')),
-              isAdmin&&React.createElement('td',{style:{padding:'6px',textAlign:'center',fontSize:'12px',color:'#4ade80'}},shift.base_pay?fmtC(shift.base_pay)+(shift.heavy_pay?'/'+fmtC(shift.heavy_pay):''):'$20/hr'),
+              isAdmin&&React.createElement('td',{style:{padding:'6px',textAlign:'center',fontSize:'12px',color:'#4ade80',position:'sticky',left:'140px',background:'#1e293b',zIndex:1}},shift.base_pay?fmtC(shift.base_pay)+(shift.heavy_pay?'/'+fmtC(shift.heavy_pay):''):'$20/hr'),
               dayDates.map((date,di)=>{
                 var dow=new Date(date+'T12:00:00').getDay();
                 if(shift.name==='Laundry Day Fri'&&dow!==5)return React.createElement('td',{key:date,style:{padding:'6px',background:'#0f172a'}});
