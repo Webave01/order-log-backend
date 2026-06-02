@@ -214,9 +214,12 @@ module.exports = function(pool, authenticate, adminOnly) {
       const existing = await pool.query('SELECT * FROM shift_assignments WHERE shift_id = $1 AND work_date = $2', [shift_id, work_date]);
       if (existing.rows.length > 0) {
         // Update existing
+        const newStatus = driver_id ? 'assigned' : 'open';
         const result = await pool.query(
-          'UPDATE shift_assignments SET driver_id=$1, pay_override=$2, notes=$3, status=$4 WHERE shift_id=$5 AND work_date=$6 RETURNING *',
-          [driver_id, pay_override || null, notes, 'assigned', shift_id, work_date]
+          driver_id ? 
+            'UPDATE shift_assignments SET driver_id=$1, pay_override=$2, notes=$3, status=$4 WHERE shift_id=$5 AND work_date=$6 RETURNING *' :
+            'UPDATE shift_assignments SET driver_id=NULL, pay_override=NULL, notes=$1, status=$2, admin_confirmed=false WHERE shift_id=$3 AND work_date=$4 RETURNING *',
+          driver_id ? [driver_id, pay_override || null, notes, newStatus, shift_id, work_date] : [notes, 'open', shift_id, work_date]
         );
         return res.json(result.rows[0]);
       }
