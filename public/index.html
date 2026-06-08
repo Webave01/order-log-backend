@@ -1067,8 +1067,10 @@ function Payments({cleaners,settings,t}){
     if(payView==='monthly'&&d.orders&&d.orders.length>0){
       weeklyBreakdown={};
       d.orders.forEach(function(o){
-        var dt=new Date(o.pickup_date);var dow=dt.getDay();var monOffset=dow===0?6:dow-1;
-        var weekMon=new Date(dt);weekMon.setDate(dt.getDate()-monOffset);
+        var dateStr=o.pickup_date?o.pickup_date.split('T')[0]:null;
+        if(!dateStr)return;
+        var dt=new Date(dateStr+'T12:00:00');var dow=dt.getDay();var monOffset=dow===0?6:dow-1;
+        var weekMon=new Date(dt.getTime());weekMon.setDate(dt.getDate()-monOffset);
         var wk=localDateStr(weekMon);
         if(!weeklyBreakdown[wk])weeklyBreakdown[wk]={orders:[],total:0};
         weeklyBreakdown[wk].orders.push(o);weeklyBreakdown[wk].total+=parseFloat(o.total||0);
@@ -1212,7 +1214,7 @@ function Payments({cleaners,settings,t}){
             React.createElement('tbody',null,
               viewInv.isMonthly&&viewInv.weeklyBreakdown?
                 Object.keys(viewInv.weeklyBreakdown).sort().map(function(wk){
-                  var wb=viewInv.weeklyBreakdown[wk];var wkEnd=new Date(wk);wkEnd.setDate(wkEnd.getDate()+5);
+                  var wb=viewInv.weeklyBreakdown[wk];var wkEnd=new Date(wk+'T12:00:00');wkEnd.setDate(wkEnd.getDate()+5);
                   var rows=[];
                   rows.push(React.createElement('tr',{key:wk+'h',style:{background:'#e0e7ff'}},
                     React.createElement('td',{colSpan:7,style:{padding:'8px',fontWeight:'bold',fontSize:'13px',color:'#3730a3'}},'Week of '+fmtD(wk)+' - '+fmtD(localDateStr(wkEnd))+' ('+wb.orders.length+' orders, '+fmtC(wb.total)+')')));
