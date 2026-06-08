@@ -164,6 +164,19 @@ async function initDB() {
     // Order photos
     await client.query(`
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+    `);
+
+    // Order edit history
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS order_history (
+        id SERIAL PRIMARY KEY,
+        order_id INTEGER,
+        action VARCHAR(20),
+        previous_data JSONB,
+        changed_by VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
     `);
 
     // Driver applications (onboarding)
@@ -572,7 +585,7 @@ app.get('/api/orders', authenticate, async (req, res) => {
     const { cleaner_id, start_date, end_date, limit = 1500, search } = req.query;
     let query = 'SELECT o.* FROM orders o';
     const params = [];
-    const conditions = [];
+    const conditions = ['o.deleted_at IS NULL'];
 
     // Drivers only see their own orders
     if (req.user.role === 'driver') {
@@ -627,6 +640,8 @@ app.post('/api/orders', authenticate, async (req, res) => {
         order_num = '1000';
       }
     }
+    // Sunday orders → Saturday
+    if(pickup_date){var pd=new Date(pickup_date+'T12:00:00');if(pd.getDay()===0){pd.setDate(pd.getDate()-1);pickup_date=pd.toISOString().split('T')[0]}}
     const result = await pool.query(
       `INSERT INTO orders (order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
@@ -656,8 +671,13 @@ app.post('/api/orders/import', authenticate, async (req, res) => {
 
 app.put('/api/orders/:id', authenticate, async (req, res) => {
   const { id } = req.params;
-  const { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt } = req.body;
+  let { order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt } = req.body;
+  // Sunday orders → Saturday
+  if(pickup_date){var pd=new Date(pickup_date+'T12:00:00');if(pd.getDay()===0){pd.setDate(pd.getDate()-1);pickup_date=pd.toISOString().split('T')[0]}}
   try {
+    // Save previous state to history
+    const prev = await pool.query('SELECT * FROM orders WHERE id = $1', [id]);
+    if (prev.rows.length > 0) await pool.query('INSERT INTO order_history (order_id, action, previous_data, changed_by) VALUES ($1, $2, $3, $4)', [id, 'edit', JSON.stringify(prev.rows[0]), req.user.username]);
     const result = await pool.query(
       `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, customer_address=$11, customer_apt=$12, updated_at=CURRENT_TIMESTAMP WHERE id=$13 RETURNING *`,
       [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, customer_address || null, customer_apt || null, id]
@@ -672,12 +692,39 @@ app.put('/api/orders/:id', authenticate, async (req, res) => {
 
 app.delete('/api/orders/:id', authenticate, async (req, res) => {
   try {
-    const result = await pool.query('DELETE FROM orders WHERE id = $1 RETURNING *', [req.params.id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    res.json({ success: true });
+    // Save to history before soft-deleting
+    const order = await pool.query('SELECT * FROM orders WHERE id = $1', [req.params.id]);
+    if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    await pool.query('INSERT INTO order_history (order_id, action, previous_data, changed_by) VALUES ($1, $2, $3, $4)',
+      [req.params.id, 'delete', JSON.stringify(order.rows[0]), req.user.username]);
+    await pool.query('UPDATE orders SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
+    res.json({ success: true, deleted: order.rows[0] });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Undo last delete - restore soft-deleted order
+app.post('/api/orders/:id/restore', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('UPDATE orders SET deleted_at = NULL WHERE id = $1 RETURNING *', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    await pool.query('INSERT INTO order_history (order_id, action, changed_by) VALUES ($1, $2, $3)', [req.params.id, 'restore', req.user.username]);
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// Get recent order history (for undo/recall)
+app.get('/api/order-history', authenticate, async (req, res) => {
+  const { date } = req.query;
+  try {
+    let query = 'SELECT oh.*, o.order_num, o.cleaner_id, o.pickup_date, o.weight FROM order_history oh LEFT JOIN orders o ON oh.order_id = o.id';
+    const params = [];
+    if (date) { params.push(date); query += " WHERE DATE(oh.created_at) = $1"; }
+    query += ' ORDER BY oh.created_at DESC LIMIT 50';
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 // Order photos - upload (accepts base64 image, compresses on client)
@@ -1396,6 +1443,74 @@ app.get('/api/reports/daily', authenticate, requirePerm('reports'), async (req, 
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Trends data - aggregated by day, week, month
+app.get('/api/reports/trends', authenticate, requirePerm('reports'), async (req, res) => {
+  const { start_date, end_date, day_of_week } = req.query;
+  try {
+    let conditions = ['o.deleted_at IS NULL'];
+    const params = [];
+    if (start_date) { params.push(start_date); conditions.push(`o.pickup_date >= $${params.length}`); }
+    if (end_date) { params.push(end_date); conditions.push(`o.pickup_date <= $${params.length}`); }
+    if (day_of_week !== undefined && day_of_week !== '') { params.push(parseInt(day_of_week)); conditions.push(`EXTRACT(DOW FROM o.pickup_date) = $${params.length}`); }
+    const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+
+    // Daily data
+    const daily = await pool.query(`
+      SELECT o.pickup_date::date as date, COUNT(*) as orders, COALESCE(SUM(o.weight),0) as weight,
+        EXTRACT(DOW FROM o.pickup_date) as dow
+      FROM orders o${where}
+      GROUP BY o.pickup_date::date, EXTRACT(DOW FROM o.pickup_date)
+      ORDER BY o.pickup_date::date
+    `, params);
+
+    // Calculate amounts properly with cleaner rates
+    const dailyWithAmount = await pool.query(`
+      SELECT o.pickup_date::date as date, COUNT(*) as orders, COALESCE(SUM(o.weight),0) as weight,
+        EXTRACT(DOW FROM o.pickup_date) as dow
+      FROM orders o${where}
+      GROUP BY o.pickup_date::date, EXTRACT(DOW FROM o.pickup_date)
+      ORDER BY o.pickup_date::date
+    `, params);
+
+    // Weekly aggregation
+    const weekly = await pool.query(`
+      SELECT DATE_TRUNC('week', o.pickup_date)::date as week_start,
+        COUNT(*) as orders, COALESCE(SUM(o.weight),0) as weight
+      FROM orders o${where}
+      GROUP BY DATE_TRUNC('week', o.pickup_date)
+      ORDER BY week_start
+    `, params);
+
+    // Monthly aggregation
+    const monthly = await pool.query(`
+      SELECT TO_CHAR(o.pickup_date, 'YYYY-MM') as month,
+        COUNT(*) as orders, COALESCE(SUM(o.weight),0) as weight
+      FROM orders o${where}
+      GROUP BY TO_CHAR(o.pickup_date, 'YYYY-MM')
+      ORDER BY month
+    `, params);
+
+    // Day-of-week averages
+    const dowAvg = await pool.query(`
+      SELECT EXTRACT(DOW FROM o.pickup_date) as dow,
+        COUNT(*) as total_orders,
+        COUNT(DISTINCT o.pickup_date::date) as day_count,
+        ROUND(COUNT(*)::numeric / GREATEST(COUNT(DISTINCT o.pickup_date::date),1), 1) as avg_orders,
+        ROUND(SUM(o.weight)::numeric / GREATEST(COUNT(DISTINCT o.pickup_date::date),1), 1) as avg_weight
+      FROM orders o${where}
+      GROUP BY EXTRACT(DOW FROM o.pickup_date)
+      ORDER BY EXTRACT(DOW FROM o.pickup_date)
+    `, params);
+
+    res.json({
+      daily: daily.rows,
+      weekly: weekly.rows,
+      monthly: monthly.rows,
+      dowAvg: dowAvg.rows
+    });
+  } catch (err) { console.error('Trends error:', err); res.status(500).json({ error: 'Server error' }); }
 });
 
 app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async (req, res) => {
