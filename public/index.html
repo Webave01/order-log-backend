@@ -74,7 +74,7 @@ window.onerror=function(msg,src,line,col,err){
 };
 </script>
 <script>
-const{useState,useEffect}=React;
+const{useState,useEffect,useRef}=React;
 const API=location.hostname==='localhost'?'http://localhost:3001/api':'https://order-log-backend.onrender.com/api';
 const COLORS=['Army','Beige','Black','Blue','Brown','Cream','Flowers','Fresh Direct','Green','Grey','Ikea','Indigo','Maroon','Marshalls','Orange','Other','Pink','Plastic','Purple','Rainbow','Red','Shopping bag','Tan','Teal','Violet','White','Yellow'];
 const COLOR_ES={'Army':'Militar','Beige':'Beige','Black':'Negro','Blue':'Azul','Brown':'Marrón','Cream':'Cream','Flowers':'Flores','Fresh Direct':'Fresh Direct','Green':'Verde','Grey':'Gris','Ikea':'Ikea','Indigo':'Índigo','Maroon':'Maroon','Marshalls':'Marshalls','Orange':'Naranja','Other':'Otro','Pink':'Rosa','Plastic':'Plástico','Purple':'Morado','Rainbow':'Arcoíris','Red':'Rojo','Shopping bag':'Bolsa Compras','Tan':'Canela','Teal':'Verde Azulado','Violet':'Violeta','White':'Blanco','Yellow':'Amarillo'};
@@ -280,6 +280,8 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
   const[showStaffMgmt,setShowStaffMgmt]=useState(false);const[newStaffName,setNewStaffName]=useState('');
   const[showForm,setShowForm]=useState(false);const[editing,setEditing]=useState(null);const[search,setSearch]=useState('');const[showImport,setShowImport]=useState(false);
   const[searchResults,setSearchResults]=useState(null);const[searching,setSearching]=useState(false);const[filterCleaner,setFilterCleaner]=useState('');
+  const[undoData,setUndoData]=useState(null);const[undoTimer,setUndoTimer]=useState(null);const[priorDate,setPriorDate]=useState('');
+  const[priorOrders,setPriorOrders]=useState(null);
   const[photoModal,setPhotoModal]=useState(null);const[photoUploading,setPhotoUploading]=useState(false);
 
   const uploadPhoto=async(orderId,file)=>{
@@ -711,7 +713,104 @@ function Reports({t}){
                   ' / ',
                   React.createElement('span',{style:{color:'#60a5fa'}},dayPm))}),
               React.createElement('td',{style:{padding:'6px 10px',textAlign:'center',fontSize:'14px',background:'rgba(74,222,128,0.1)'}},
-                React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold'}},data.staffShifts.reduce(function(s,st){return s+st.totalOrders},0)+' orders')))))))));
+                React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold'}},data.staffShifts.reduce(function(s,st){return s+st.totalOrders},0)+' orders')))))))),
+    React.createElement(TrendsPanel,{t:t}));
+}
+
+function TrendsPanel({t}){
+  const[trendData,setTrendData]=useState(null);const[trendLd,setTrendLd]=useState(false);
+  const[tStart,setTStart]=useState('');const[tEnd,setTEnd]=useState('');const[tDow,setTDow]=useState('');
+  const[tView,setTView]=useState('weekly');
+  const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const dayLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  const setLast3M=()=>{var n=new Date();var s=new Date(n);s.setMonth(s.getMonth()-3);setTStart(localDateStr(s));setTEnd(localDateStr(n))};
+  const setLast6M=()=>{var n=new Date();var s=new Date(n);s.setMonth(s.getMonth()-6);setTStart(localDateStr(s));setTEnd(localDateStr(n))};
+  const setYTD=()=>{var n=new Date();setTStart(n.getFullYear()+'-01-01');setTEnd(localDateStr(n))};
+
+  const loadTrends=async()=>{if(!tStart||!tEnd)return;setTrendLd(true);
+    try{var url='/reports/trends?start_date='+tStart+'&end_date='+tEnd;if(tDow!=='')url+='&day_of_week='+tDow;
+      var r=await api.get(url);setTrendData(r)}catch(e){alert(e.message)}setTrendLd(false)};
+
+  const chartRef=useRef(null);
+  useEffect(()=>{
+    if(!trendData||!chartRef.current)return;
+    var canvas=chartRef.current;var ctx=canvas.getContext('2d');
+    var rows=tView==='weekly'?trendData.weekly:tView==='monthly'?trendData.monthly:trendData.daily;
+    if(!rows||rows.length===0){ctx.clearRect(0,0,canvas.width,canvas.height);return}
+    var w=canvas.width=canvas.parentElement.offsetWidth;var h=canvas.height=280;
+    ctx.clearRect(0,0,w,h);
+    var pad={t:30,r:20,b:50,l:60};var cw=w-pad.l-pad.r;var ch=h-pad.t-pad.b;
+    var vals=rows.map(function(r){return parseInt(r.orders)});
+    var wVals=rows.map(function(r){return parseFloat(r.weight)});
+    var maxV=Math.max.apply(null,vals)||1;var maxW=Math.max.apply(null,wVals)||1;
+    // Grid
+    ctx.strokeStyle='#334155';ctx.lineWidth=0.5;
+    for(var i=0;i<=4;i++){var y=pad.t+ch-ch*(i/4);ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();
+      ctx.fillStyle='#64748b';ctx.font='11px sans-serif';ctx.textAlign='right';ctx.fillText(Math.round(maxV*(i/4)),pad.l-8,y+4)}
+    // Orders line (blue)
+    ctx.strokeStyle='#3b82f6';ctx.lineWidth=2.5;ctx.beginPath();
+    vals.forEach(function(v,i){var x=pad.l+cw*(i/(vals.length-1||1));var y=pad.t+ch-ch*(v/maxV);if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();
+    // Weight line (green)
+    ctx.strokeStyle='#10b981';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);ctx.beginPath();
+    wVals.forEach(function(v,i){var x=pad.l+cw*(i/(wVals.length-1||1));var y=pad.t+ch-ch*(v/maxW);if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.setLineDash([]);
+    // Dots + labels
+    ctx.fillStyle='#3b82f6';
+    vals.forEach(function(v,i){var x=pad.l+cw*(i/(vals.length-1||1));var y=pad.t+ch-ch*(v/maxV);ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fill()});
+    // X labels
+    ctx.fillStyle='#64748b';ctx.font='10px sans-serif';ctx.textAlign='center';
+    var step=Math.max(1,Math.floor(rows.length/12));
+    rows.forEach(function(r,i){if(i%step===0||i===rows.length-1){var x=pad.l+cw*(i/(rows.length-1||1));
+      var label=tView==='monthly'?r.month:fmtD(r.week_start||r.date).replace(/\/26$/,'').replace(/\/25$/,'');
+      ctx.save();ctx.translate(x,h-pad.b+14);ctx.rotate(-0.5);ctx.fillText(label,0,0);ctx.restore()}});
+    // Legend
+    ctx.font='12px sans-serif';
+    ctx.fillStyle='#3b82f6';ctx.fillRect(pad.l,4,12,12);ctx.fillText('Orders',pad.l+16,14);
+    ctx.fillStyle='#10b981';ctx.fillRect(pad.l+80,4,12,12);ctx.fillText('Weight (lbs)',pad.l+96,14);
+  },[trendData,tView]);
+
+  var rows=trendData?(tView==='weekly'?trendData.weekly:tView==='monthly'?trendData.monthly:trendData.daily):[];
+
+  return React.createElement('div',{style:{...S.card,marginTop:'24px'}},
+    React.createElement('h3',{style:{marginBottom:'16px'}},'\ud83d\udcc8 Order Trends'),
+    React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr auto auto auto',gap:'8px',marginBottom:'16px',alignItems:'end'}},
+      React.createElement('div',null,React.createElement('label',{style:S.lbl},'From'),React.createElement('input',{type:'date',value:tStart,onChange:function(e){setTStart(e.target.value)},style:S.inp})),
+      React.createElement('div',null,React.createElement('label',{style:S.lbl},'To'),React.createElement('input',{type:'date',value:tEnd,onChange:function(e){setTEnd(e.target.value)},style:S.inp})),
+      React.createElement('button',{onClick:setLast3M,style:{...S.inp,cursor:'pointer',padding:'8px 10px',fontSize:'12px'}},'3 Mo'),
+      React.createElement('button',{onClick:setLast6M,style:{...S.inp,cursor:'pointer',padding:'8px 10px',fontSize:'12px'}},'6 Mo'),
+      React.createElement('button',{onClick:setYTD,style:{...S.inp,cursor:'pointer',padding:'8px 10px',fontSize:'12px'}},'YTD')),
+    React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px',alignItems:'center'}},
+      React.createElement('label',{style:{fontSize:'13px',color:'#94a3b8'}},'Day filter:'),
+      React.createElement('select',{value:tDow,onChange:function(e){setTDow(e.target.value)},style:{...S.inp,width:'130px',padding:'6px'}},
+        React.createElement('option',{value:''},'All days'),
+        dayLabels.map(function(d,i){return React.createElement('option',{key:i,value:i},d)})),
+      React.createElement('div',{style:{marginLeft:'auto',display:'flex',gap:'4px'}},
+        ['daily','weekly','monthly'].map(function(v){return React.createElement('button',{key:v,onClick:function(){setTView(v)},style:{padding:'6px 14px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'13px',fontWeight:'600',background:tView===v?'#3b82f6':'#0f172a',color:tView===v?'#fff':'#64748b'}},v.charAt(0).toUpperCase()+v.slice(1))})),
+      React.createElement('button',{onClick:loadTrends,disabled:trendLd,style:{...S.btn,marginLeft:'8px',opacity:trendLd?0.6:1}},trendLd?'Loading...':'Load')),
+    trendData&&React.createElement('div',null,
+      React.createElement('canvas',{ref:chartRef,style:{width:'100%',height:'280px',marginBottom:'16px'}}),
+      trendData.dowAvg&&trendData.dowAvg.length>0&&React.createElement('div',{style:{marginBottom:'16px'}},
+        React.createElement('h4',{style:{marginBottom:'8px',color:'#94a3b8'}},'Day-of-Week Averages'),
+        React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'6px'}},
+          trendData.dowAvg.map(function(d){return React.createElement('div',{key:d.dow,style:{background:'#0f172a',borderRadius:'8px',padding:'10px',textAlign:'center'}},
+            React.createElement('div',{style:{fontWeight:'bold',color:'#60a5fa',fontSize:'13px'}},dayLabels[d.dow]),
+            React.createElement('div',{style:{fontSize:'18px',fontWeight:'bold',marginTop:'4px'}},d.avg_orders),
+            React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},'orders/day'),
+            React.createElement('div',{style:{fontSize:'12px',color:'#10b981',marginTop:'2px'}},parseFloat(d.avg_weight).toLocaleString()+' lbs'))}))),
+      rows.length>0&&React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',marginTop:'12px'}},
+        React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
+          React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},tView==='daily'?'Date':tView==='weekly'?'Week':'Month'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},'Orders'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},'Weight (lbs)'))),
+        React.createElement('tbody',null,rows.map(function(r,i){
+          var label=tView==='monthly'?r.month:fmtD(r.week_start||r.date);
+          var prev=i>0?rows[i-1]:null;
+          var change=prev?parseInt(r.orders)-parseInt(prev.orders):0;
+          return React.createElement('tr',{key:i,style:{borderBottom:'1px solid #1e293b'}},
+            React.createElement('td',{style:{padding:'8px',fontSize:'13px'}},label,tView==='daily'?' ('+dayLabels[r.dow]+')':''),
+            React.createElement('td',{style:{padding:'8px',textAlign:'right',fontSize:'14px',fontWeight:'bold'}},r.orders,
+              change!==0&&React.createElement('span',{style:{fontSize:'11px',marginLeft:'6px',color:change>0?'#4ade80':'#f87171'}},change>0?'\u25b2'+change:'\u25bc'+Math.abs(change))),
+            React.createElement('td',{style:{padding:'8px',textAlign:'right',fontSize:'13px',color:'#94a3b8'}},parseFloat(r.weight).toLocaleString()))})))));
 }
 
 function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
@@ -1540,6 +1639,9 @@ function DriversPanel({drivers,notify,onRefresh,isAdmin}){
 
   const del=async(id)=>{if(!confirm('Deactivate this driver?'))return;
     try{await api.del('/drivers/'+id);notify('Driver deactivated');await onRefresh()}catch(e){alert(e.message)}};
+  const permDelete=async(id,name)=>{if(!confirm('PERMANENTLY DELETE '+name+'? This removes all their shift assignments and cannot be undone.'))return;
+    if(!confirm('Are you sure? Type OK to confirm.'))return;
+    try{await api.del('/drivers/'+id+'?force=true');notify('Driver permanently deleted');await onRefresh()}catch(e){alert(e.message)}};
 
   const openEdit=(d)=>{setEd(d);setF({name:d.name,phone:d.phone||'',hourly_rate:d.hourly_rate||16.50,day_rate:d.day_rate||200,
     pay_type:d.pay_type||'hourly',payment_method:d.payment_method||'cash',worker_type:d.worker_type||'1099',
