@@ -765,8 +765,8 @@ function TrendsPanel({t}){
       ctx.save();ctx.translate(x,h-pad.b+14);ctx.rotate(-0.5);ctx.fillText(label,0,0);ctx.restore()}});
     // Legend
     ctx.font='12px sans-serif';
-    ctx.fillStyle='#3b82f6';ctx.fillRect(pad.l,4,12,12);ctx.fillText('Orders',pad.l+16,14);
-    ctx.fillStyle='#10b981';ctx.fillRect(pad.l+80,4,12,12);ctx.fillText('Weight (lbs)',pad.l+96,14);
+    ctx.fillStyle='#3b82f6';ctx.fillRect(pad.l,6,10,10);ctx.fillStyle='#e2e8f0';ctx.fillText('Orders',pad.l+14,15);
+    ctx.fillStyle='#10b981';ctx.fillRect(pad.l+70,6,10,10);ctx.fillStyle='#e2e8f0';ctx.fillText('Weight (lbs)',pad.l+84,15);
   },[trendData,tView]);
 
   var rows=trendData?(tView==='weekly'?trendData.weekly:tView==='monthly'?trendData.monthly:trendData.daily):[];
@@ -799,18 +799,18 @@ function TrendsPanel({t}){
             React.createElement('div',{style:{fontSize:'12px',color:'#10b981',marginTop:'2px'}},parseFloat(d.avg_weight).toLocaleString()+' lbs'))}))),
       rows.length>0&&React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',marginTop:'12px'}},
         React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
-          React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},tView==='daily'?'Date':tView==='weekly'?'Week':'Month'),
-          React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},'Orders'),
-          React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},'Weight (lbs)'))),
+          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},tView==='daily'?'Date':tView==='weekly'?'Week':'Month'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Orders'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Weight (lbs)'))),
         React.createElement('tbody',null,rows.map(function(r,i){
           var label=tView==='monthly'?r.month:fmtD(r.week_start||r.date);
           var prev=i>0?rows[i-1]:null;
           var change=prev?parseInt(r.orders)-parseInt(prev.orders):0;
           return React.createElement('tr',{key:i,style:{borderBottom:'1px solid #1e293b'}},
-            React.createElement('td',{style:{padding:'8px',fontSize:'13px'}},label,tView==='daily'?' ('+dayLabels[r.dow]+')':''),
-            React.createElement('td',{style:{padding:'8px',textAlign:'right',fontSize:'14px',fontWeight:'bold'}},r.orders,
+            React.createElement('td',{style:{padding:'8px',fontSize:'13px',textAlign:'center'}},label,tView==='daily'?' ('+dayLabels[r.dow]+')':''),
+            React.createElement('td',{style:{padding:'8px',textAlign:'center',fontSize:'14px',fontWeight:'bold'}},r.orders,
               change!==0&&React.createElement('span',{style:{fontSize:'11px',marginLeft:'6px',color:change>0?'#4ade80':'#f87171'}},change>0?'\u25b2'+change:'\u25bc'+Math.abs(change))),
-            React.createElement('td',{style:{padding:'8px',textAlign:'right',fontSize:'13px',color:'#94a3b8'}},parseFloat(r.weight).toLocaleString()))})))));
+            React.createElement('td',{style:{padding:'8px',textAlign:'center',fontSize:'13px',color:'#94a3b8'}},parseFloat(r.weight).toLocaleString()))})))));
 }
 
 function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
