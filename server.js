@@ -130,6 +130,7 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(cleaner_id, week_start)
       );
+      ALTER TABLE invoice_tracking ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20) DEFAULT 'weekly';
     `);
 
     // Add congestion columns if they don't exist (for existing databases)
@@ -1650,10 +1651,10 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
 app.get('/api/invoice-tracking', authenticate, requirePerm('invoices'), async (req, res) => {
   try {
     const { billing_cycle } = req.query;
-    let query = `SELECT it.*, c.name as cleaner_name, c.route, COALESCE(c.billing_cycle, 'weekly') as billing_cycle
+    let query = `SELECT it.*, c.name as cleaner_name, c.route, COALESCE(it.billing_cycle, 'weekly') as billing_cycle
       FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id`;
     const params = [];
-    if (billing_cycle) { params.push(billing_cycle); query += ` WHERE COALESCE(c.billing_cycle, 'weekly') = $1`; }
+    if (billing_cycle) { params.push(billing_cycle); query += ` WHERE COALESCE(it.billing_cycle, 'weekly') = $1`; }
     query += ' ORDER BY it.week_start DESC, c.name';
     const result = await pool.query(query, params);
     res.json(result.rows);
@@ -1665,8 +1666,7 @@ app.get('/api/invoice-tracking', authenticate, requirePerm('invoices'), async (r
 app.get('/api/invoice-tracking/summary', authenticate, requirePerm('invoices'), async (req, res) => {
   try {
     const { billing_cycle } = req.query;
-    const bcFilter = billing_cycle ? " WHERE COALESCE(c.billing_cycle, 'weekly') = $1" : "";
-    const bcFilter2 = billing_cycle ? " WHERE it.cleaner_id IN (SELECT id FROM cleaners WHERE COALESCE(billing_cycle, 'weekly') = $1)" : "";
+    const bcFilter = billing_cycle ? " WHERE COALESCE(it.billing_cycle, 'weekly') = $1" : "";
     const params = billing_cycle ? [billing_cycle] : [];
     const result = await pool.query(`
       SELECT c.name as cleaner_name, c.route,
@@ -1678,7 +1678,7 @@ app.get('/api/invoice-tracking/summary', authenticate, requirePerm('invoices'), 
     `, params);
     const overall = await pool.query(`
       SELECT SUM(invoice_amount) as total_invoiced, SUM(amount_paid) as total_paid, SUM(invoice_amount - amount_paid) as total_due
-      FROM invoice_tracking it${bcFilter2}
+      FROM invoice_tracking it${bcFilter}
     `, params);
     res.json({ cleaners: result.rows, overall: overall.rows[0] });
   } catch (err) {
@@ -1744,9 +1744,9 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
       }
 
       await pool.query(
-        `INSERT INTO invoice_tracking (cleaner_id, week_start, week_end, invoice_amount) 
-         VALUES ($1, $2, $3, $4) ON CONFLICT (cleaner_id, week_start) DO UPDATE SET invoice_amount = $4`,
-        [cleaner.id, week_start, week_end, total]
+        `INSERT INTO invoice_tracking (cleaner_id, week_start, week_end, invoice_amount, billing_cycle) 
+         VALUES ($1, $2, $3, $4, $5) ON CONFLICT (cleaner_id, week_start) DO UPDATE SET invoice_amount = $4, billing_cycle = $5`,
+        [cleaner.id, week_start, week_end, total, billing_cycle || 'weekly']
       );
       generated++;
     }
@@ -1768,6 +1768,19 @@ app.put('/api/invoice-tracking/:id', authenticate, requirePerm('invoices'), asyn
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Bulk delete unpaid invoice records before a date
+app.delete('/api/invoice-tracking/bulk-unpaid', authenticate, adminOnly, async (req, res) => {
+  const { before_date, billing_cycle } = req.query;
+  if (!before_date) return res.status(400).json({ error: 'before_date required' });
+  try {
+    const result = await pool.query(
+      "DELETE FROM invoice_tracking WHERE status != 'paid' AND week_start < $1 AND COALESCE(billing_cycle, 'weekly') = $2 RETURNING id",
+      [before_date, billing_cycle || 'weekly']
+    );
+    res.json({ success: true, deleted: result.rows.length });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
 app.delete('/api/invoice-tracking/:id', authenticate, requirePerm('invoices'), async (req, res) => {
