@@ -226,7 +226,7 @@ function App(){
       view==='cleaners'&&hasPerm('cleaners')&&React.createElement(Cleaners,{cleaners,extras,cleanerExtras,notify,loadData,t}),
       view==='extras'&&hasPerm('extras')&&React.createElement(Extras,{extras,notify,loadData,t}),
       view==='invoices'&&hasPerm('invoices')&&React.createElement(Invoices,{cleaners,extras,cleanerExtras,settings,t}),
-      view==='payments'&&hasPerm('payments')&&React.createElement(Payments,{cleaners,settings,t}),
+      view==='payments'&&hasPerm('payments')&&React.createElement(Payments,{cleaners,settings,t,isAdmin}),
       view==='reports'&&hasPerm('reports')&&React.createElement(Reports,{t}),
       view==='errors'&&hasPerm('errors')&&React.createElement(Errors,{cleaners,extras,cleanerExtras,settings,notify,loadData,calcTotal,t}),
       view==='schedule'&&React.createElement(Schedule,{isAdmin,notify,t,user}),
@@ -1016,7 +1016,7 @@ function Invoices({cleaners,extras,cleanerExtras,settings,t}){
       React.createElement('div',{style:{textAlign:'center',marginTop:'16px',fontStyle:'italic',color:'#64748b'}},'Thank you for your business!')));
 }
 
-function Payments({cleaners,settings,t}){
+function Payments({cleaners,settings,t,isAdmin}){
   const[data,setData]=useState([]);const[summary,setSummary]=useState(null);const[ld,setLd]=useState(false);
   const[start,setStart]=useState('');const[end,setEnd]=useState('');const[editing,setEditing]=useState(null);
   const[editPay,setEditPay]=useState('');const[editNote,setEditNote]=useState('');const[editStat,setEditStat]=useState('unpaid');
@@ -1040,6 +1040,10 @@ function Payments({cleaners,settings,t}){
   const updatePayment=async(id,updates)=>{try{await api.put('/invoice-tracking/'+id,updates);await load();setEditing(null)}catch(e){alert(e.message)}};
   
   const deleteInvoice=async(id)=>{if(!confirm('Delete this invoice record?'))return;try{await api.del('/invoice-tracking/'+id);await load()}catch(e){alert(e.message)}};
+  const clearOldUnpaid=async()=>{var dt=prompt('Delete all UNPAID '+payView+' records before which date? (YYYY-MM-DD)');if(!dt)return;
+    if(!confirm('This will permanently delete all unpaid '+payView+' invoice records before '+dt+'. Continue?'))return;
+    try{var r=await api.del('/invoice-tracking/bulk-unpaid?before_date='+dt+'&billing_cycle='+payView);
+      alert('Deleted '+r.deleted+' records');await load()}catch(e){alert(e.message)}};
   
   const quickPay=async(inv)=>{try{await api.put('/invoice-tracking/'+inv.id,{amount_paid:parseFloat(inv.invoice_amount),status:'paid',paid_date:new Date().toISOString().split('T')[0]});await load()}catch(e){alert(e.message)}};
   
@@ -1115,7 +1119,8 @@ function Payments({cleaners,settings,t}){
         React.createElement('input',{value:paySearch,onChange:function(e){setPaySearch(e.target.value)},placeholder:'Filter by cleaner...',style:{...S.inp,width:'200px',padding:'8px 12px',fontSize:'13px'}}),
         React.createElement('button',{onClick:function(){setShowUnpaidOnly(!showUnpaidOnly)},style:{padding:'8px 12px',borderRadius:'6px',border:'1px solid '+(showUnpaidOnly?'#ef4444':'#475569'),background:showUnpaidOnly?'rgba(239,68,68,0.2)':'transparent',color:showUnpaidOnly?'#fca5a5':'#94a3b8',cursor:'pointer',fontSize:'12px',fontWeight:'600',whiteSpace:'nowrap'}},showUnpaidOnly?'🔴 Unpaid':'Unpaid'),
         (paySearch||showUnpaidOnly)&&React.createElement('button',{onClick:function(){setPaySearch('');setShowUnpaidOnly(false)},style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'12px'}},'Clear'),
-        React.createElement('button',{onClick:exportExcel,style:{...S.btn,background:'#059669'}},'Export Excel'))),
+        React.createElement('button',{onClick:exportExcel,style:{...S.btn,background:'#059669'}},'Export Excel'),
+        isAdmin&&React.createElement('button',{onClick:clearOldUnpaid,style:{...S.btn,background:'#dc2626',fontSize:'12px'}},'\ud83d\uddd1 Clear Old Unpaid'))),
     
     summary&&React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
       React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#60a5fa'}},fmtC(summary.overall.total_invoiced)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Invoiced')),
