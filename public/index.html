@@ -1907,7 +1907,8 @@ function ShiftEditor({shifts,notify,onRefresh}){
   const[editing,setEditing]=useState(null);
   const[f,setF]=useState({name:'',start_time:'',end_time:'',hours:'',base_pay:'',heavy_pay:'',heavy_days:'',category:'regular',sort_order:99,notes:''});
   const save=async()=>{
-    try{if(editing){await api.put('/shifts/'+editing,f)}else{await api.post('/shifts',f)}
+    var payload={...f,hours:f.hours?parseFloat(f.hours):null,base_pay:f.base_pay?parseFloat(f.base_pay):null,heavy_pay:f.heavy_pay?parseFloat(f.heavy_pay):null,sort_order:f.sort_order?parseInt(f.sort_order):99};
+    try{if(editing){await api.put('/shifts/'+editing,payload)}else{await api.post('/shifts',payload)}
     await onRefresh();notify('Saved');setEditing(null);setF({name:'',start_time:'',end_time:'',hours:'',base_pay:'',heavy_pay:'',heavy_days:'',category:'regular',sort_order:99,notes:''})}catch(e){alert(e.message)}};
   const del=async(id)=>{if(!confirm('Deactivate this shift?'))return;try{await api.del('/shifts/'+id);await onRefresh();notify('Deactivated')}catch(e){alert(e.message)}};
   const catColors={west:'#3b82f6',east:'#10b981',morris:'#f59e0b',laundry:'#8b5cf6',other:'#64748b'};
