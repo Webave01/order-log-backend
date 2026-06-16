@@ -1450,8 +1450,10 @@ app.get('/api/reports/daily', authenticate, requirePerm('reports'), async (req, 
 app.get('/api/reports/trends', authenticate, requirePerm('reports'), async (req, res) => {
   const { start_date, end_date, day_of_week } = req.query;
   try {
-    let conditions = ['o.deleted_at IS NULL'];
+    let conditions = [];
     const params = [];
+    // Only filter deleted if column exists
+    try { await pool.query("SELECT deleted_at FROM orders LIMIT 1"); conditions.push('o.deleted_at IS NULL'); } catch(e) {}
     if (start_date) { params.push(start_date); conditions.push(`o.pickup_date >= $${params.length}`); }
     if (end_date) { params.push(end_date); conditions.push(`o.pickup_date <= $${params.length}`); }
     if (day_of_week !== undefined && day_of_week !== '') { params.push(parseInt(day_of_week)); conditions.push(`EXTRACT(DOW FROM o.pickup_date) = $${params.length}`); }
@@ -1511,7 +1513,7 @@ app.get('/api/reports/trends', authenticate, requirePerm('reports'), async (req,
       monthly: monthly.rows,
       dowAvg: dowAvg.rows
     });
-  } catch (err) { console.error('Trends error:', err); res.status(500).json({ error: 'Server error' }); }
+  } catch (err) { console.error('Trends error:', err); res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async (req, res) => {
