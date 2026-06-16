@@ -636,13 +636,15 @@ function Reports({t}){
         React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setToday,style:{...S.inp,cursor:'pointer'}},t.today||'Today')),
         React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setTW,style:{...S.inp,cursor:'pointer'}},t.thisWeek)),
         React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer'}},t.lastWeek))),
-      React.createElement('button',{onClick:gen,disabled:ld,style:{...S.btn,width:'100%',opacity:ld?0.6:1}},ld?t.loading:t.generate)),
+      React.createElement('div',{style:{display:'flex',gap:'8px'}},
+          React.createElement('button',{onClick:gen,disabled:ld,style:{...S.btn,flex:1,opacity:ld?0.6:1}},ld?t.loading:t.generate),
+          React.createElement('button',{onClick:async function(){if(!start||!end){alert('Set dates');return}try{var r=await api.get('/reports/diag?start_date='+start+'&end_date='+end);alert('DB Diagnostic:\n\nQuery: '+r.query_range.start+' to '+r.query_range.end+'\nOrders in range: '+r.orders_in_range+'\nTotal orders in DB: '+r.total_orders_in_db+'\nEarliest order: '+r.earliest_order+'\nLatest order: '+r.latest_order+'\nSample days: '+JSON.stringify(r.sample_days,null,1))}catch(e){alert('Diag error: '+e.message)}},style:{...S.inp,cursor:'pointer',padding:'8px 12px',fontSize:'11px',color:'#f59e0b'}},'\ud83d\udd0d Diag'))),
     data&&React.createElement('div',null,
       React.createElement('div',{style:{display:'flex',gap:'8px',marginBottom:'16px'}},
         React.createElement('button',{onClick:exportExcel,style:{...S.btn,background:'#059669'}},'Export Excel'),
         React.createElement('button',{onClick:exportPDF,style:{...S.btn,background:'#dc2626'}},'Export PDF')),
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
-        React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'32px',fontWeight:'bold',color:'#4ade80'}},data.totals.total_orders||0),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},t.totalOrders)),
+        React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'32px',fontWeight:'bold',color:'#4ade80'}},data.totals.total_orders||0),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},t.totalOrders),data.totals.raw_query_count!==undefined&&React.createElement('div',{style:{color:'#64748b',fontSize:'11px',marginTop:'4px'}},'('+data.totals.raw_query_count+' rows from DB)')),
         React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'32px',fontWeight:'bold',color:'#60a5fa'}},Math.round(data.totals.total_weight||0).toLocaleString()),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},t.totalPounds)),
         React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'32px',fontWeight:'bold',color:'#f59e0b'}},fmtC(data.totals.total_amount)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},t.totalAmount))),
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
@@ -728,7 +730,7 @@ function TrendsPanel({t}){
   const setLast6M=()=>{var n=new Date();var s=new Date(n);s.setMonth(s.getMonth()-6);var sd=localDateStr(s);var ed=localDateStr(n);setTStart(sd);setTEnd(ed);loadTrends(sd,ed)};
   const setYTD=()=>{var n=new Date();var sd=n.getFullYear()+'-01-01';var ed=localDateStr(n);setTStart(sd);setTEnd(ed);loadTrends(sd,ed)};
 
-  const loadTrends=async(s,e)=>{var sd=s||tStart;var ed=e||tEnd;if(!sd||!ed)return;setTrendLd(true);
+  const loadTrends=async(s,e)=>{var sd=(typeof s==='string')?s:tStart;var ed=(typeof e==='string')?e:tEnd;if(!sd||!ed)return;setTrendLd(true);
     try{var url='/reports/trends?start_date='+sd+'&end_date='+ed;if(tDow!=='')url+='&day_of_week='+tDow;
       var r=await api.get(url);setTrendData(r)}catch(e){alert(e.message)}setTrendLd(false)};
 
@@ -786,7 +788,7 @@ function TrendsPanel({t}){
         dayLabels.map(function(d,i){return React.createElement('option',{key:i,value:i},d)})),
       React.createElement('div',{style:{marginLeft:'auto',display:'flex',gap:'4px'}},
         ['daily','weekly','monthly'].map(function(v){return React.createElement('button',{key:v,onClick:function(){setTView(v)},style:{padding:'6px 14px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'13px',fontWeight:'600',background:tView===v?'#3b82f6':'#0f172a',color:tView===v?'#fff':'#64748b'}},v.charAt(0).toUpperCase()+v.slice(1))})),
-      React.createElement('button',{onClick:loadTrends,disabled:trendLd,style:{...S.btn,marginLeft:'8px',opacity:trendLd?0.6:1}},trendLd?'Loading...':'Load')),
+      React.createElement('button',{onClick:function(){loadTrends()},disabled:trendLd,style:{...S.btn,marginLeft:'8px',opacity:trendLd?0.6:1}},trendLd?'Loading...':'Load')),
     trendData&&React.createElement('div',null,
       React.createElement('canvas',{ref:chartRef,style:{width:'100%',height:'280px',marginBottom:'16px'}}),
       trendData.dowAvg&&trendData.dowAvg.length>0&&React.createElement('div',{style:{marginBottom:'16px'}},
