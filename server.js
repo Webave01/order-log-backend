@@ -1210,7 +1210,7 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
     const ordersResult = await pool.query(
       `SELECT o.*, c.name as cleaner_name, c.rate as cleaner_rate, c.min_weight, c.congestion_zone, c.congestion_rate
        FROM orders o JOIN cleaners c ON o.cleaner_id = c.id 
-       WHERE o.cleaner_id = $1 AND o.pickup_date >= $2 AND o.pickup_date <= $3 ORDER BY o.pickup_date, o.order_num`,
+       WHERE o.cleaner_id = $1 AND o.pickup_date >= $2 AND o.pickup_date <= $3 AND (o.deleted_at IS NULL) ORDER BY o.pickup_date, o.order_num`,
       [cleaner_id, start_date, adjustedEnd]
     );
 
@@ -1446,6 +1446,25 @@ app.get('/api/reports/daily', authenticate, requirePerm('reports'), async (req, 
   }
 });
 
+// Diagnostic - raw order count for date range
+app.get('/api/reports/diag', authenticate, async (req, res) => {
+  const { start_date, end_date } = req.query;
+  try {
+    const r1 = await pool.query('SELECT COUNT(*) as cnt FROM orders WHERE pickup_date >= $1 AND pickup_date <= $2', [start_date, end_date]);
+    const r2 = await pool.query('SELECT COUNT(*) as cnt FROM orders');
+    const r3 = await pool.query('SELECT MIN(pickup_date) as earliest, MAX(pickup_date) as latest FROM orders');
+    const r4 = await pool.query('SELECT pickup_date::date, COUNT(*) as cnt FROM orders WHERE pickup_date >= $1 AND pickup_date <= $2 GROUP BY pickup_date::date ORDER BY pickup_date::date LIMIT 5', [start_date, end_date]);
+    res.json({
+      query_range: { start: start_date, end: end_date },
+      orders_in_range: parseInt(r1.rows[0].cnt),
+      total_orders_in_db: parseInt(r2.rows[0].cnt),
+      earliest_order: r3.rows[0].earliest,
+      latest_order: r3.rows[0].latest,
+      sample_days: r4.rows
+    });
+  } catch (err) { res.json({ error: err.message }); }
+});
+
 // Trends data - aggregated by day, week, month
 app.get('/api/reports/trends', authenticate, requirePerm('reports'), async (req, res) => {
   const { start_date, end_date, day_of_week } = req.query;
@@ -1536,12 +1555,13 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
 
     const settingsResult = await pool.query('SELECT * FROM settings');
     const settings = {};
-    settingsResult.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
+    settingsResult.rows.forEach(row => { var v = parseFloat(row.value); if (!isNaN(v)) settings[row.key] = v; });
 
     const ordersResult = await pool.query(
       'SELECT * FROM orders WHERE pickup_date >= $1 AND pickup_date <= $2',
       [start_date, end_date]
     );
+    console.log('daily-stats query:', start_date, 'to', end_date, '- found', ordersResult.rows.length, 'orders');
 
     let totalOrders = 0, totalWeight = 0, totalAmount = 0;
     let eastOrders = 0, eastAmount = 0, westOrders = 0, westAmount = 0;
@@ -1625,7 +1645,8 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
         total_congestion: totalCongestion, grand_total: totalAmount + totalCongestion,
         east_orders: eastOrders, east_amount: eastAmount, west_orders: westOrders, west_amount: westAmount,
         same_day_orders: sameDayOrders, same_day_weight: sameDayWeight,
-        twenty_four_hour_orders: twentyFourOrders, twenty_four_hour_weight: twentyFourWeight
+        twenty_four_hour_orders: twentyFourOrders, twenty_four_hour_weight: twentyFourWeight,
+        raw_query_count: ordersResult.rows.length
       },
       cleanerBreakdown: Object.values(cleanerStats).sort((a, b) => b.amount - a.amount),
       dailyBreakdown: Object.values(dailyStats).sort((a, b) => a.date.localeCompare(b.date)),
@@ -1645,7 +1666,7 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
     });
   } catch (err) {
     console.error('Daily stats error:', err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
