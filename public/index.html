@@ -724,12 +724,12 @@ function TrendsPanel({t}){
   const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const dayLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  const setLast3M=()=>{var n=new Date();var s=new Date(n);s.setMonth(s.getMonth()-3);setTStart(localDateStr(s));setTEnd(localDateStr(n))};
-  const setLast6M=()=>{var n=new Date();var s=new Date(n);s.setMonth(s.getMonth()-6);setTStart(localDateStr(s));setTEnd(localDateStr(n))};
-  const setYTD=()=>{var n=new Date();setTStart(n.getFullYear()+'-01-01');setTEnd(localDateStr(n))};
+  const setLast3M=()=>{var n=new Date();var s=new Date(n);s.setMonth(s.getMonth()-3);var sd=localDateStr(s);var ed=localDateStr(n);setTStart(sd);setTEnd(ed);loadTrends(sd,ed)};
+  const setLast6M=()=>{var n=new Date();var s=new Date(n);s.setMonth(s.getMonth()-6);var sd=localDateStr(s);var ed=localDateStr(n);setTStart(sd);setTEnd(ed);loadTrends(sd,ed)};
+  const setYTD=()=>{var n=new Date();var sd=n.getFullYear()+'-01-01';var ed=localDateStr(n);setTStart(sd);setTEnd(ed);loadTrends(sd,ed)};
 
-  const loadTrends=async()=>{if(!tStart||!tEnd)return;setTrendLd(true);
-    try{var url='/reports/trends?start_date='+tStart+'&end_date='+tEnd;if(tDow!=='')url+='&day_of_week='+tDow;
+  const loadTrends=async(s,e)=>{var sd=s||tStart;var ed=e||tEnd;if(!sd||!ed)return;setTrendLd(true);
+    try{var url='/reports/trends?start_date='+sd+'&end_date='+ed;if(tDow!=='')url+='&day_of_week='+tDow;
       var r=await api.get(url);setTrendData(r)}catch(e){alert(e.message)}setTrendLd(false)};
 
   const chartRef=useRef(null);
