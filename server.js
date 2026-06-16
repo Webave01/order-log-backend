@@ -1446,23 +1446,30 @@ app.get('/api/reports/daily', authenticate, requirePerm('reports'), async (req, 
   }
 });
 
-// Diagnostic - raw order count for date range
-app.get('/api/reports/diag', authenticate, async (req, res) => {
+// Invoice revenue summary from invoice_tracking
+app.get('/api/reports/invoice-revenue', authenticate, requirePerm('reports'), async (req, res) => {
   const { start_date, end_date } = req.query;
   try {
-    const r1 = await pool.query('SELECT COUNT(*) as cnt FROM orders WHERE pickup_date >= $1 AND pickup_date <= $2', [start_date, end_date]);
-    const r2 = await pool.query('SELECT COUNT(*) as cnt FROM orders');
-    const r3 = await pool.query('SELECT MIN(pickup_date) as earliest, MAX(pickup_date) as latest FROM orders');
-    const r4 = await pool.query('SELECT pickup_date::date, COUNT(*) as cnt FROM orders WHERE pickup_date >= $1 AND pickup_date <= $2 GROUP BY pickup_date::date ORDER BY pickup_date::date LIMIT 5', [start_date, end_date]);
-    res.json({
-      query_range: { start: start_date, end: end_date },
-      orders_in_range: parseInt(r1.rows[0].cnt),
-      total_orders_in_db: parseInt(r2.rows[0].cnt),
-      earliest_order: r3.rows[0].earliest,
-      latest_order: r3.rows[0].latest,
-      sample_days: r4.rows
-    });
-  } catch (err) { res.json({ error: err.message }); }
+    const totals = await pool.query(`
+      SELECT COUNT(*) as invoice_count, COALESCE(SUM(invoice_amount),0) as total_invoiced,
+        COALESCE(SUM(amount_paid),0) as total_paid, COALESCE(SUM(invoice_amount - amount_paid),0) as total_due
+      FROM invoice_tracking WHERE week_start >= $1 AND week_end <= $2`, [start_date, end_date]);
+
+    const byCleaner = await pool.query(`
+      SELECT c.name, c.route, COUNT(*) as invoices, COALESCE(SUM(it.invoice_amount),0) as invoiced,
+        COALESCE(SUM(it.amount_paid),0) as paid, COALESCE(SUM(it.invoice_amount - it.amount_paid),0) as due
+      FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id
+      WHERE it.week_start >= $1 AND it.week_end <= $2
+      GROUP BY c.id, c.name, c.route ORDER BY invoiced DESC`, [start_date, end_date]);
+
+    const byMonth = await pool.query(`
+      SELECT TO_CHAR(week_start, 'YYYY-MM') as month, COUNT(*) as invoices,
+        COALESCE(SUM(invoice_amount),0) as invoiced, COALESCE(SUM(amount_paid),0) as paid
+      FROM invoice_tracking WHERE week_start >= $1 AND week_end <= $2
+      GROUP BY TO_CHAR(week_start, 'YYYY-MM') ORDER BY month`, [start_date, end_date]);
+
+    res.json({ totals: totals.rows[0], byCleaner: byCleaner.rows, byMonth: byMonth.rows });
+  } catch (err) { console.error('Invoice revenue error:', err); res.status(500).json({ error: err.message }); }
 });
 
 // Trends data - aggregated by day, week, month
