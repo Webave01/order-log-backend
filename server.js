@@ -1573,6 +1573,8 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
     let totalOrders = 0, totalWeight = 0, totalAmount = 0;
     let eastOrders = 0, eastAmount = 0, westOrders = 0, westAmount = 0;
     let sameDayOrders = 0, sameDayWeight = 0, twentyFourOrders = 0, twentyFourWeight = 0;
+    let sameDayEast = 0, sameDayEastWeight = 0, sameDayWest = 0, sameDayWestWeight = 0;
+    let nextDayEast = 0, nextDayEastWeight = 0, nextDayWest = 0, nextDayWestWeight = 0;
     const cleanerStats = {};
     const dailyStats = {};
     const cleanerPickupDates = {};
@@ -1600,8 +1602,8 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
       if (cleaner.route === 'east') { eastOrders++; eastAmount += orderTotal; }
       else { westOrders++; westAmount += orderTotal; }
 
-      if (o.service_type === 'same-day') { sameDayOrders++; sameDayWeight += parseFloat(o.weight); }
-      else { twentyFourOrders++; twentyFourWeight += parseFloat(o.weight); }
+      if (o.service_type === 'same-day') { sameDayOrders++; sameDayWeight += parseFloat(o.weight); if(cleaner.route==='east'){sameDayEast++;sameDayEastWeight+=parseFloat(o.weight)}else{sameDayWest++;sameDayWestWeight+=parseFloat(o.weight)} }
+      else { twentyFourOrders++; twentyFourWeight += parseFloat(o.weight); if(cleaner.route==='east'){nextDayEast++;nextDayEastWeight+=parseFloat(o.weight)}else{nextDayWest++;nextDayWestWeight+=parseFloat(o.weight)} }
 
       if (!cleanerStats[cleaner.id]) cleanerStats[cleaner.id] = { name: cleaner.name, route: cleaner.route, orders: 0, weight: 0, amount: 0, congestion_zone: cleaner.congestion_zone, congestion_rate: parseFloat(cleaner.congestion_rate || 5) };
       cleanerStats[cleaner.id].orders++;
@@ -1652,7 +1654,11 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
         total_congestion: totalCongestion, grand_total: totalAmount + totalCongestion,
         east_orders: eastOrders, east_amount: eastAmount, west_orders: westOrders, west_amount: westAmount,
         same_day_orders: sameDayOrders, same_day_weight: sameDayWeight,
+        same_day_east: sameDayEast, same_day_east_weight: sameDayEastWeight,
+        same_day_west: sameDayWest, same_day_west_weight: sameDayWestWeight,
         twenty_four_hour_orders: twentyFourOrders, twenty_four_hour_weight: twentyFourWeight,
+        next_day_east: nextDayEast, next_day_east_weight: nextDayEastWeight,
+        next_day_west: nextDayWest, next_day_west_weight: nextDayWestWeight,
         raw_query_count: ordersResult.rows.length
       },
       cleanerBreakdown: Object.values(cleanerStats).sort((a, b) => b.amount - a.amount),
