@@ -563,7 +563,7 @@ function Reports({t}){
   const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   
   const exportExcel=()=>{if(!data)return;const wb=XLSX.utils.book_new();
-    const summary=[['Summary',''],['Total Orders',data.totals.total_orders],['Total Weight (lbs)',Math.round(data.totals.total_weight)],['Total Amount',data.totals.total_amount],['',''],['East Orders',data.totals.east_orders],['East Amount',data.totals.east_amount],['West Orders',data.totals.west_orders],['West Amount',data.totals.west_amount],['',''],['Same-Day Orders',data.totals.same_day_orders],['Same-Day Weight',Math.round(data.totals.same_day_weight)],['24-Hour Orders',data.totals.twenty_four_hour_orders],['24-Hour Weight',Math.round(data.totals.twenty_four_hour_weight)]];
+    const summary=[['Summary',''],['Total Orders',data.totals.total_orders],['Total Weight (lbs)',Math.round(data.totals.total_weight)],['Total Amount',data.totals.total_amount],['',''],['East Orders',data.totals.east_orders],['East Amount',data.totals.east_amount],['West Orders',data.totals.west_orders],['West Amount',data.totals.west_amount],['',''],['Same-Day Orders',data.totals.same_day_orders],['Same-Day Weight',Math.round(data.totals.same_day_weight)],['  Same-Day East',data.totals.same_day_east],['  Same-Day East lbs',Math.round(data.totals.same_day_east_weight||0)],['  Same-Day West',data.totals.same_day_west],['  Same-Day West lbs',Math.round(data.totals.same_day_west_weight||0)],['',''],['24-Hour Orders',data.totals.twenty_four_hour_orders],['24-Hour Weight',Math.round(data.totals.twenty_four_hour_weight)],['  Next-Day East',data.totals.next_day_east],['  Next-Day East lbs',Math.round(data.totals.next_day_east_weight||0)],['  Next-Day West',data.totals.next_day_west],['  Next-Day West lbs',Math.round(data.totals.next_day_west_weight||0)]];
     XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(summary),'Summary');
     if(data.cleanerBreakdown?.length>0){const clnRows=[['Cleaner','Route','Orders','Weight','Amount'],...data.cleanerBreakdown.map(c=>[c.name,c.route,c.orders,Math.round(c.weight),c.amount])];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(clnRows),'By Cleaner')}
     if(data.dailyBreakdown?.length>0){const dayRows=[['Date','Orders','Weight','Amount','East Orders','East Amount','West Orders','West Amount'],...data.dailyBreakdown.map(d=>[d.date,d.orders,Math.round(d.weight),d.amount,d.eastOrders,d.eastAmount,d.westOrders,d.westAmount])];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(dayRows),'Daily')}
@@ -602,7 +602,7 @@ function Reports({t}){
         React.createElement('div',{style:S.card},React.createElement('h3',{style:{marginBottom:'16px',fontSize:'16px'}},t.eastVsWest),
           [['🗽 East Orders',data.totals.east_orders],['East $',fmtC(data.totals.east_amount)],['🌆 West Orders',data.totals.west_orders],['West $',fmtC(data.totals.west_amount)]].map(([l,v],i)=>React.createElement('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:i<3?'1px solid #334155':'none'}},React.createElement('span',null,l),React.createElement('span',{style:{fontWeight:'bold'}},v||0)))),
         React.createElement('div',{style:S.card},React.createElement('h3',{style:{marginBottom:'16px',fontSize:'16px'}},t.sameDay+' vs '+t.hour24),
-          [[t.sameDay+' Orders',data.totals.same_day_orders,'#f59e0b'],[t.sameDay+' lbs',Math.round(data.totals.same_day_weight||0),'#f59e0b'],[t.hour24+' Orders',data.totals.twenty_four_hour_orders,'#3b82f6'],[t.hour24+' lbs',Math.round(data.totals.twenty_four_hour_weight||0),'#3b82f6']].map(([l,v,c],i)=>React.createElement('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:i<3?'1px solid #334155':'none'}},React.createElement('span',null,l),React.createElement('span',{style:{fontWeight:'bold',color:c}},v||0))))),
+          [[t.sameDay+' Orders',data.totals.same_day_orders,'#f59e0b',true],[' \u2192 East',data.totals.same_day_east||0,'#f59e0b',false],[' \u2192 West',data.totals.same_day_west||0,'#f59e0b',false],[t.sameDay+' lbs',Math.round(data.totals.same_day_weight||0),'#f59e0b',false],['','','',false],[t.hour24+' Orders',data.totals.twenty_four_hour_orders,'#3b82f6',true],[' \u2192 East',data.totals.next_day_east||0,'#3b82f6',false],[' \u2192 West',data.totals.next_day_west||0,'#3b82f6',false],[t.hour24+' lbs',Math.round(data.totals.twenty_four_hour_weight||0),'#3b82f6',false]].map(([l,v,c,bold],i)=>React.createElement('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:l?'6px 0':'4px 0',borderBottom:l?'1px solid #334155':'none'}},React.createElement('span',{style:{fontSize:bold?'14px':'13px',color:bold?'#e2e8f0':'#94a3b8'}},l),l?React.createElement('span',{style:{fontWeight:bold?'bold':'500',color:c}},v):null)))),
       data.cleanerBreakdown?.length>0&&React.createElement('div',{style:{...S.card,marginBottom:'24px'}},
         React.createElement('h3',{style:{marginBottom:'16px'}},'Cleaner Breakdown'),
         React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
@@ -1809,6 +1809,39 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
   const[generating,setGenerating]=useState(false);
   const fmtC=n=>'$'+Number(n||0).toFixed(0);
 
+  const exportSchedulePDF=()=>{
+    var doc=new jspdf.jsPDF('landscape','mm','letter');
+    doc.setFillColor(15,23,42);doc.rect(0,0,280,20,'F');
+    doc.setFontSize(16);doc.setTextColor(255,255,255);doc.text('Kleen Panda - Weekly Schedule',14,13);
+    doc.setFontSize(11);doc.text('Week of '+fmtD(weekOf)+' - '+fmtD(addDays(weekOf,5)),200,13);
+    var head=[['Shift','Time'].concat(dayNames.map(function(d,i){return d+' '+fmtD(dayDates[i]).replace(/\/26$/,'').replace(/\/25$/,'')}))];
+    var body=[];
+    shifts.forEach(function(shift){
+      var row=[shift.name,(shift.start_time||'?')+' - '+(shift.end_time||'?')];
+      dayDates.forEach(function(date){
+        var dow=new Date(date+'T12:00:00').getDay();
+        if(shift.name==='Laundry Day Fri'&&dow!==5){row.push('-');return}
+        if(shift.name==='Laundry Day Sat'&&dow!==6){row.push('-');return}
+        var a=assignments.find(function(a2){return a2.shift_id===shift.id&&a2.work_date&&a2.work_date.split('T')[0]===date});
+        row.push(a&&a.driver_name?a.driver_name:'OPEN');
+      });
+      body.push(row);
+    });
+    doc.autoTable({head:head,body:body,startY:24,theme:'grid',
+      styles:{fontSize:9,cellPadding:3,textColor:[226,232,240],fillColor:[30,41,59],lineColor:[71,85,105],lineWidth:0.3},
+      headStyles:{fillColor:[15,23,42],textColor:[255,255,255],fontSize:9,fontStyle:'bold'},
+      columnStyles:{0:{fontStyle:'bold',cellWidth:35},1:{cellWidth:28,fontSize:8,textColor:[148,163,184]}},
+      didParseCell:function(data){if(data.section==='body'&&data.column.index>=2){
+        var val=data.cell.raw;
+        if(val==='OPEN'){data.cell.styles.textColor=[100,116,139];data.cell.styles.fontStyle='italic'}
+        else{data.cell.styles.textColor=[74,222,128];data.cell.styles.fontStyle='bold'}}}
+    });
+    var y=doc.lastAutoTable.finalY+10;
+    doc.setFontSize(8);doc.setTextColor(148,163,184);
+    doc.text('Generated: '+new Date().toLocaleDateString()+' '+new Date().toLocaleTimeString(),14,y);
+    doc.save('Schedule_'+weekOf+'.pdf');
+  };
+
   const genWeek=async()=>{setGenerating(true);try{await api.post('/shift-assignments/generate-week',{start_date:weekOf});await onRefresh();notify('Week generated')}catch(e){alert(e.message)}setGenerating(false)};
 
   const assign=async(shiftId,date,driverId)=>{
@@ -1835,7 +1868,7 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
         React.createElement('h3',{style:{margin:0}},'Week of '+fmtD(weekOf)),
         React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'8px 12px',cursor:'pointer',fontSize:'16px'}},'\u25b6'),
         React.createElement('button',{onClick:()=>{var dt=new Date();var day=dt.getDay();setWeekOf(addDays(localDateStr(dt),-(day===0?6:day-1)))},style:{...S.inp,padding:'6px 12px',cursor:'pointer',fontSize:'12px'}},'Today')),
-      canManage&&React.createElement('button',{onClick:genWeek,disabled:generating,style:{...S.btn,opacity:generating?0.6:1}},generating?'Generating...':'Generate Week')),
+      React.createElement('div',{style:{display:'flex',gap:'8px'}},canManage&&React.createElement('button',{onClick:genWeek,disabled:generating,style:{...S.btn,opacity:generating?0.6:1}},generating?'Generating...':'Generate Week'),React.createElement('button',{onClick:exportSchedulePDF,style:{...S.btn,background:'#dc2626'}},'Export PDF'))),
 
     React.createElement('div',{style:{overflowX:'auto'}},
       React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'800px'}},
@@ -1869,7 +1902,46 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
                     canManage?'Open':React.createElement('button',{onClick:function(e){e.stopPropagation();var dName=prompt('Enter your name to request this shift:');if(dName){api.post('/shift-requests',{shift_id:shift.id,work_date:date,driver_name:dName}).then(function(){onRefresh();loadAll();notify('Request submitted')}).catch(function(err){alert(err.message)})}},style:{background:'none',border:'1px solid #8b5cf6',color:'#c4b5fd',borderRadius:'4px',padding:'4px 8px',cursor:'pointer',fontSize:'11px'}},'Request'))
                   :React.createElement('div',{style:{padding:'8px',color:'#1e293b',fontSize:'12px'}},canManage?'+':''))}))})))),
 
-    assigning&&React.createElement('div',{style:S.modal,onClick:e=>{if(e.target===e.currentTarget)setAssigning(null)}},
+    isAdmin&&React.createElement('div',{style:{...S.card,marginTop:'16px'}},
+      React.createElement('h4',{style:{marginBottom:'12px',color:'#4ade80'}},'Weekly Pay Summary'),
+      (function(){
+        var driverPay={};
+        assignments.forEach(function(a){
+          if(!a.driver_id||!a.driver_name)return;
+          if(!driverPay[a.driver_name])driverPay[a.driver_name]={shifts:0,total:0,details:[]};
+          var pay=parseFloat(a.pay_override||0);
+          if(!pay){
+            pay=parseFloat(a.base_pay||0);
+            if(a.heavy_pay&&a.heavy_days){
+              var dow=new Date((a.work_date||'').split('T')[0]+'T12:00:00').getDay();
+              var hd=a.heavy_days.split(',').map(function(d){return parseInt(d.trim())});
+              if(hd.indexOf(dow)>=0)pay=parseFloat(a.heavy_pay);
+            }
+          }
+          driverPay[a.driver_name].shifts++;
+          driverPay[a.driver_name].total+=pay;
+          driverPay[a.driver_name].details.push({shift:a.shift_name,date:(a.work_date||'').split('T')[0],pay:pay});
+        });
+        var names=Object.keys(driverPay).sort();
+        var weekTotal=names.reduce(function(s,n){return s+driverPay[n].total},0);
+        return React.createElement('div',null,
+          React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
+            React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
+              React.createElement('th',{style:{padding:'10px',textAlign:'left',fontSize:'13px'}},'Driver'),
+              React.createElement('th',{style:{padding:'10px',textAlign:'center',fontSize:'13px'}},'Shifts'),
+              React.createElement('th',{style:{padding:'10px',textAlign:'right',fontSize:'13px'}},'Total Pay'))),
+            React.createElement('tbody',null,
+              names.map(function(n){return React.createElement('tr',{key:n,style:{borderBottom:'1px solid #1e293b'}},
+                React.createElement('td',{style:{padding:'10px',fontWeight:'bold'}},n),
+                React.createElement('td',{style:{padding:'10px',textAlign:'center'}},driverPay[n].shifts),
+                React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#4ade80',fontWeight:'bold',fontSize:'16px'}},'$'+driverPay[n].total.toFixed(0)))}),
+              React.createElement('tr',{key:'total',style:{borderTop:'2px solid #475569',background:'#0f172a'}},
+                React.createElement('td',{style:{padding:'10px',fontWeight:'bold',color:'#fbbf24'}},'TOTAL'),
+                React.createElement('td',{style:{padding:'10px',textAlign:'center',fontWeight:'bold',color:'#fbbf24'}},assignments.filter(function(a){return a.driver_id}).length),
+                React.createElement('td',{style:{padding:'10px',textAlign:'right',fontWeight:'bold',fontSize:'18px',color:'#fbbf24'}},'$'+weekTotal.toFixed(0))))));
+      })()),
+
+        assigning&&React.createElement('div',{style:S.modal,onClick:e=>{if(e.target===e.currentTarget)setAssigning(null)}},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'400px',border:'1px solid #334155'}},
         React.createElement('div',{style:{padding:'16px',borderBottom:'1px solid #334155',display:'flex',justifyContent:'space-between'}},
           React.createElement('h3',{style:{margin:0}},assigning.shift.name+' - '+fmtD(assigning.date)),
