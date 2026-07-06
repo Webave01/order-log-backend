@@ -14,6 +14,14 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+// Set timezone to Eastern for all connections
+pool.on('connect', async (client) => {
+  try {
+    const tz = await client.query("SELECT value FROM settings WHERE key = 'timezone'");
+    const timezone = tz.rows.length > 0 ? tz.rows[0].value : 'America/New_York';
+    await client.query("SET timezone = '" + timezone.replace(/'/g, '') + "'");
+  } catch(e) { await client.query("SET timezone = 'America/New_York'"); }
+});
 
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
