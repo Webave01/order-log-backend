@@ -640,7 +640,7 @@ app.post('/api/orders', authenticate, async (req, res) => {
     // Auto-assign order number if blank (for address-based cleaners like Laundry Day)
     if (!order_num || order_num.trim() === '') {
       const maxResult = await pool.query(
-        "SELECT order_num FROM orders WHERE cleaner_id = $1 AND order_num ~ '^[0-9]+$' ORDER BY CAST(order_num AS INTEGER) DESC LIMIT 1",
+        "SELECT order_num FROM orders WHERE cleaner_id = $1 AND order_num ~ '^[0-9]+$' AND deleted_at IS NULL ORDER BY CAST(order_num AS INTEGER) DESC LIMIT 1",
         [cleaner_id]
       );
       if (maxResult.rows.length > 0) {
@@ -834,7 +834,7 @@ app.get('/api/orders/find-duplicates', authenticate, async (req, res) => {
     const result = await pool.query(`
       SELECT order_num, COUNT(*) as count FROM orders 
       WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 
-      AND order_num IS NOT NULL AND order_num != ''
+      AND order_num IS NOT NULL AND order_num != '' AND deleted_at IS NULL
       GROUP BY order_num HAVING COUNT(*) > 1
     `, [cleaner_id, start_date, end_date]);
     res.json(result.rows);
@@ -848,7 +848,7 @@ app.get('/api/orders/check-duplicate', authenticate, async (req, res) => {
   const { order_num, cleaner_id, exclude_id } = req.query;
   if (!order_num || order_num.trim() === '') return res.json({ isDuplicate: false, existingOrder: null });
   try {
-    let query = 'SELECT id, pickup_date FROM orders WHERE order_num = $1 AND cleaner_id = $2';
+    let query = 'SELECT id, pickup_date FROM orders WHERE order_num = $1 AND cleaner_id = $2 AND deleted_at IS NULL';
     const params = [order_num, cleaner_id];
     if (exclude_id) { query += ' AND id != $3'; params.push(exclude_id); }
     query += ' LIMIT 1';
@@ -868,7 +868,7 @@ app.get('/api/orders/check-sequence', authenticate, async (req, res) => {
 
     // Get all order numbers for this cleaner (recent 500)
     const result = await pool.query(
-      'SELECT order_num FROM orders WHERE cleaner_id = $1 ORDER BY created_at DESC LIMIT 500', [cleaner_id]
+      'SELECT order_num FROM orders WHERE cleaner_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 500', [cleaner_id]
     );
     const allNums = result.rows.map(r => parseInt(String(r.order_num).replace(/\D/g, ''))).filter(n => !isNaN(n) && n !== inputNum);
     if (allNums.length === 0) return res.json({ isOutOfSequence: false });
@@ -1061,7 +1061,7 @@ app.get('/api/orders/check-address', authenticate, async (req, res) => {
     const satStr = sat.toISOString().split('T')[0];
 
     let query = `SELECT id, order_num, pickup_date, customer_address, customer_apt FROM orders 
-      WHERE cleaner_id = $1 AND LOWER(TRIM(customer_address)) = LOWER(TRIM($2))
+      WHERE cleaner_id = $1 AND deleted_at IS NULL AND LOWER(TRIM(customer_address)) = LOWER(TRIM($2))
       AND LOWER(TRIM(COALESCE(customer_apt,''))) = LOWER(TRIM($3))
       AND pickup_date >= $4 AND pickup_date <= $5`;
     const params = [cleaner_id, address, apt || '', monStr, satStr];
@@ -1232,7 +1232,7 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
 
     const settingsResult = await pool.query('SELECT * FROM settings');
     const settings = {};
-    settingsResult.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
+    settingsResult.rows.forEach(row => { var v = parseFloat(row.value); if (!isNaN(v)) settings[row.key] = v; });
 
     const uniquePickupDates = new Set();
 
@@ -1357,7 +1357,7 @@ app.get('/api/reports/invoices-all', authenticate, requirePerm('invoices'), asyn
 
     const settingsResult = await pool.query('SELECT * FROM settings');
     const settings = {};
-    settingsResult.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
+    settingsResult.rows.forEach(row => { var v = parseFloat(row.value); if (!isNaN(v)) settings[row.key] = v; });
 
     const invoices = [];
 
@@ -1373,7 +1373,7 @@ app.get('/api/reports/invoices-all', authenticate, requirePerm('invoices'), asyn
 
     for (const cleaner of cleanersResult.rows) {
       const ordersResult = await pool.query(
-        `SELECT * FROM orders WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 ORDER BY pickup_date, order_num`,
+        `SELECT * FROM orders WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 AND deleted_at IS NULL ORDER BY pickup_date, order_num`,
         [cleaner.id, start_date, adjustedEnd2]
       );
 
@@ -1753,7 +1753,7 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
 
     const settingsResult = await pool.query('SELECT * FROM settings');
     const settings = {};
-    settingsResult.rows.forEach(row => { settings[row.key] = parseFloat(row.value); });
+    settingsResult.rows.forEach(row => { var v = parseFloat(row.value); if (!isNaN(v)) settings[row.key] = v; });
 
     let generated = 0;
     for (const cleaner of cleaners.rows) {
