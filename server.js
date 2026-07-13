@@ -301,6 +301,7 @@ async function initDB() {
       ALTER TABLE drivers ADD COLUMN IF NOT EXISTS address TEXT;
       ALTER TABLE drivers ADD COLUMN IF NOT EXISTS ssn VARCHAR(20);
       ALTER TABLE drivers ADD COLUMN IF NOT EXISTS zelle_info VARCHAR(100);
+      ALTER TABLE drivers ADD COLUMN IF NOT EXISTS documents JSONB DEFAULT '[]'::jsonb;
       CREATE TABLE IF NOT EXISTS routes (
         id SERIAL PRIMARY KEY,
         name VARCHAR(50) NOT NULL,
@@ -1965,6 +1966,53 @@ app.put('/api/payroll-taxes', authenticate, adminOnly, async (req, res) => {
     await pool.query("INSERT INTO settings (key, value) VALUES ('payrollTaxes', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [json]);
     res.json({ success: true });
   } catch (err) { console.error('Save payroll taxes error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// Driver document upload (base64)
+app.post('/api/drivers/:id/documents', authenticate, adminOnly, async (req, res) => {
+  const { name, type, data } = req.body;
+  if (!data) return res.status(400).json({ error: 'No file data' });
+  try {
+    const driver = await pool.query('SELECT documents FROM drivers WHERE id = $1', [req.params.id]);
+    if (driver.rows.length === 0) return res.status(404).json({ error: 'Driver not found' });
+    const docs = driver.rows[0].documents || [];
+    const doc = { id: Date.now().toString(), name: name || 'Document', type: type || 'file', data, uploaded: new Date().toISOString() };
+    docs.push(doc);
+    await pool.query('UPDATE drivers SET documents = $1 WHERE id = $2', [JSON.stringify(docs), req.params.id]);
+    res.json({ success: true, doc: { id: doc.id, name: doc.name, type: doc.type, uploaded: doc.uploaded } });
+  } catch (err) { console.error('Doc upload error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// Delete driver document
+app.delete('/api/drivers/:id/documents/:docId', authenticate, adminOnly, async (req, res) => {
+  try {
+    const driver = await pool.query('SELECT documents FROM drivers WHERE id = $1', [req.params.id]);
+    if (driver.rows.length === 0) return res.status(404).json({ error: 'Driver not found' });
+    const docs = (driver.rows[0].documents || []).filter(d => d.id !== req.params.docId);
+    await pool.query('UPDATE drivers SET documents = $1 WHERE id = $2', [JSON.stringify(docs), req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get driver documents (without base64 data for listing)
+app.get('/api/drivers/:id/documents', authenticate, async (req, res) => {
+  try {
+    const driver = await pool.query('SELECT documents FROM drivers WHERE id = $1', [req.params.id]);
+    if (driver.rows.length === 0) return res.status(404).json({ error: 'Driver not found' });
+    const docs = (driver.rows[0].documents || []).map(d => ({ id: d.id, name: d.name, type: d.type, uploaded: d.uploaded }));
+    res.json(docs);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get single document with data (for viewing/downloading)
+app.get('/api/drivers/:id/documents/:docId', authenticate, async (req, res) => {
+  try {
+    const driver = await pool.query('SELECT documents FROM drivers WHERE id = $1', [req.params.id]);
+    if (driver.rows.length === 0) return res.status(404).json({ error: 'Driver not found' });
+    const doc = (driver.rows[0].documents || []).find(d => d.id === req.params.docId);
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+    res.json(doc);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('*', (req, res) => {
