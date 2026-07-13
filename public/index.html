@@ -1705,9 +1705,28 @@ function DriversPanel({drivers,notify,onRefresh,isAdmin}){
           d.tax_id&&React.createElement('div',{style:{fontSize:'13px',color:'#f59e0b',marginBottom:'4px'}},(d.tax_id_type||'SSN').toUpperCase()+': '+maskSSN(d.tax_id)),
           d.dl_number&&React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8',marginBottom:'4px'}},'DL#: ***'+d.dl_number.slice(-4)),
           d.notes&&React.createElement('div',{style:{fontSize:'13px',color:'#64748b',marginBottom:'8px',fontStyle:'italic'}},d.notes),
-          React.createElement('div',{style:{display:'flex',gap:'8px'}},
+          React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
             React.createElement('button',{onClick:(e)=>{e.stopPropagation();openEdit(d)},style:S.edit},'Edit'),
-            d.status==='active'&&React.createElement('button',{onClick:(e)=>{e.stopPropagation();del(d.id)},style:S.del},'Deactivate')))))),
+            d.status==='active'&&React.createElement('button',{onClick:(e)=>{e.stopPropagation();del(d.id)},style:S.del},'Deactivate'),
+            React.createElement('button',{onClick:function(e){e.stopPropagation();permDelete(d.id,d.name)},style:{...S.del,background:'rgba(239,68,68,0.2)',borderColor:'#dc2626',color:'#fca5a5'}},'\ud83d\uddd1 Delete')),
+          React.createElement('div',{style:{marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #334155'},onClick:function(e){e.stopPropagation()}},
+            React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+              React.createElement('span',{style:{fontWeight:'bold',fontSize:'13px',color:'#c4b5fd'}},'\ud83d\udcc1 Documents'),
+              React.createElement('label',{style:{...S.btn,padding:'4px 12px',fontSize:'11px',cursor:'pointer',display:'inline-block'}},
+                '+ Upload',React.createElement('input',{type:'file',accept:'image/*,.pdf',style:{display:'none'},onChange:async function(ev){
+                  var file=ev.target.files[0];if(!file)return;
+                  var reader=new FileReader();reader.onload=async function(){
+                    try{await api.post('/drivers/'+d.id+'/documents',{name:file.name,type:file.type,data:reader.result});
+                      notify('Uploaded');await onRefresh()}catch(e){alert(e.message)}};
+                  reader.readAsDataURL(file);ev.target.value=''}}))),
+            (d.documents||[]).length>0?React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'4px'}},
+              (d.documents||[]).map(function(doc){return React.createElement('div',{key:doc.id||doc.name,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 8px',background:'#0f172a',borderRadius:'4px',fontSize:'12px'}},
+                React.createElement('span',{style:{cursor:'pointer',color:'#60a5fa',textDecoration:'underline'},onClick:async function(){
+                  try{var full=await api.get('/drivers/'+d.id+'/documents/'+(doc.id||doc.name));
+                    if(full.data){var w=window.open('');w.document.write(full.type&&full.type.indexOf('pdf')>=0?'<embed src="'+full.data+'" width="100%" height="100%" type="application/pdf">':'<img src="'+full.data+'" style="max-width:100%">');w.document.title=full.name}}catch(e){alert(e.message)}
+                }},doc.name||'Document'),
+                React.createElement('button',{onClick:async function(){if(!confirm('Delete '+doc.name+'?'))return;try{await api.del('/drivers/'+d.id+'/documents/'+(doc.id||doc.name));notify('Deleted');await onRefresh()}catch(e){alert(e.message)}},style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'14px'}},'\u2715'))})):
+              React.createElement('div',{style:{fontSize:'12px',color:'#64748b',textAlign:'center',padding:'8px'}},'No documents uploaded')))))),
 
     showDeactivated&&React.createElement('div',{style:{marginTop:'24px'}},
       React.createElement('h3',{style:{color:'#ef4444',marginBottom:'12px'}},'\ud83d\udcc2 Deactivated Drivers ('+deactivated.length+')'),
