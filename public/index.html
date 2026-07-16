@@ -1054,13 +1054,13 @@ function Payments({cleaners,settings,t,isAdmin}){
   const quickPay=async(inv)=>{try{await api.put('/invoice-tracking/'+inv.id,{amount_paid:parseFloat(inv.invoice_amount),status:'paid',paid_date:new Date().toISOString().split('T')[0]});await load()}catch(e){alert(e.message)}};
   
   const startEdit=(inv)=>{setEditing(inv.id);setEditPay(inv.amount_paid||'');setEditNote(inv.notes||'');setEditStat(inv.status||'unpaid')};
-  const handlePayChange=(val)=>{setEditPay(val);if(parseFloat(val)>0&&editStat==='unpaid')setEditStat('paid')};
-  const handleStatChange=(val,inv)=>{setEditStat(val);if(val==='paid'&&(!editPay||parseFloat(editPay)===0)){setEditPay(inv.invoice_amount)}};
+  const handlePayChange=(val)=>{setEditPay(val);if(parseFloat(val)>0&&editStat==='unpaid')setEditStat('partial')};
+  const handleStatChange=(val,inv)=>{setEditStat(val);if(val==='paid'){setEditPay(inv.invoice_amount)}if(val==='unpaid'){setEditPay('0')}};
   
   const exportExcel=()=>{
     const wb=XLSX.utils.book_new();
-    const unpaidTotal=data.filter(d=>d.status!=='paid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid),0);
-    const cleanerUnpaid={};data.forEach(d=>{if(d.status!=='paid'){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=parseFloat(d.invoice_amount)-parseFloat(d.amount_paid)}});
+    const unpaidTotal=data.filter(d=>d.status==='unpaid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid||0),0);
+    const cleanerUnpaid={};data.forEach(d=>{if(d.status==='unpaid'){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=parseFloat(d.invoice_amount)-parseFloat(d.amount_paid||0)}});
     if(summary&&summary.cleaners){const sumRows=[['Cleaner','Route','Total Invoiced','Total Paid','Balance Due (Unpaid Only)']];summary.cleaners.forEach(c=>sumRows.push([c.cleaner_name,c.route,parseFloat(c.total_invoiced),parseFloat(c.total_paid),cleanerUnpaid[c.cleaner_name]||0]));sumRows.push(['','','','','']);sumRows.push(['TOTAL','',summary.overall.total_invoiced,summary.overall.total_paid,unpaidTotal]);XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sumRows),'Summary')}
     if(data.length>0){const detRows=[['Cleaner','Week Start','Week End','Invoice Amount','Amount Paid','Balance','Status','Notes']];data.forEach(d=>detRows.push([d.cleaner_name,d.week_start?d.week_start.split('T')[0]:'',d.week_end?d.week_end.split('T')[0]:'',parseFloat(d.invoice_amount),parseFloat(d.amount_paid),parseFloat(d.invoice_amount)-parseFloat(d.amount_paid),d.status,d.notes||'']));XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(detRows),'Details')}
     XLSX.writeFile(wb,'payment_tracking_'+new Date().toISOString().split('T')[0]+'.xlsx')};
@@ -1110,13 +1110,13 @@ function Payments({cleaners,settings,t,isAdmin}){
   
   const filteredData=data.filter(function(d){
     if(paySearch&&!(d.cleaner_name||'').toLowerCase().includes(paySearch.toLowerCase()))return false;
-    if(showUnpaidOnly&&d.status==='paid')return false;
+    if(showUnpaidOnly&&d.status!=='unpaid')return false;
     return true;
   });
   const groupedByWeek={};filteredData.forEach(d=>{const wk=d.week_start?d.week_start.split('T')[0]:'unknown';if(!groupedByWeek[wk])groupedByWeek[wk]=[];groupedByWeek[wk].push(d)});
   
-  const unpaidTotal=filteredData.filter(d=>d.status!=='paid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid),0);
-  const cleanerUnpaid={};filteredData.forEach(d=>{if(d.status!=='paid'){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=parseFloat(d.invoice_amount)-parseFloat(d.amount_paid)}});
+  const unpaidTotal=filteredData.filter(d=>d.status==='unpaid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid||0),0);
+  const cleanerUnpaid={};filteredData.forEach(d=>{if(d.status==='unpaid'){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=parseFloat(d.invoice_amount)-parseFloat(d.amount_paid||0)}});
 
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
