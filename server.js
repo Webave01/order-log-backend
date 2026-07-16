@@ -260,6 +260,9 @@ async function initDB() {
       )
     `);
 
+    // Fix any Sunday pickup_dates to Saturday (business rule: no Sunday pickups)
+    await client.query("UPDATE orders SET pickup_date = pickup_date - INTERVAL '1 day' WHERE EXTRACT(DOW FROM pickup_date) = 0");
+
     // Seed default shifts if empty
     const shiftCount = await client.query('SELECT COUNT(*) FROM shifts');
     if (parseInt(shiftCount.rows[0].count) === 0) {
@@ -1289,7 +1292,7 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
       const minWeight = parseFloat(o.min_weight) || 10;
       const billedWeight = Math.max(parseFloat(o.weight), parseFloat(o.weight) > 0 ? minWeight : 0);
       const rate = parseFloat(o.cleaner_rate);
-      const mult = o.service_type === 'same-day' ? settings.sameDayMult : 1;
+      const mult = o.service_type === 'same-day' ? (settings.sameDayMult || 1) : 1;
       const base = billedWeight * rate * mult;
 
       const extrasTotal = (o.extras || []).reduce((sum, id) => {
@@ -1387,7 +1390,7 @@ app.get('/api/reports/invoices-all', authenticate, requirePerm('invoices'), asyn
         const minWeight = parseFloat(cleaner.min_weight) || 10;
         const billedWeight = Math.max(parseFloat(o.weight), parseFloat(o.weight) > 0 ? minWeight : 0);
         const rate = parseFloat(cleaner.rate);
-        const mult = o.service_type === 'same-day' ? settings.sameDayMult : 1;
+        const mult = o.service_type === 'same-day' ? (settings.sameDayMult || 1) : 1;
         const base = billedWeight * rate * mult;
 
         const extrasTotal = (o.extras || []).reduce((sum, id) => {
@@ -1596,7 +1599,7 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
       const cleanerPrices = cleanerExtrasMap[o.cleaner_id] || {};
       const minWeight = parseFloat(cleaner.min_weight) || 10;
       const billedWeight = Math.max(parseFloat(o.weight), parseFloat(o.weight) > 0 ? minWeight : 0);
-      const mult = o.service_type === 'same-day' ? settings.sameDayMult : 1;
+      const mult = o.service_type === 'same-day' ? (settings.sameDayMult || 1) : 1;
       const base = billedWeight * parseFloat(cleaner.rate) * mult;
       const extrasTotal = (o.extras || []).reduce((sum, id) => {
         const customPrice = cleanerPrices[id];
@@ -1756,11 +1759,29 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
     const settings = {};
     settingsResult.rows.forEach(row => { var v = parseFloat(row.value); if (!isNaN(v)) settings[row.key] = v; });
 
+    // Remove any existing records that overlap with this date range (prevents double-counting)
+    let cleanerIds = cleaners.rows.map(c => c.id);
+    if (cleanerIds.length > 0) {
+      await pool.query(
+        `DELETE FROM invoice_tracking WHERE cleaner_id = ANY($1::int[]) 
+         AND ((week_start >= $2 AND week_start <= $3) OR (week_end >= $2 AND week_end <= $3))
+         AND COALESCE(billing_cycle, 'weekly') = $4 AND status != 'paid'`,
+        [cleanerIds, week_start, week_end, billing_cycle || 'weekly']
+      );
+    }
+
     let generated = 0;
     for (const cleaner of cleaners.rows) {
+      // If end_date is Saturday, include following Sunday (Sunday orders belong to prior week)
+      let genEnd = week_end;
+      const genEndDate = new Date(week_end + 'T12:00:00');
+      if (genEndDate.getDay() === 6) {
+        const sun = new Date(genEndDate); sun.setDate(sun.getDate() + 1);
+        genEnd = sun.toISOString().split('T')[0];
+      }
       const orders = await pool.query(
-        'SELECT * FROM orders WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3',
-        [cleaner.id, week_start, week_end]
+        'SELECT * FROM orders WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 AND deleted_at IS NULL',
+        [cleaner.id, week_start, genEnd]
       );
       if (orders.rows.length === 0) continue;
 
@@ -1771,7 +1792,7 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
       for (const o of orders.rows) {
         const minWeight = parseFloat(cleaner.min_weight) || 10;
         const billedWeight = Math.max(parseFloat(o.weight), parseFloat(o.weight) > 0 ? minWeight : 0);
-        const base = billedWeight * parseFloat(cleaner.rate) * (o.service_type === 'same-day' ? settings.sameDayMult : 1);
+        const base = billedWeight * parseFloat(cleaner.rate) * (o.service_type === 'same-day' ? (settings.sameDayMult || 1) : 1);
         const extrasTotal = (o.extras || []).reduce((sum, id) => {
           const customPrice = cleanerPrices[id];
           return sum + (customPrice !== undefined ? customPrice : parseFloat(extrasMap[id]?.price || 0));
@@ -1790,7 +1811,7 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
 
       await pool.query(
         `INSERT INTO invoice_tracking (cleaner_id, week_start, week_end, invoice_amount, billing_cycle) 
-         VALUES ($1, $2, $3, $4, $5) ON CONFLICT (cleaner_id, week_start) DO UPDATE SET invoice_amount = $4, billing_cycle = $5`,
+         VALUES ($1, $2, $3, $4, $5) ON CONFLICT (cleaner_id, week_start) DO UPDATE SET invoice_amount = $4, week_end = $3, billing_cycle = $5`,
         [cleaner.id, week_start, week_end, total, billing_cycle || 'weekly']
       );
       generated++;
