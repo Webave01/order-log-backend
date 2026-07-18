@@ -669,89 +669,160 @@ function Reports({t}){
 }
 
 function VehicleLog({isAdmin,user,notify,drivers}){
-  const[logs,setLogs]=useState([]);const[ld,setLd]=useState(false);const[drvList,setDrvList]=useState([]);const[showForm,setShowForm]=useState(false);
-  const[logType,setLogType]=useState('gas');const[mileage,setMileage]=useState('');const[gallons,setGallons]=useState('');
-  const[cost,setCost]=useState('');const[notes,setNotes]=useState('');const[vehicle,setVehicle]=useState('');
-  const[driverName,setDriverName]=useState(user?user.username:'');const[photos,setPhotos]=useState([]);
-  const[viewLog,setViewLog]=useState(null);const[filterType,setFilterType]=useState('');
+  const[logs,setLogs]=useState([]);const[ld,setLd]=useState(false);const[drvList,setDrvList]=useState([]);
+  const[showForm,setShowForm]=useState(false);const[filterType,setFilterType]=useState('');
+  const[logType,setLogType]=useState('ticket');const[mileage,setMileage]=useState('');
+  const[gallons,setGallons]=useState('');const[cost,setCost]=useState('');
+  const[notes,setNotes]=useState('');const[vehicle,setVehicle]=useState('');
+  const[driverName,setDriverName]=useState(user?user.username:'');
+  const[photos,setPhotos]=useState([]);const[viewLog,setViewLog]=useState(null);
+  const[gasStart,setGasStart]=useState('');const[gasEnd,setGasEnd]=useState('');
+  const[summary,setSummary]=useState(null);const[showSummary,setShowSummary]=useState(false);
 
   const loadLogs=async()=>{setLd(true);try{var url='/vehicle-logs?';if(filterType)url+='log_type='+filterType;var r=await api.get(url);setLogs(r)}catch(e){}setLd(false)};
   useEffect(()=>{loadLogs();api.get('/drivers').then(setDrvList).catch(()=>{})},[filterType]);
 
-  const addPhoto=(e)=>{var file=e.target.files[0];if(!file)return;var reader=new FileReader();
-    reader.onload=function(){setPhotos([...photos,{name:file.name,type:file.type,data:reader.result}])};reader.readAsDataURL(file);e.target.value=''};
+  const addPhoto=(e)=>{var file=e.target.files[0];if(!file)return;if(file.size>5*1024*1024){alert('Max 5MB per photo');return}
+    var reader=new FileReader();reader.onload=function(){setPhotos([...photos,{name:file.name,type:file.type,data:reader.result}])};reader.readAsDataURL(file);e.target.value=''};
 
-  const submit=async()=>{if(!driverName){alert('Enter driver name');return}
-    try{await api.post('/vehicle-logs',{driver_name:driverName,log_type:logType,mileage:mileage?parseInt(mileage):null,gallons:gallons?parseFloat(gallons):null,cost:cost?parseFloat(cost):null,notes,photos,vehicle});
-      notify('Log submitted');setShowForm(false);setMileage('');setGallons('');setCost('');setNotes('');setPhotos([]);setVehicle('');loadLogs()}catch(e){alert(e.message)}};
+  const submit=async()=>{if(!driverName){alert('Enter your name');return}if(!vehicle){alert('Select vehicle');return}
+    if(photos.length===0){alert('Take a photo as proof');return}
+    try{await api.post('/vehicle-logs',{driver_name:driverName,log_type:logType,mileage:mileage?parseInt(mileage):null,
+      gallons:gallons?parseFloat(gallons):null,cost:cost?parseFloat(cost):null,notes,photos,vehicle,
+      has_issues:logType!=='gas',issues:notes,gas_level_start:gasStart||null,gas_level_end:gasEnd||null});
+      notify('Submitted');setShowForm(false);setMileage('');setGallons('');setCost('');setNotes('');setPhotos([]);setGasStart('');setGasEnd('');loadLogs()}catch(e){alert(e.message)}};
 
+  const resolve=async(id)=>{try{await api.put('/vehicle-logs/'+id+'/resolve');notify('Resolved');loadLogs()}catch(e){alert(e.message)}};
   const viewFull=async(id)=>{try{var r=await api.get('/vehicle-logs/'+id);setViewLog(r)}catch(e){alert(e.message)}};
-
-  const delLog=async(id)=>{if(!confirm('Delete this log?'))return;try{await api.del('/vehicle-logs/'+id);notify('Deleted');loadLogs();setViewLog(null)}catch(e){alert(e.message)}};
+  const delLog=async(id)=>{if(!confirm('Delete?'))return;try{await api.del('/vehicle-logs/'+id);notify('Deleted');loadLogs();setViewLog(null)}catch(e){alert(e.message)}};
+  const loadSummary=async()=>{try{var r=await api.get('/vehicle-logs/summary');setSummary(r);setShowSummary(true)}catch(e){alert(e.message)}};
+  var openIssues=logs.filter(function(l){return l.has_issues&&!l.resolved});
+  var typeColors={ticket:'#ef4444',damage:'#f59e0b',maintenance:'#8b5cf6',gas:'#10b981',other:'#64748b'};
+  var typeLabels={ticket:'Ticket',damage:'Damage',maintenance:'Warning Light / Maintenance',gas:'Gas Fill-Up',other:'Other'};
 
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}},
-      React.createElement('h2',{style:{margin:0}},'Vehicle Log'),
-      React.createElement('button',{onClick:()=>setShowForm(!showForm),style:S.btn},showForm?'Cancel':'+ New Log')),
-    React.createElement('div',{style:{display:'flex',gap:'6px',marginBottom:'16px'}},
-      ['','gas','inspection'].map(t=>React.createElement('button',{key:t||'all',onClick:()=>setFilterType(t),style:{padding:'8px 14px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'13px',background:filterType===t?'#3b82f6':'#0f172a',color:filterType===t?'#fff':'#64748b'}},t?t.charAt(0).toUpperCase()+t.slice(1):'All'))),
-    showForm&&React.createElement('div',{style:{...S.card,marginBottom:'16px',border:'1px solid #3b82f6'}},
-      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'12px'}},
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Driver Name'),
-          isAdmin?React.createElement('select',{value:driverName,onChange:e=>setDriverName(e.target.value),style:S.inp},
+      React.createElement('h2',{style:{margin:0,color:'#e2e8f0'}},'Vehicle Log'),
+      React.createElement('div',{style:{display:'flex',gap:'8px'}},
+        isAdmin&&React.createElement('button',{onClick:loadSummary,style:{...S.inp,cursor:'pointer',padding:'8px 12px',color:'#60a5fa'}},'Fleet Summary'),
+        React.createElement('button',{onClick:function(){setShowForm(!showForm)},style:{...S.btn,background:'#dc2626',fontSize:'14px'}},showForm?'Cancel':'Report Incident'))),
+
+    openIssues.length>0&&React.createElement('div',{style:{background:'rgba(239,68,68,0.1)',border:'2px solid #ef4444',borderRadius:'8px',padding:'12px',marginBottom:'16px'}},
+      React.createElement('div',{style:{fontWeight:'bold',color:'#fca5a5',marginBottom:'8px'}},'Unresolved Issues ('+openIssues.length+')'),
+      openIssues.map(function(l){return React.createElement('div',{key:l.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid rgba(239,68,68,0.2)'}},
+        React.createElement('div',null,
+          React.createElement('span',{style:{display:'inline-block',padding:'2px 8px',borderRadius:'4px',fontSize:'11px',fontWeight:'bold',background:'rgba('+(l.log_type==='ticket'?'239,68,68':l.log_type==='damage'?'245,158,11':'139,92,246')+',0.2)',color:typeColors[l.log_type]||'#94a3b8',marginRight:'8px'}},typeLabels[l.log_type]||l.log_type),
+          React.createElement('b',null,l.driver_name),' \u2014 ',l.vehicle||'',
+          React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',marginTop:'2px'}},l.notes||l.issues||'No description',' \u2014 ',fmtD(l.created_at))),
+        React.createElement('div',{style:{display:'flex',gap:'6px'}},
+          React.createElement('button',{onClick:function(){viewFull(l.id)},style:{padding:'4px 10px',borderRadius:'4px',border:'1px solid #475569',background:'transparent',color:'#94a3b8',cursor:'pointer',fontSize:'11px'}},'View'),
+          isAdmin&&React.createElement('button',{onClick:function(){resolve(l.id)},style:{padding:'4px 12px',borderRadius:'4px',border:'1px solid #10b981',background:'transparent',color:'#4ade80',cursor:'pointer',fontSize:'11px',fontWeight:'bold'}},'Resolve')))})),
+
+    showForm&&React.createElement('div',{style:{...S.card,marginBottom:'16px',border:'2px solid #dc2626'}},
+      React.createElement('h3',{style:{marginBottom:'12px',color:'#fca5a5'}},'Report Incident'),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'12px'}},
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Your Name *'),
+          isAdmin?React.createElement('select',{value:driverName,onChange:function(e){setDriverName(e.target.value)},style:S.inp},
             React.createElement('option',{value:''},'Select...'),
-            drvList.filter(d=>d.status==='active').map(d=>React.createElement('option',{key:d.id,value:d.name},d.name))):
-          React.createElement('input',{value:driverName,onChange:e=>setDriverName(e.target.value),style:S.inp})),
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Type'),
-          React.createElement('select',{value:logType,onChange:e=>setLogType(e.target.value),style:S.inp},
-            React.createElement('option',{value:'gas'},'Gas Fill-Up'),
-            React.createElement('option',{value:'inspection'},'Damage Inspection'))),
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Vehicle'),
-          React.createElement('select',{value:vehicle,onChange:e=>setVehicle(e.target.value),style:S.inp},
+            drvList.filter(function(d){return d.status==='active'}).map(function(d){return React.createElement('option',{key:d.id,value:d.name},d.name)})):
+          React.createElement('input',{value:driverName,onChange:function(e){setDriverName(e.target.value)},style:S.inp})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Vehicle *'),
+          React.createElement('select',{value:vehicle,onChange:function(e){setVehicle(e.target.value)},style:S.inp},
             React.createElement('option',{value:''},'Select...'),
             React.createElement('option',{value:'Ford Transit'},'Ford Transit T-250'),
             React.createElement('option',{value:'RAM ProMaster'},'RAM ProMaster City'))),
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Mileage'),React.createElement('input',{type:'number',value:mileage,onChange:e=>setMileage(e.target.value),style:S.inp,placeholder:'Odometer reading'})),
-        logType==='gas'&&React.createElement('div',null,React.createElement('label',{style:S.lbl},'Gallons'),React.createElement('input',{type:'number',step:'0.01',value:gallons,onChange:e=>setGallons(e.target.value),style:S.inp})),
-        logType==='gas'&&React.createElement('div',null,React.createElement('label',{style:S.lbl},'Cost $'),React.createElement('input',{type:'number',step:'0.01',value:cost,onChange:e=>setCost(e.target.value),style:S.inp}))),
-      React.createElement('div',{style:{marginBottom:'8px'}},React.createElement('label',{style:S.lbl},'Notes'),React.createElement('input',{value:notes,onChange:e=>setNotes(e.target.value),style:S.inp,placeholder:logType==='gas'?'Station name, receipt #':'Describe any damage found'})),
+        React.createElement('div',{style:{gridColumn:'span 2'}},React.createElement('label',{style:S.lbl},'What are you reporting? *'),
+          React.createElement('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},
+            [['ticket','Parking / Traffic Ticket'],['damage','Vehicle Damage'],['maintenance','Warning Light / Maintenance'],['gas','Gas Fill-Up'],['other','Other Issue']].map(function(t){return React.createElement('button',{key:t[0],type:'button',onClick:function(){setLogType(t[0])},style:{padding:'8px 14px',borderRadius:'6px',border:'2px solid '+(logType===t[0]?typeColors[t[0]]:'#334155'),background:logType===t[0]?'rgba('+(t[0]==='ticket'?'239,68,68':t[0]==='damage'?'245,158,11':t[0]==='maintenance'?'139,92,246':t[0]==='gas'?'16,185,129':'100,116,139')+',0.15)':'transparent',color:logType===t[0]?typeColors[t[0]]:'#94a3b8',cursor:'pointer',fontSize:'13px',fontWeight:'600'}},t[1])}))),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Gas Level - Start of Shift'),
+          React.createElement('div',{style:{display:'flex',gap:'4px'}},
+            ['F','3/4','1/2','1/4','E'].map(function(lv){return React.createElement('button',{key:lv,type:'button',onClick:function(){setGasStart(lv)},style:{flex:1,padding:'8px 4px',borderRadius:'6px',border:'2px solid '+(gasStart===lv?'#10b981':'#334155'),background:gasStart===lv?'rgba(16,185,129,0.15)':'transparent',color:gasStart===lv?'#4ade80':'#64748b',cursor:'pointer',fontSize:'13px',fontWeight:'bold'}},lv)}))),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Gas Level - End of Shift'),
+          React.createElement('div',{style:{display:'flex',gap:'4px'}},
+            ['F','3/4','1/2','1/4','E'].map(function(lv){return React.createElement('button',{key:lv,type:'button',onClick:function(){setGasEnd(lv)},style:{flex:1,padding:'8px 4px',borderRadius:'6px',border:'2px solid '+(gasEnd===lv?'#f59e0b':'#334155'),background:gasEnd===lv?'rgba(245,158,11,0.15)':'transparent',color:gasEnd===lv?'#fbbf24':'#64748b',cursor:'pointer',fontSize:'13px',fontWeight:'bold'}},lv)}))),
+        logType==='gas'&&React.createElement('div',null,React.createElement('label',{style:S.lbl},'Odometer Mileage'),React.createElement('input',{type:'number',value:mileage,onChange:function(e){setMileage(e.target.value)},style:S.inp})),
+        logType==='gas'&&React.createElement('div',null,React.createElement('label',{style:S.lbl},'Gallons'),React.createElement('input',{type:'number',step:'0.01',value:gallons,onChange:function(e){setGallons(e.target.value)},style:S.inp})),
+        logType==='gas'&&React.createElement('div',null,React.createElement('label',{style:S.lbl},'Cost $'),React.createElement('input',{type:'number',step:'0.01',value:cost,onChange:function(e){setCost(e.target.value)},style:S.inp})),
+        React.createElement('div',{style:{gridColumn:'span 2'}},React.createElement('label',{style:S.lbl},'Description *'),
+          React.createElement('textarea',{value:notes,onChange:function(e){setNotes(e.target.value)},style:{...S.inp,minHeight:'60px',resize:'vertical'},
+            placeholder:logType==='ticket'?'Ticket type, location, date found on windshield':logType==='damage'?'Where is the damage? How bad?':logType==='maintenance'?'Which warning light? Any unusual sounds/smells?':logType==='gas'?'Station name, receipt number':'Describe the issue'}))),
       React.createElement('div',{style:{marginBottom:'12px'}},
-        React.createElement('label',{style:{...S.lbl,marginBottom:'6px',display:'block'}},'Photos ('+photos.length+')'),
+        React.createElement('label',{style:{...S.lbl,marginBottom:'6px',display:'block'}},'Photos * ('+photos.length+') \u2014 Take photo of the issue'),
         React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'8px'}},
-          photos.map((p,i)=>React.createElement('div',{key:i,style:{position:'relative',width:'60px',height:'60px',borderRadius:'6px',overflow:'hidden',border:'1px solid #475569'}},
+          photos.map(function(p,i){return React.createElement('div',{key:i,style:{position:'relative',width:'70px',height:'70px',borderRadius:'6px',overflow:'hidden',border:'1px solid #475569'}},
             React.createElement('img',{src:p.data,style:{width:'100%',height:'100%',objectFit:'cover'}}),
-            React.createElement('button',{onClick:()=>setPhotos(photos.filter((_,j)=>j!==i)),style:{position:'absolute',top:0,right:0,background:'#ef4444',color:'#fff',border:'none',borderRadius:'0 0 0 4px',fontSize:'10px',cursor:'pointer',padding:'2px 4px'}},'X')))),
-        React.createElement('label',{style:{...S.btn,padding:'6px 16px',fontSize:'12px',cursor:'pointer',display:'inline-block'}},
-          '+ Add Photo',React.createElement('input',{type:'file',accept:'image/*',capture:'environment',style:{display:'none'},onChange:addPhoto}))),
-      React.createElement('button',{onClick:submit,style:{...S.btn,width:'100%'}},'Submit Log')),
-    logs.map(log=>React.createElement('div',{key:log.id,style:{...S.card,marginBottom:'8px',display:'flex',justifyContent:'space-between',alignItems:'center',borderLeft:'3px solid '+(log.log_type==='gas'?'#f59e0b':'#ef4444'),cursor:'pointer'},onClick:()=>viewFull(log.id)},
+            React.createElement('button',{onClick:function(){setPhotos(photos.filter(function(_,j){return j!==i}))},style:{position:'absolute',top:0,right:0,background:'#ef4444',color:'#fff',border:'none',borderRadius:'0 0 0 4px',fontSize:'10px',cursor:'pointer',padding:'2px 5px'}},'X'))})),
+        React.createElement('label',{style:{...S.btn,padding:'8px 20px',fontSize:'13px',cursor:'pointer',display:'inline-block'}},
+          '+ Take Photo',React.createElement('input',{type:'file',accept:'image/*',capture:'environment',style:{display:'none'},onChange:addPhoto}))),
+      React.createElement('button',{onClick:submit,style:{...S.btn,width:'100%',background:'#dc2626',padding:'12px',fontSize:'15px'}},'Submit Report')),
+
+    React.createElement('div',{style:{display:'flex',gap:'6px',marginBottom:'16px',flexWrap:'wrap'}},
+      [['','All'],['ticket','Tickets'],['damage','Damage'],['maintenance','Maintenance'],['gas','Gas'],['other','Other']].map(function(t){return React.createElement('button',{key:t[0]||'all',onClick:function(){setFilterType(t[0])},style:{padding:'8px 14px',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'13px',background:filterType===t[0]?'#3b82f6':'#0f172a',color:filterType===t[0]?'#fff':'#64748b'}},t[1])})),
+
+    ld&&React.createElement('div',{style:{textAlign:'center',padding:'20px',color:'#94a3b8'}},'Loading...'),
+    !ld&&logs.length===0&&!showForm&&React.createElement('div',{style:{...S.card,textAlign:'center',padding:'40px',color:'#94a3b8'}},'No reports yet.'),
+
+    showSummary&&summary&&React.createElement('div',{style:{...S.card,marginBottom:'16px',border:'1px solid #8b5cf6'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'12px'}},
+        React.createElement('h4',{style:{margin:0,color:'#c4b5fd'}},'Fleet Summary'),
+        React.createElement('button',{onClick:function(){setShowSummary(false)},style:{background:'none',border:'none',color:'#94a3b8',cursor:'pointer',fontSize:'18px'}},'\u00d7')),
+      React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
+        React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
+          React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Driver'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Vehicle'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Reports'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Gas Fills'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Fuel Cost'),
+          React.createElement('th',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},'Issues'))),
+        React.createElement('tbody',null,summary.byDriver.map(function(d,i){return React.createElement('tr',{key:i,style:{borderBottom:'1px solid #1e293b'}},
+          React.createElement('td',{style:{padding:'8px',fontWeight:'bold'}},d.driver_name),
+          React.createElement('td',{style:{padding:'8px',textAlign:'center',fontSize:'12px'}},d.vehicle||'-'),
+          React.createElement('td',{style:{padding:'8px',textAlign:'center'}},d.total_logs),
+          React.createElement('td',{style:{padding:'8px',textAlign:'center'}},d.gas_logs),
+          React.createElement('td',{style:{padding:'8px',textAlign:'center',color:'#fbbf24'}},'$'+parseFloat(d.total_fuel_cost||0).toFixed(2)),
+          React.createElement('td',{style:{padding:'8px',textAlign:'center',color:parseInt(d.issue_count)>0?'#f87171':'#4ade80'}},d.issue_count))})))),
+
+    logs.map(function(log){return React.createElement('div',{key:log.id,style:{...S.card,marginBottom:'8px',display:'flex',justifyContent:'space-between',alignItems:'center',borderLeft:'3px solid '+(typeColors[log.log_type]||'#64748b'),cursor:'pointer'},onClick:function(){viewFull(log.id)}},
       React.createElement('div',null,
-        React.createElement('div',{style:{fontWeight:'bold'}},log.driver_name,' — ',React.createElement('span',{style:{color:log.log_type==='gas'?'#fbbf24':'#fca5a5'}},log.log_type==='gas'?'Gas Fill-Up':'Damage Inspection')),
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px'}},
+          React.createElement('span',{style:{padding:'2px 8px',borderRadius:'4px',fontSize:'11px',fontWeight:'bold',background:'rgba('+(log.log_type==='ticket'?'239,68,68':log.log_type==='damage'?'245,158,11':log.log_type==='gas'?'16,185,129':'139,92,246')+',0.2)',color:typeColors[log.log_type]||'#94a3b8'}},typeLabels[log.log_type]||log.log_type),
+          React.createElement('b',{style:{color:'#e2e8f0'}},log.driver_name),
+          log.has_issues&&!log.resolved&&React.createElement('span',{style:{fontSize:'10px',background:'rgba(239,68,68,0.2)',color:'#fca5a5',padding:'2px 6px',borderRadius:'4px'}},'OPEN')),
         React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8'}},
           log.vehicle&&(log.vehicle+' | '),
           log.mileage&&(log.mileage.toLocaleString()+' mi | '),
-          log.log_type==='gas'&&log.gallons&&(log.gallons+' gal | $'+(log.cost||0)),
-          ' | ',fmtD(log.created_at))),
+          log.log_type==='gas'&&log.gallons&&(log.gallons+' gal | $'+(parseFloat(log.cost)||0).toFixed(2)+' | '),
+          fmtD(log.created_at),log.gas_level_start&&(' | Gas: '+log.gas_level_start+' \u2192 '+(log.gas_level_end||'?')))),
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
         log.photo_count>0&&React.createElement('span',{style:{fontSize:'12px',color:'#64748b'}},log.photo_count+' photos'),
-        isAdmin&&React.createElement('button',{onClick:function(e){e.stopPropagation();delLog(log.id)},style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'16px'}},'\u2715')))),
-    viewLog&&React.createElement('div',{style:S.modal,onClick:e=>{if(e.target===e.currentTarget)setViewLog(null)}},
+        isAdmin&&log.has_issues&&!log.resolved&&React.createElement('button',{onClick:function(e){e.stopPropagation();resolve(log.id)},style:{padding:'4px 10px',borderRadius:'4px',border:'1px solid #10b981',background:'transparent',color:'#4ade80',cursor:'pointer',fontSize:'11px'}},'Resolve'),
+        isAdmin&&React.createElement('button',{onClick:function(e){e.stopPropagation();delLog(log.id)},style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'16px'}},'\u2715')))}),
+
+    viewLog&&React.createElement('div',{style:S.modal,onClick:function(e){if(e.target===e.currentTarget)setViewLog(null)}},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'500px',maxHeight:'90vh',overflow:'auto'}},
-        React.createElement('div',{style:{padding:'16px',borderBottom:'1px solid #334155',display:'flex',justifyContent:'space-between'}},
-          React.createElement('h3',{style:{margin:0}},viewLog.log_type==='gas'?'Gas Fill-Up':'Damage Inspection'),
-          React.createElement('button',{onClick:()=>setViewLog(null),style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'\u00d7')),
+        React.createElement('div',{style:{padding:'16px',borderBottom:'1px solid #334155',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+          React.createElement('div',null,
+            React.createElement('span',{style:{padding:'3px 10px',borderRadius:'4px',fontSize:'12px',fontWeight:'bold',background:'rgba('+(viewLog.log_type==='ticket'?'239,68,68':viewLog.log_type==='damage'?'245,158,11':viewLog.log_type==='gas'?'16,185,129':'139,92,246')+',0.2)',color:typeColors[viewLog.log_type]||'#94a3b8',marginRight:'8px'}},typeLabels[viewLog.log_type]||viewLog.log_type),
+            React.createElement('span',{style:{fontWeight:'bold',fontSize:'16px'}},viewLog.driver_name)),
+          React.createElement('button',{onClick:function(){setViewLog(null)},style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'\u00d7')),
         React.createElement('div',{style:{padding:'16px'}},
-          React.createElement('div',{style:{marginBottom:'8px'}},'Driver: ',React.createElement('b',null,viewLog.driver_name)),
-          viewLog.vehicle&&React.createElement('div',{style:{marginBottom:'8px'}},'Vehicle: ',React.createElement('b',null,viewLog.vehicle)),
-          viewLog.mileage&&React.createElement('div',{style:{marginBottom:'8px'}},'Mileage: ',React.createElement('b',null,viewLog.mileage.toLocaleString(),' mi')),
-          viewLog.gallons&&React.createElement('div',{style:{marginBottom:'8px'}},'Gallons: ',React.createElement('b',null,viewLog.gallons)),
-          viewLog.cost&&React.createElement('div',{style:{marginBottom:'8px'}},'Cost: ',React.createElement('b',null,'$'+parseFloat(viewLog.cost).toFixed(2))),
-          viewLog.notes&&React.createElement('div',{style:{marginBottom:'8px'}},'Notes: ',viewLog.notes),
-          React.createElement('div',{style:{marginBottom:'8px',fontSize:'12px',color:'#64748b'}},'Logged: '+new Date(viewLog.created_at).toLocaleString()),
+          viewLog.vehicle&&React.createElement('div',{style:{marginBottom:'8px',color:'#94a3b8'}},'Vehicle: ',React.createElement('b',{style:{color:'#e2e8f0'}},viewLog.vehicle)),
+          viewLog.mileage&&React.createElement('div',{style:{marginBottom:'8px',color:'#94a3b8'}},'Mileage: ',React.createElement('b',{style:{color:'#e2e8f0'}},viewLog.mileage.toLocaleString(),' mi')),
+          viewLog.gallons&&React.createElement('div',{style:{marginBottom:'8px',color:'#94a3b8'}},'Gallons: ',React.createElement('b',{style:{color:'#e2e8f0'}},viewLog.gallons)),
+          viewLog.cost&&React.createElement('div',{style:{marginBottom:'8px',color:'#94a3b8'}},'Cost: ',React.createElement('b',{style:{color:'#e2e8f0'}},'$'+parseFloat(viewLog.cost).toFixed(2))),
+          viewLog.gas_level_start&&React.createElement('div',{style:{marginBottom:'8px',display:'flex',gap:'12px'}},
+            React.createElement('span',{style:{color:'#94a3b8'}},'Gas: '),
+            React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold'}},'Start: '+viewLog.gas_level_start),
+            React.createElement('span',{style:{color:'#94a3b8'}},'\u2192'),
+            React.createElement('span',{style:{color:'#fbbf24',fontWeight:'bold'}},'End: '+(viewLog.gas_level_end||'N/A'))),
+          viewLog.notes&&React.createElement('div',{style:{marginBottom:'12px',padding:'10px',background:'#0f172a',borderRadius:'6px',color:'#e2e8f0'}},viewLog.notes),
+          viewLog.issues&&viewLog.issues!==viewLog.notes&&React.createElement('div',{style:{marginBottom:'8px',color:'#fca5a5'}},'Issues: ',viewLog.issues),
+          React.createElement('div',{style:{marginBottom:'12px',fontSize:'12px',color:'#64748b'}},'Submitted: '+new Date(viewLog.created_at).toLocaleString()),
+          viewLog.resolved&&React.createElement('div',{style:{fontSize:'12px',color:'#4ade80',marginBottom:'12px'}},'Resolved by '+viewLog.resolved_by+' on '+new Date(viewLog.resolved_date).toLocaleDateString()),
           (viewLog.photos||[]).length>0&&React.createElement('div',null,
-            React.createElement('div',{style:{fontWeight:'bold',marginBottom:'8px'}},'Photos:'),
+            React.createElement('div',{style:{fontWeight:'bold',marginBottom:'8px',color:'#94a3b8'}},'Photos:'),
             React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'8px'}},
-              (viewLog.photos||[]).map((p,i)=>React.createElement('img',{key:i,src:p.data,style:{width:'100%',borderRadius:'6px',cursor:'pointer'},onClick:()=>{var w=window.open('');w.document.write('<img src="'+p.data+'" style="max-width:100%">');w.document.title=p.name||'Photo'}}))))))));
+              (viewLog.photos||[]).map(function(p,i){return React.createElement('img',{key:i,src:p.data,style:{width:'100%',borderRadius:'6px',cursor:'pointer'},onClick:function(){var w=window.open('');w.document.write('<img src="'+p.data+'" style="max-width:100%">');w.document.title=p.name||'Photo'}})})))))));
 }
 
 function InvoiceRevenue({t}){
