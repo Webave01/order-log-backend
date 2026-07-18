@@ -188,6 +188,28 @@ async function initDB() {
       )
     `);
 
+    // Vehicle logs (mileage, damage inspections)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS vehicle_logs (
+        id SERIAL PRIMARY KEY,
+        driver_name VARCHAR(100) NOT NULL,
+        log_type VARCHAR(20) NOT NULL,
+        mileage INTEGER,
+        gallons DECIMAL(6,2),
+        cost DECIMAL(8,2),
+        notes TEXT,
+        photos JSONB DEFAULT '[]'::jsonb,
+        vehicle VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS checklist JSONB;
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS has_issues BOOLEAN DEFAULT false;
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS issues TEXT;
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS resolved BOOLEAN DEFAULT false;
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS resolved_by VARCHAR(100);
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS resolved_date TIMESTAMP
+    `);
+
     // Driver applications (onboarding)
     await client.query(`
       CREATE TABLE IF NOT EXISTS driver_applications (
@@ -2033,6 +2055,77 @@ app.get('/api/drivers/:id/documents/:docId', authenticate, async (req, res) => {
     const doc = (driver.rows[0].documents || []).find(d => d.id === req.params.docId);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
     res.json(doc);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Vehicle logs - submit (drivers can submit)
+app.post('/api/vehicle-logs', authenticate, async (req, res) => {
+  const { driver_name, log_type, mileage, gallons, cost, notes, photos, vehicle } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO vehicle_logs (driver_name, log_type, mileage, gallons, cost, notes, photos, vehicle) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
+      [driver_name || req.user.username, log_type, mileage || null, gallons || null, cost || null, notes, JSON.stringify(photos || []), vehicle || null]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { console.error('Vehicle log error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// Vehicle logs - list (with date filter)
+app.get('/api/vehicle-logs', authenticate, async (req, res) => {
+  const { start_date, end_date, log_type, driver_name } = req.query;
+  try {
+    let query = 'SELECT * FROM vehicle_logs WHERE 1=1';
+    const params = [];
+    if (start_date) { params.push(start_date); query += ' AND created_at >= $' + params.length; }
+    if (end_date) { params.push(end_date + 'T23:59:59'); query += ' AND created_at <= $' + params.length; }
+    if (log_type) { params.push(log_type); query += ' AND log_type = $' + params.length; }
+    if (driver_name) { params.push(driver_name); query += ' AND driver_name = $' + params.length; }
+    query += ' ORDER BY created_at DESC LIMIT 200';
+    const result = await pool.query(query, params);
+    // Strip photo data from list view (send only metadata)
+    const rows = result.rows.map(r => ({...r, photo_count: (r.photos || []).length, photos: (r.photos || []).map(p => ({name: p.name || 'photo', type: p.type}))}));
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Vehicle log - get single with full photo data
+app.get('/api/vehicle-logs/:id', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM vehicle_logs WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Vehicle log - resolve issue (admin only)
+app.put('/api/vehicle-logs/:id/resolve', authenticate, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE vehicle_logs SET resolved = true, resolved_by = $1, resolved_date = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+      [req.user.username, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Vehicle log - fleet summary (admin only)
+app.get('/api/vehicle-logs/summary', authenticate, async (req, res) => {
+  try {
+    const byDriver = await pool.query(
+      "SELECT driver_name, vehicle, COUNT(*) as total_logs, COUNT(CASE WHEN log_type='gas' THEN 1 END) as gas_logs, COUNT(CASE WHEN has_issues THEN 1 END) as issue_count, SUM(COALESCE(cost,0)) as total_fuel_cost, MAX(mileage) as last_mileage, MIN(mileage) as first_mileage FROM vehicle_logs GROUP BY driver_name, vehicle ORDER BY driver_name"
+    );
+    const openIssues = await pool.query(
+      "SELECT * FROM vehicle_logs WHERE has_issues = true AND resolved = false ORDER BY created_at DESC"
+    );
+    res.json({ byDriver: byDriver.rows, openIssues: openIssues.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Vehicle log - delete (admin only)
+app.delete('/api/vehicle-logs/:id', authenticate, adminOnly, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM vehicle_logs WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
