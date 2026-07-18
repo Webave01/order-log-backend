@@ -148,7 +148,7 @@ function App(){
   const isDriver=user&&user.role==='driver';
   const userPerms=(user&&user.permissions)||[];
   const hasPerm=function(p){return isAdmin||userPerms.indexOf(p)!==-1};
-  const allTabs=['orders','cleaners','extras','invoices','payments','reports','errors','schedule','settings'];
+  const allTabs=['orders','cleaners','extras','invoices','payments','reports','errors','schedule','vehicle','settings'];
   const tabs=isAdmin?allTabs:isDriver?['schedule','vehicle']:allTabs.filter(function(t){return hasPerm(t)});
   useEffect(()=>{if(isDriver&&view==='orders')setView('schedule');if(!isAdmin&&!isDriver&&tabs.length>0&&tabs.indexOf(view)===-1)setView(tabs[0])},[user]);
 
