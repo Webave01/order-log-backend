@@ -53,7 +53,16 @@ module.exports = function(pool, authenticate, adminOnly) {
 
   router.delete('/drivers/:id', authenticate, adminOnly, async (req, res) => {
     try {
-      await pool.query("UPDATE drivers SET status = 'terminated' WHERE id = $1", [req.params.id]);
+      const { force } = req.query;
+      if (force === 'true') {
+        // Permanent delete - remove assignments first
+        await pool.query('DELETE FROM shift_assignments WHERE driver_id = $1', [req.params.id]);
+        await pool.query('DELETE FROM shift_requests WHERE driver_name IN (SELECT name FROM drivers WHERE id = $1)', [req.params.id]);
+        await pool.query('UPDATE users SET user_id = NULL WHERE id IN (SELECT user_id FROM drivers WHERE id = $1)', [req.params.id]);
+        await pool.query('DELETE FROM drivers WHERE id = $1', [req.params.id]);
+      } else {
+        await pool.query("UPDATE drivers SET status = 'terminated' WHERE id = $1", [req.params.id]);
+      }
       res.json({ success: true });
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
   });
@@ -159,10 +168,10 @@ module.exports = function(pool, authenticate, adminOnly) {
       const result = await pool.query(
         `INSERT INTO shifts (name, start_time, end_time, hours, base_pay, heavy_pay, heavy_days, category, sort_order, notes, day_of_week)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-        [name, start_time, end_time, hours, base_pay, heavy_pay, heavy_days || '', category || 'regular', sort_order || 99, notes, day_of_week]
+        [name, start_time || null, end_time || null, hours || null, base_pay || null, heavy_pay || null, heavy_days || '', category || 'regular', sort_order || 99, notes || null, day_of_week || null]
       );
       res.json(result.rows[0]);
-    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+    } catch (err) { console.error('Create shift error:', err); res.status(500).json({ error: err.message }); }
   });
 
   router.put('/shifts/:id', authenticate, adminOnly, async (req, res) => {
@@ -170,10 +179,10 @@ module.exports = function(pool, authenticate, adminOnly) {
     try {
       const result = await pool.query(
         `UPDATE shifts SET name=$1, start_time=$2, end_time=$3, hours=$4, base_pay=$5, heavy_pay=$6, heavy_days=$7, category=$8, sort_order=$9, notes=$10, day_of_week=$11 WHERE id=$12 RETURNING *`,
-        [name, start_time, end_time, hours, base_pay, heavy_pay, heavy_days || '', category, sort_order, notes, day_of_week, req.params.id]
+        [name, start_time || null, end_time || null, hours || null, base_pay || null, heavy_pay || null, heavy_days || '', category, sort_order, notes || null, day_of_week || null, req.params.id]
       );
       res.json(result.rows[0]);
-    } catch (err) { res.status(500).json({ error: 'Server error' }); }
+    } catch (err) { console.error('Update shift error:', err); res.status(500).json({ error: err.message }); }
   });
 
   router.delete('/shifts/:id', authenticate, adminOnly, async (req, res) => {
@@ -297,7 +306,7 @@ module.exports = function(pool, authenticate, adminOnly) {
       const result = await pool.query(`
         SELECT sr.*, s.name as shift_name, s.start_time, s.end_time, s.base_pay, s.category
         FROM shift_requests sr JOIN shifts s ON sr.shift_id = s.id
-        ORDER BY sr.created_at DESC LIMIT 50
+        ORDER BY sr.created_at DESC LIMIT 200
       `);
       res.json(result.rows);
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
