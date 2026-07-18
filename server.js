@@ -207,7 +207,9 @@ async function initDB() {
       ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS issues TEXT;
       ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS resolved BOOLEAN DEFAULT false;
       ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS resolved_by VARCHAR(100);
-      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS resolved_date TIMESTAMP
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS resolved_date TIMESTAMP;
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS gas_level_start VARCHAR(10);
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS gas_level_end VARCHAR(10)
     `);
 
     // Driver applications (onboarding)
@@ -2060,11 +2062,11 @@ app.get('/api/drivers/:id/documents/:docId', authenticate, async (req, res) => {
 
 // Vehicle logs - submit (drivers can submit)
 app.post('/api/vehicle-logs', authenticate, async (req, res) => {
-  const { driver_name, log_type, mileage, gallons, cost, notes, photos, vehicle } = req.body;
+  const { driver_name, log_type, mileage, gallons, cost, notes, photos, vehicle, gas_level_start, gas_level_end } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO vehicle_logs (driver_name, log_type, mileage, gallons, cost, notes, photos, vehicle) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-      [driver_name || req.user.username, log_type, mileage || null, gallons || null, cost || null, notes, JSON.stringify(photos || []), vehicle || null]
+      'INSERT INTO vehicle_logs (driver_name, log_type, mileage, gallons, cost, notes, photos, vehicle, gas_level_start, gas_level_end) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
+      [driver_name || req.user.username, log_type, mileage || null, gallons || null, cost || null, notes, JSON.stringify(photos || []), vehicle || null, gas_level_start || null, gas_level_end || null]
     );
     res.json(result.rows[0]);
   } catch (err) { console.error('Vehicle log error:', err); res.status(500).json({ error: err.message }); }
