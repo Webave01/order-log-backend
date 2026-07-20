@@ -2091,6 +2091,20 @@ app.get('/api/vehicle-logs', authenticate, async (req, res) => {
 });
 
 // Vehicle log - get single with full photo data
+// Vehicle log - fleet summary (admin only)
+app.get('/api/vehicle-logs/summary', authenticate, async (req, res) => {
+  try {
+    const byDriver = await pool.query(
+      "SELECT driver_name, vehicle, COUNT(*) as total_logs, COUNT(CASE WHEN log_type='gas' THEN 1 END) as gas_logs, COUNT(CASE WHEN has_issues THEN 1 END) as issue_count, SUM(COALESCE(cost,0)) as total_fuel_cost, MAX(mileage) as last_mileage, MIN(mileage) as first_mileage FROM vehicle_logs GROUP BY driver_name, vehicle ORDER BY driver_name"
+    );
+    const openIssues = await pool.query(
+      "SELECT * FROM vehicle_logs WHERE has_issues = true AND resolved = false ORDER BY created_at DESC"
+    );
+    res.json({ byDriver: byDriver.rows, openIssues: openIssues.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
 app.get('/api/vehicle-logs/:id', authenticate, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM vehicle_logs WHERE id = $1', [req.params.id]);
@@ -2107,19 +2121,6 @@ app.put('/api/vehicle-logs/:id/resolve', authenticate, adminOnly, async (req, re
       [req.user.username, req.params.id]
     );
     res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// Vehicle log - fleet summary (admin only)
-app.get('/api/vehicle-logs/summary', authenticate, async (req, res) => {
-  try {
-    const byDriver = await pool.query(
-      "SELECT driver_name, vehicle, COUNT(*) as total_logs, COUNT(CASE WHEN log_type='gas' THEN 1 END) as gas_logs, COUNT(CASE WHEN has_issues THEN 1 END) as issue_count, SUM(COALESCE(cost,0)) as total_fuel_cost, MAX(mileage) as last_mileage, MIN(mileage) as first_mileage FROM vehicle_logs GROUP BY driver_name, vehicle ORDER BY driver_name"
-    );
-    const openIssues = await pool.query(
-      "SELECT * FROM vehicle_logs WHERE has_issues = true AND resolved = false ORDER BY created_at DESC"
-    );
-    res.json({ byDriver: byDriver.rows, openIssues: openIssues.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

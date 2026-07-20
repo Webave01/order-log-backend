@@ -349,6 +349,22 @@ module.exports = function(pool, authenticate, adminOnly) {
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
   });
 
+  // Delete handled requests (admin only)
+  router.delete('/shift-requests/handled', authenticate, adminOnly, async (req, res) => {
+    try {
+      const result = await pool.query("DELETE FROM shift_requests WHERE status != 'pending' RETURNING id");
+      res.json({ success: true, deleted: result.rows.length });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Delete single request (admin only)
+  router.delete('/shift-requests/:id', authenticate, adminOnly, async (req, res) => {
+    try {
+      await pool.query('DELETE FROM shift_requests WHERE id = $1', [req.params.id]);
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
   // =============================================
   // PAY SUMMARY
   // =============================================
