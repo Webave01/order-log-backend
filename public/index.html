@@ -674,7 +674,7 @@ function VehicleLog({isAdmin,user,notify,drivers}){
   const[logType,setLogType]=useState('ticket');const[mileage,setMileage]=useState('');
   const[gallons,setGallons]=useState('');const[cost,setCost]=useState('');
   const[notes,setNotes]=useState('');const[vehicle,setVehicle]=useState('');
-  const[driverName,setDriverName]=useState(user?user.username:'');
+  const[driverName,setDriverName]=useState('');
   const[photos,setPhotos]=useState([]);const[viewLog,setViewLog]=useState(null);
   const[gasStart,setGasStart]=useState('');const[gasEnd,setGasEnd]=useState('');
   const[summary,setSummary]=useState(null);const[showSummary,setShowSummary]=useState(false);
@@ -713,7 +713,7 @@ function VehicleLog({isAdmin,user,notify,drivers}){
         React.createElement('div',null,
           React.createElement('span',{style:{display:'inline-block',padding:'2px 8px',borderRadius:'4px',fontSize:'11px',fontWeight:'bold',background:'rgba('+(l.log_type==='ticket'?'239,68,68':l.log_type==='damage'?'245,158,11':'139,92,246')+',0.2)',color:typeColors[l.log_type]||'#94a3b8',marginRight:'8px'}},typeLabels[l.log_type]||l.log_type),
           React.createElement('b',null,l.driver_name),' \u2014 ',l.vehicle||'',
-          React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',marginTop:'2px'}},l.notes||l.issues||'No description',' \u2014 ',fmtD(l.created_at))),
+          React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',marginTop:'2px'}},l.notes||l.issues||'No description',' \u2014 ',new Date(l.created_at).toLocaleDateString()+' '+new Date(l.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))),
         React.createElement('div',{style:{display:'flex',gap:'6px'}},
           React.createElement('button',{onClick:function(){viewFull(l.id)},style:{padding:'4px 10px',borderRadius:'4px',border:'1px solid #475569',background:'transparent',color:'#94a3b8',cursor:'pointer',fontSize:'11px'}},'View'),
           isAdmin&&React.createElement('button',{onClick:function(){resolve(l.id)},style:{padding:'4px 12px',borderRadius:'4px',border:'1px solid #10b981',background:'transparent',color:'#4ade80',cursor:'pointer',fontSize:'11px',fontWeight:'bold'}},'Resolve')))})),
@@ -792,7 +792,7 @@ function VehicleLog({isAdmin,user,notify,drivers}){
           log.vehicle&&(log.vehicle+' | '),
           log.mileage&&(log.mileage.toLocaleString()+' mi | '),
           log.log_type==='gas'&&log.gallons&&(log.gallons+' gal | $'+(parseFloat(log.cost)||0).toFixed(2)+' | '),
-          fmtD(log.created_at),log.gas_level_start&&(' | Gas: '+log.gas_level_start+' \u2192 '+(log.gas_level_end||'?')))),
+          new Date(log.created_at).toLocaleDateString()+' '+new Date(log.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),log.gas_level_start&&(' | Gas: '+log.gas_level_start+' \u2192 '+(log.gas_level_end||'?')))),
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
         log.photo_count>0&&React.createElement('span',{style:{fontSize:'12px',color:'#64748b'}},log.photo_count+' photos'),
         isAdmin&&log.has_issues&&!log.resolved&&React.createElement('button',{onClick:function(e){e.stopPropagation();resolve(log.id)},style:{padding:'4px 10px',borderRadius:'4px',border:'1px solid #10b981',background:'transparent',color:'#4ade80',cursor:'pointer',fontSize:'11px'}},'Resolve'),
@@ -2042,26 +2042,26 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}},
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
-        React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,-7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'8px 12px',cursor:'pointer',fontSize:'16px'}},'\u25c0'),
-        React.createElement('h3',{style:{margin:0}},'Week of '+fmtD(weekOf)),
-        React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'8px 12px',cursor:'pointer',fontSize:'16px'}},'\u25b6'),
-        React.createElement('button',{onClick:()=>{var dt=new Date();var day=dt.getDay();setWeekOf(addDays(localDateStr(dt),-(day===0?6:day-1)))},style:{...S.inp,padding:'6px 12px',cursor:'pointer',fontSize:'12px'}},'Today')),
-      React.createElement('div',{style:{display:'flex',gap:'8px'}},canManage&&React.createElement('button',{onClick:genWeek,disabled:generating,style:{...S.btn,opacity:generating?0.6:1}},generating?'Generating...':'Generate Week'),React.createElement('button',{onClick:exportSchedulePDF,style:{...S.btn,background:'#dc2626'}},'Export PDF'))),
+        React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,-7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'14px'}},'\u25c0'),
+        React.createElement('span',{style:{margin:0,fontSize:'16px',fontWeight:'bold'}},'Week of '+fmtD(weekOf)),
+        React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'14px'}},'\u25b6'),
+        React.createElement('button',{onClick:()=>{var dt=new Date();var day=dt.getDay();setWeekOf(addDays(localDateStr(dt),-(day===0?6:day-1)))},style:{...S.inp,padding:'6px 10px',cursor:'pointer',fontSize:'11px'}},'Today')),
+      React.createElement('div',{style:{display:'flex',gap:'8px'}},canManage&&React.createElement('button',{onClick:genWeek,disabled:generating,style:{...S.btn,opacity:generating?0.6:1}},generating?'Generating...':'Generate Week'),React.createElement('button',{onClick:exportSchedulePDF,style:{...S.btn,background:'#dc2626',padding:'6px 12px',fontSize:'12px'}},'PDF'))),
 
     React.createElement('div',{style:{overflowX:'auto'}},
       React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'800px'}},
         React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
-          React.createElement('th',{style:{padding:'10px',textAlign:'left',minWidth:'140px',fontSize:'13px',position:'sticky',left:0,background:'#0f172a',zIndex:2}},'Shift'),
+          React.createElement('th',{style:{padding:'6px',textAlign:'left',minWidth:'100px',maxWidth:'110px',fontSize:'11px',position:'sticky',left:0,background:'#0f172a',zIndex:2}},'Shift'),
           isAdmin&&React.createElement('th',{style:{padding:'10px',textAlign:'center',fontSize:'11px',position:'sticky',left:'140px',background:'#0f172a',zIndex:2}},'Pay'),
-          dayDates.map((d,i)=>React.createElement('th',{key:d,style:{padding:'10px',textAlign:'center',fontSize:'13px',background:localDateStr(new Date())===d?'rgba(59,130,246,0.2)':'transparent'}},
+          dayDates.map((d,i)=>React.createElement('th',{key:d,style:{padding:'6px',textAlign:'center',fontSize:'12px',background:localDateStr(new Date())===d?'rgba(59,130,246,0.2)':'transparent'}},
             dayNames[i],React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},fmtD(d).replace(/\/26$/,'')))))),
         React.createElement('tbody',null,
           shifts.map(shift=>{
             var cat=catColors[shift.category]||'#64748b';
             return React.createElement('tr',{key:shift.id,style:{borderBottom:'1px solid #1e293b'}},
-              React.createElement('td',{style:{padding:'10px',borderLeft:'3px solid '+cat,position:'sticky',left:0,background:'#1e293b',zIndex:1}},
-                React.createElement('div',{style:{fontWeight:'bold',fontSize:'14px'}},shift.name),
-                React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},(shift.start_time||'')+' - '+(shift.end_time||''),shift.hours?' ('+shift.hours+'h)':'')),
+              React.createElement('td',{style:{padding:'6px',borderLeft:'3px solid '+cat,position:'sticky',left:0,background:'#1e293b',zIndex:1,maxWidth:'110px'}},
+                React.createElement('div',{style:{fontWeight:'bold',fontSize:'12px',lineHeight:'1.2'}},shift.name),
+                React.createElement('div',{style:{fontSize:'9px',color:'#64748b'}},(shift.start_time||'')+'-'+(shift.end_time||''),shift.hours?' ('+shift.hours+'h)':'')),
               isAdmin&&React.createElement('td',{style:{padding:'6px',textAlign:'center',fontSize:'12px',color:'#4ade80',position:'sticky',left:'140px',background:'#1e293b',zIndex:1}},shift.base_pay?fmtC(shift.base_pay)+(shift.heavy_pay?'/'+fmtC(shift.heavy_pay):''):'$20/hr'),
               dayDates.map((date,di)=>{
                 var dow=new Date(date+'T12:00:00').getDay();
@@ -2070,10 +2070,10 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
                 var a=getAssignment(shift.id,date);
                 var pay=getPay(shift,dow);
                 var isToday=localDateStr(new Date())===date;
-                return React.createElement('td',{key:date,style:{padding:'4px',textAlign:'center',background:isToday?'rgba(59,130,246,0.05)':'transparent',minWidth:'110px'},
+                return React.createElement('td',{key:date,style:{padding:'4px',textAlign:'center',background:isToday?'rgba(59,130,246,0.05)':'transparent',minWidth:'75px'},
                   onClick:canManage&&!a?.admin_confirmed?function(){setAssigning({shift,date,current:a})}:undefined},
                   a&&a.driver_id?React.createElement('div',{style:{background:a.admin_confirmed?'rgba(16,185,129,0.15)':'rgba(59,130,246,0.1)',borderRadius:'6px',padding:'6px',cursor:canManage?'pointer':'default',border:'1px solid '+(a.admin_confirmed?'#10b981':'#334155')}},
-                    React.createElement('div',{style:{fontWeight:'bold',fontSize:'13px',color:a.admin_confirmed?'#4ade80':'#e2e8f0'}},a.driver_name),
+                    React.createElement('div',{style:{fontWeight:'bold',fontSize:'12px',color:a.admin_confirmed?'#4ade80':'#e2e8f0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},a.driver_name),
                     isAdmin&&React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},fmtC(parseFloat(a.pay_override||pay))),
                     a.admin_confirmed&&React.createElement('span',{style:{fontSize:'10px'}},'\ud83d\udd12'))
                   :a?(function(){var pReqs=getPendingRequests(shift.id,date);return React.createElement('div',{style:{borderRadius:'6px',padding:'6px',cursor:canManage?'pointer':'default',border:'1px dashed '+(pReqs.length>0?'#f59e0b':'#475569'),color:pReqs.length>0?'#fbbf24':'#475569',fontSize:'12px',background:pReqs.length>0?'rgba(245,158,11,0.1)':'transparent'}},
@@ -2144,6 +2144,8 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
 function ShiftRequests({requests,shifts,drivers,notify,onRefresh,isAdmin,canManage}){
   const pending=requests.filter(r=>r.status==='pending');
   const handled=requests.filter(r=>r.status!=='pending');
+  const clearHandled=async()=>{if(!confirm('Delete all handled requests? ('+handled.length+' items)'))return;try{await api.del('/shift-requests/handled');notify('Cleared');await onRefresh()}catch(e){alert(e.message)}};
+  const delRequest=async(id)=>{try{await api.del('/shift-requests/'+id);notify('Deleted');await onRefresh()}catch(e){alert(e.message)}};
   const handleRequest=async(id,status)=>{try{await api.put('/shift-requests/'+id,{status});await onRefresh();notify(status==='approved'?'Approved':'Denied')}catch(e){alert(e.message)}};
   return React.createElement('div',null,
     React.createElement('h3',{style:{marginBottom:'16px'}},'\ud83d\udce8 Pending Requests ('+pending.length+')'),
@@ -2157,10 +2159,10 @@ function ShiftRequests({requests,shifts,drivers,notify,onRefresh,isAdmin,canMana
         React.createElement('button',{onClick:()=>handleRequest(r.id,'approved'),style:{padding:'6px 16px',borderRadius:'6px',border:'none',background:'#10b981',color:'#fff',cursor:'pointer',fontWeight:'bold'}},'\u2713 Approve'),
         React.createElement('button',{onClick:()=>handleRequest(r.id,'denied'),style:{padding:'6px 16px',borderRadius:'6px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer'}},'Deny')))),
     handled.length>0&&React.createElement('details',{style:{marginTop:'20px'}},
-      React.createElement('summary',{style:{cursor:'pointer',color:'#64748b'}},'Handled ('+handled.length+')'),
+      React.createElement('summary',{style:{cursor:'pointer',color:'#64748b',display:'flex',justifyContent:'space-between',alignItems:'center'}},'Handled ('+handled.length+')',isAdmin&&React.createElement('button',{onClick:function(e){e.preventDefault();clearHandled()},style:{padding:'4px 12px',borderRadius:'4px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer',fontSize:'11px'}},'Clear All')),
       handled.map(r=>React.createElement('div',{key:r.id,style:{padding:'8px',borderBottom:'1px solid #1e293b',fontSize:'13px',color:'#64748b'}},
         r.driver_name+' - '+r.shift_name+' - '+fmtD(r.work_date)+' - ',
-        React.createElement('span',{style:{color:r.status==='approved'?'#10b981':'#ef4444'}},r.status)))));
+        React.createElement('span',{style:{color:r.status==='approved'?'#10b981':'#ef4444'}},r.status),isAdmin&&React.createElement('button',{onClick:function(){delRequest(r.id)},style:{marginLeft:'8px',background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'12px'}},'\u2715')))));
 }
 
 function ShiftEditor({shifts,notify,onRefresh}){
