@@ -285,11 +285,15 @@ module.exports = function(pool, authenticate, adminOnly) {
           if (shift.name === 'Laundry Day Fri' && dow !== 5) continue;
           if (shift.name === 'Laundry Day Sat' && dow !== 6) continue;
           
-          // Check if already exists
-          const exists = await pool.query('SELECT id FROM shift_assignments WHERE shift_id = $1 AND work_date = $2', [shift.id, dateStr]);
+          // Check if already exists - never overwrite assigned drivers
+          const exists = await pool.query('SELECT id, driver_id FROM shift_assignments WHERE shift_id = $1 AND work_date = $2', [shift.id, dateStr]);
           if (exists.rows.length === 0) {
             await pool.query('INSERT INTO shift_assignments (shift_id, work_date, status) VALUES ($1, $2, $3)', [shift.id, dateStr, 'open']);
             created++;
+          }
+          // If exists but has no driver, make sure status is 'open'
+          else if (!exists.rows[0].driver_id) {
+            await pool.query("UPDATE shift_assignments SET status = 'open' WHERE id = $1", [exists.rows[0].id]);
           }
         }
       }
@@ -336,16 +340,24 @@ module.exports = function(pool, authenticate, adminOnly) {
       
       // If approved, assign the driver
       if (status === 'approved') {
-        // Find driver by name
-        const driver = await pool.query("SELECT id FROM drivers WHERE LOWER(name) = LOWER($1) AND status = 'active' LIMIT 1", [sr.driver_name]);
+        // Find driver by name - try exact, then partial match
+        let driver = await pool.query("SELECT id, name FROM drivers WHERE LOWER(name) = LOWER($1) AND status = 'active' LIMIT 1", [sr.driver_name]);
+        if (driver.rows.length === 0) {
+          driver = await pool.query("SELECT id, name FROM drivers WHERE LOWER(name) LIKE LOWER($1) AND status = 'active' LIMIT 1", ['%' + sr.driver_name + '%']);
+        }
         if (driver.rows.length > 0) {
           await pool.query(
             'INSERT INTO shift_assignments (shift_id, driver_id, work_date, status) VALUES ($1,$2,$3,$4) ON CONFLICT (shift_id, work_date) DO UPDATE SET driver_id=$2, status=$4',
             [sr.shift_id, driver.rows[0].id, sr.work_date, 'assigned']
           );
+          res.json({ success: true, assigned: driver.rows[0].name });
+        } else {
+          // No driver found - still mark approved but warn admin
+          res.json({ success: true, warning: 'No driver named "' + sr.driver_name + '" found in drivers list. Request approved but not assigned to schedule. Add this driver first.' });
         }
+      } else {
+        res.json({ success: true });
       }
-      res.json({ success: true });
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
   });
 
