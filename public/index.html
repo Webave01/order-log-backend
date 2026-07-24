@@ -1986,7 +1986,7 @@ function DriversPanel({drivers,notify,onRefresh,isAdmin}){
 }
 
 function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames,dayDates,isAdmin,canManage,notify,onRefresh,loadAll,requests}){
-  const[assigning,setAssigning]=useState(null);
+  const[assigning,setAssigning]=useState(null);const[requesting,setRequesting]=useState(null);const[reqDriver,setReqDriver]=useState('');const[reqCustom,setReqCustom]=useState('');
   const[generating,setGenerating]=useState(false);
   const fmtC=n=>'$'+Number(n||0).toFixed(0);
 
@@ -2022,6 +2022,10 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
     doc.text('Generated: '+new Date().toLocaleDateString()+' '+new Date().toLocaleTimeString(),14,y);
     doc.save('Schedule_'+weekOf+'.pdf');
   };
+
+  const submitRequest=async()=>{var name=reqDriver==='other'?reqCustom:reqDriver;if(!name){alert('Select or enter your name');return}
+    try{await api.post('/shift-requests',{shift_id:requesting.shift.id,work_date:requesting.date,driver_name:name});
+      onRefresh();loadAll();notify('Request submitted');setRequesting(null);setReqDriver('');setReqCustom('')}catch(e){alert(e.message)}};
 
   const genWeek=async()=>{setGenerating(true);try{await api.post('/shift-assignments/generate-week',{start_date:weekOf});await onRefresh();notify('Week generated')}catch(e){alert(e.message)}setGenerating(false)};
 
@@ -2087,7 +2091,7 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
                   :(function(){var pReqs2=getPendingRequests(shift.id,date);
                     if(canManage&&pReqs2.length>0)return React.createElement('div',{style:{borderRadius:'6px',padding:'6px',border:'1px dashed #f59e0b',background:'rgba(245,158,11,0.1)'}},pReqs2.map(function(pr){return React.createElement('div',{key:pr.id,style:{fontSize:'12px',fontWeight:'bold',color:'#fbbf24'}},pr.driver_name)}),React.createElement('div',{style:{fontSize:'10px',color:'#f59e0b',marginTop:'2px'}},'PENDING'));
                     if(canManage)return React.createElement('div',{style:{padding:'8px',color:'#475569',fontSize:'12px'}},'+');
-                    return React.createElement('button',{onClick:function(e){e.stopPropagation();var dName=prompt('Enter your name to request this shift:');if(dName){api.post('/shift-requests',{shift_id:shift.id,work_date:date,driver_name:dName}).then(function(){onRefresh();loadAll();notify('Request submitted')}).catch(function(err){alert(err.message)})}},style:{background:'none',border:'1px solid #8b5cf6',color:'#c4b5fd',borderRadius:'4px',padding:'4px 8px',cursor:'pointer',fontSize:'11px'}},'Request')})())}))})))),
+                    return React.createElement('button',{onClick:function(e){e.stopPropagation();setRequesting({shift:shift,date:date})},style:{background:'none',border:'1px solid #8b5cf6',color:'#c4b5fd',borderRadius:'4px',padding:'4px 8px',cursor:'pointer',fontSize:'11px'}},'Request')})())}))})))),
 
     isAdmin&&React.createElement('div',{style:{...S.card,marginTop:'16px'}},
       React.createElement('h4',{style:{marginBottom:'12px',color:'#4ade80'}},'Weekly Pay Summary'),
@@ -2128,7 +2132,24 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
                 React.createElement('td',{style:{padding:'10px',textAlign:'right',fontWeight:'bold',fontSize:'18px',color:'#fbbf24'}},'$'+weekTotal.toFixed(0))))));
       })()),
 
-        assigning&&React.createElement('div',{style:S.modal,onClick:e=>{if(e.target===e.currentTarget)setAssigning(null)}},
+        requesting&&React.createElement('div',{style:S.modal,onClick:function(e){if(e.target===e.currentTarget)setRequesting(null)}},
+      React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'360px',border:'1px solid #8b5cf6'}},
+        React.createElement('div',{style:{padding:'16px',borderBottom:'1px solid #334155',display:'flex',justifyContent:'space-between'}},
+          React.createElement('h3',{style:{margin:0,fontSize:'16px'}},'Request Shift'),
+          React.createElement('button',{onClick:function(){setRequesting(null)},style:{background:'none',border:'none',color:'#94a3b8',fontSize:'20px',cursor:'pointer'}},'×')),
+        React.createElement('div',{style:{padding:'16px'}},
+          React.createElement('div',{style:{marginBottom:'8px',fontSize:'13px',color:'#94a3b8'}},requesting.shift.name+' — '+fmtD(requesting.date)),
+          React.createElement('div',{style:{marginBottom:'12px'}},
+            React.createElement('label',{style:{...S.lbl,marginBottom:'6px',display:'block'}},'Select Your Name'),
+            React.createElement('select',{value:reqDriver,onChange:function(e){setReqDriver(e.target.value)},style:{...S.inp,width:'100%',padding:'10px',fontSize:'15px'}},
+              React.createElement('option',{value:''},'Select...'),
+              drivers.filter(function(d){return d.status==='active'}).map(function(d){return React.createElement('option',{key:d.id,value:d.name},d.name)}),
+              React.createElement('option',{value:'other'},'Other (type name)'))),
+          reqDriver==='other'&&React.createElement('div',{style:{marginBottom:'12px'}},
+            React.createElement('input',{value:reqCustom,onChange:function(e){setReqCustom(e.target.value)},placeholder:'Enter your name',style:{...S.inp,width:'100%',padding:'10px',fontSize:'15px'}})),
+          React.createElement('button',{onClick:submitRequest,style:{...S.btn,width:'100%',padding:'12px',fontSize:'15px'}},'Submit Request')))),
+
+    assigning&&React.createElement('div',{style:S.modal,onClick:e=>{if(e.target===e.currentTarget)setAssigning(null)}},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'400px',border:'1px solid #334155'}},
         React.createElement('div',{style:{padding:'16px',borderBottom:'1px solid #334155',display:'flex',justifyContent:'space-between'}},
           React.createElement('h3',{style:{margin:0}},assigning.shift.name+' - '+fmtD(assigning.date)),
