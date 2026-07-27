@@ -1759,13 +1759,17 @@ app.get('/api/invoice-tracking/summary', authenticate, requirePerm('invoices'), 
 });
 
 app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoices'), async (req, res) => {
-  const { week_start, week_end, billing_cycle } = req.body;
+  const { week_start, week_end, billing_cycle, cleaner_id } = req.body;
   try {
-    let cleanerQuery = 'SELECT * FROM cleaners';
+    let cleanerQuery = 'SELECT * FROM cleaners WHERE 1=1';
     const cleanerParams = [];
     if (billing_cycle) {
-      cleanerQuery += " WHERE COALESCE(billing_cycle, 'weekly') = $1";
       cleanerParams.push(billing_cycle);
+      cleanerQuery += " AND COALESCE(billing_cycle, 'weekly') = $" + cleanerParams.length;
+    }
+    if (cleaner_id) {
+      cleanerParams.push(cleaner_id);
+      cleanerQuery += " AND id = $" + cleanerParams.length;
     }
     const cleaners = await pool.query(cleanerQuery, cleanerParams);
     const extrasResult = await pool.query('SELECT * FROM extras');
@@ -1783,14 +1787,13 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
     const settings = {};
     settingsResult.rows.forEach(row => { var v = parseFloat(row.value); if (!isNaN(v)) settings[row.key] = v; });
 
-    // Remove any existing records that overlap with this date range (prevents double-counting)
+    // Remove existing unpaid records ONLY for targeted cleaners in this exact date range
     let cleanerIds = cleaners.rows.map(c => c.id);
     if (cleanerIds.length > 0) {
       await pool.query(
         `DELETE FROM invoice_tracking WHERE cleaner_id = ANY($1::int[]) 
-         AND ((week_start >= $2 AND week_start <= $3) OR (week_end >= $2 AND week_end <= $3))
-         AND COALESCE(billing_cycle, 'weekly') = $4 AND status != 'paid'`,
-        [cleanerIds, week_start, week_end, billing_cycle || 'weekly']
+         AND week_start = $2 AND COALESCE(billing_cycle, 'weekly') = $3 AND status != 'paid'`,
+        [cleanerIds, week_start, billing_cycle || 'weekly']
       );
     }
 
