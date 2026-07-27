@@ -1199,7 +1199,7 @@ function Payments({cleaners,settings,t,isAdmin}){
   const setLM=()=>{const n=new Date();const lastDay=new Date(n.getFullYear(),n.getMonth(),0);const firstDay=new Date(lastDay.getFullYear(),lastDay.getMonth(),1);setStart(localDateStr(firstDay));setEnd(localDateStr(lastDay))};
   const setTM=()=>{const n=new Date();const firstDay=new Date(n.getFullYear(),n.getMonth(),1);setStart(localDateStr(firstDay));setEnd(localDateStr(n))};
   
-  const generateWeek=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{await api.post('/invoice-tracking/generate-week',{week_start:start,week_end:end,billing_cycle:payView});await load()}catch(e){alert(e.message)}setLd(false)};
+  const generateWeek=async(cid)=>{if(!start||!end){alert('Select dates');return}setLd(true);try{var body={week_start:start,week_end:end,billing_cycle:payView};if(cid)body.cleaner_id=parseInt(cid);await api.post('/invoice-tracking/generate-week',body);await load()}catch(e){alert(e.message)}setLd(false)};
   
   const updatePayment=async(id,updates)=>{try{await api.put('/invoice-tracking/'+id,updates);await load();setEditing(null)}catch(e){alert(e.message)}};
   
@@ -1303,7 +1303,11 @@ function Payments({cleaners,settings,t,isAdmin}){
         payView==='weekly'&&React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer'}},t.lastWeek)),
         payView==='monthly'&&React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setTM,style:{...S.inp,cursor:'pointer'}},'This Month')),
         payView==='monthly'&&React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLM,style:{...S.inp,cursor:'pointer'}},'Last Month'))),
-      React.createElement('button',{onClick:generateWeek,disabled:ld,style:{...S.btn,width:'100%',opacity:ld?0.6:1}},ld?t.loading:'Generate from Orders')),
+      React.createElement('div',{style:{display:'flex',gap:'8px'}},
+        React.createElement('select',{id:'genCleanerId',style:{...S.inp,flex:1,padding:'8px'}},
+          React.createElement('option',{value:''},'All '+payView+' clients'),
+          cleaners.filter(function(c){return(c.billing_cycle||'weekly')===payView}).map(function(c){return React.createElement('option',{key:c.id,value:c.id},c.name)})),
+        React.createElement('button',{onClick:function(){var sel=document.getElementById('genCleanerId');generateWeek(sel?sel.value:'')},disabled:ld,style:{...S.btn,flex:1,opacity:ld?0.6:1}},ld?t.loading:'Generate from Orders'))),
     
     summary&&summary.cleaners&&React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
       React.createElement('h3',{style:{marginBottom:'12px'}},'Balance by Cleaner (Unpaid Only)'),
