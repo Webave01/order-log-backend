@@ -557,7 +557,7 @@ function ImportModal({cleaners,staffName,onClose,onImport,notify,t}){
 
 function Reports({t}){
   const[start,setStart]=useState('');const[end,setEnd]=useState('');const[data,setData]=useState(null);const[ld,setLd]=useState(false);
-  const gen=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{setData(await api.get('/reports/daily-stats?start_date='+start+'&end_date='+end))}catch(e){alert(e.message)}setLd(false)};
+  const gen=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{var stats=await api.get('/reports/daily-stats?start_date='+start+'&end_date='+end);try{var inv=await api.get('/reports/invoice-revenue?start_date='+start+'&end_date='+end);stats.invoiceRevenue=inv}catch(e2){}setData(stats)}catch(e){alert(e.message)}setLd(false)};
   const setToday=()=>{const n=new Date();const y=n.getFullYear();const m=String(n.getMonth()+1).padStart(2,'0');const d=String(n.getDate()).padStart(2,'0');const today=y+'-'+m+'-'+d;setStart(today);setEnd(today)};
   const setLW=()=>{const n=new Date();const dow=n.getDay();const daysSinceSat=dow===0?1:dow+1;const sat=new Date(n);sat.setDate(n.getDate()-daysSinceSat);const mon=new Date(sat);mon.setDate(sat.getDate()-5);setStart(localDateStr(mon));setEnd(localDateStr(sat))};
   const setTW=()=>{const n=new Date();const dow=n.getDay();const daysToMon=dow===0?6:dow-1;const mon=new Date(n);mon.setDate(n.getDate()-daysToMon);setStart(localDateStr(mon));setEnd(localDateStr(n))};
@@ -1324,7 +1324,14 @@ function Payments({cleaners,settings,t,isAdmin}){
           React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#ef4444',fontWeight:'bold'}},fmtC(cleanerUnpaid[c.cleaner_name]||0))))))),
     
     Object.keys(groupedByWeek).sort().reverse().map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
-      React.createElement('h3',{style:{marginBottom:'12px'}},(payView==='monthly'?'Month of ':'Week of ')+fmtD(week)),
+      React.createElement('h3',{style:{marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}},
+        React.createElement('span',null,(payView==='monthly'?'Month of ':'Week of ')+fmtD(week)),
+        (function(){var wkInvs=groupedByWeek[week]||[];var wkTotal=wkInvs.reduce(function(s,d){return s+parseFloat(d.invoice_amount||0)},0);var wkPaid=wkInvs.reduce(function(s,d){return s+parseFloat(d.amount_paid||0)},0);
+          return React.createElement('span',{style:{fontSize:'14px',fontWeight:'normal'}},
+            React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold'}},fmtC(wkTotal)),
+            React.createElement('span',{style:{color:'#64748b'}},' invoiced | '),
+            React.createElement('span',{style:{color:'#60a5fa',fontWeight:'bold'}},fmtC(wkPaid)),
+            React.createElement('span',{style:{color:'#64748b'}},' paid'))})()),
       React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
         React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
           React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Cleaner'),
