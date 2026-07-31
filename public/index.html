@@ -1360,10 +1360,12 @@ function Payments({cleaners,settings,t,isAdmin}){
             React.createElement('td',{style:{padding:'8px'}},inv.cleaner_name),
             React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmtC(inv.invoice_amount)),
             React.createElement('td',{style:{padding:'8px',textAlign:'right',color:parseFloat(inv.amount_paid)>0?'#4ade80':'#64748b'}},parseFloat(inv.amount_paid)>0?fmtC(inv.amount_paid):'—'),
-            React.createElement('td',{style:{padding:'8px',textAlign:'right',color:bal>0?'#ef4444':'#4ade80',fontWeight:'bold'}},bal>0?fmtC(bal):'$0.00'),
+            React.createElement('td',{style:{padding:'8px',textAlign:'right',color:(bal>0&&inv.status==='unpaid')?'#ef4444':'#4ade80',fontWeight:'bold'}},(inv.status==='partial'||bal<=0)?'$0.00':fmtC(bal)),
             React.createElement('td',{style:{padding:'8px',textAlign:'center'}},inv.status==='paid'?
               React.createElement('span',{style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#065f46',color:'#4ade80',cursor:'default'}},'✓ Paid'):
-              React.createElement('button',{onClick:function(){quickPay(inv)},style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',border:'2px solid #ef4444',background:'rgba(127,29,29,0.5)',color:'#fecaca',cursor:'pointer'}},inv.status==='partial'?'Partial → Paid':'Mark Paid')),
+              inv.status==='partial'?
+              React.createElement('span',{style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#065f46',color:'#4ade80',cursor:'default'}},'✓ Partial'):
+              React.createElement('button',{onClick:function(){quickPay(inv)},style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',border:'2px solid #ef4444',background:'rgba(127,29,29,0.5)',color:'#fecaca',cursor:'pointer'}},'Mark Paid')),
             React.createElement('td',{style:{padding:'8px',textAlign:'center'}},
               React.createElement('button',{onClick:function(){viewInvoice(inv);},style:{...S.btn,padding:'4px 8px',fontSize:'11px',marginRight:'4px',background:'#0ea5e9'}},'View'),
               React.createElement('button',{onClick:function(){startEdit(inv);},style:{...S.edit,padding:'4px 8px',fontSize:'11px',marginRight:'4px'}},'Edit'),
