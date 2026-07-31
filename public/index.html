@@ -1326,7 +1326,7 @@ function Payments({cleaners,settings,t,isAdmin}){
     Object.keys(groupedByWeek).sort().reverse().map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
       React.createElement('h3',{style:{marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}},
         React.createElement('span',null,(payView==='monthly'?'Month of ':'Week of ')+fmtD(week)),
-        (function(){var wkInvs=groupedByWeek[week]||[];var wkTotal=wkInvs.reduce(function(s,d){return s+parseFloat(d.invoice_amount||0)},0);var wkPaid=wkInvs.reduce(function(s,d){return s+parseFloat(d.amount_paid||0)},0);
+        (function(){var wkInvs=data.filter(function(d){if(!d.week_start||d.week_start.split('T')[0]!==week)return false;if(paySearch&&!(d.cleaner_name||'').toLowerCase().includes(paySearch.toLowerCase()))return false;return true});var wkTotal=wkInvs.reduce(function(s,d){return s+parseFloat(d.invoice_amount||0)},0);var wkPaid=wkInvs.reduce(function(s,d){return s+parseFloat(d.amount_paid||0)},0);
           return React.createElement('span',{style:{fontSize:'14px',fontWeight:'normal'}},
             React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold'}},fmtC(wkTotal)),
             React.createElement('span',{style:{color:'#64748b'}},' invoiced | '),
