@@ -2006,6 +2006,74 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
   const[generating,setGenerating]=useState(false);
   const fmtC=n=>'$'+Number(n||0).toFixed(0);
 
+  const exportScheduleImage=()=>{
+    var cellW=105,cellH=52,shiftColW=150,headH=70,titleH=50;
+    var visShifts=shifts.filter(function(s){return true});
+    var w=shiftColW+cellW*6+20;var h=titleH+headH+visShifts.length*cellH+30;
+    var canvas=document.createElement('canvas');canvas.width=w*2;canvas.height=h*2;
+    var ctx=canvas.getContext('2d');ctx.scale(2,2);
+    // Background
+    ctx.fillStyle='#0f172a';ctx.fillRect(0,0,w,h);
+    // Title
+    ctx.fillStyle='#3b82f6';ctx.fillRect(0,0,w,titleH-10);
+    ctx.fillStyle='#ffffff';ctx.font='bold 18px sans-serif';ctx.textAlign='left';
+    ctx.fillText('Kleen Panda - Weekly Schedule',12,26);
+    ctx.font='13px sans-serif';ctx.fillText('Week of '+fmtD(weekOf)+' - '+fmtD(addDays(weekOf,5)),12,42-4);
+    // Day headers
+    ctx.fillStyle='#1e293b';ctx.fillRect(0,titleH,w,headH-20);
+    ctx.fillStyle='#94a3b8';ctx.font='bold 13px sans-serif';ctx.textAlign='left';
+    ctx.fillText('Shift',10,titleH+30);
+    dayNames.forEach(function(dn,i){
+      var x=shiftColW+i*cellW+cellW/2;
+      ctx.textAlign='center';ctx.fillStyle='#e2e8f0';ctx.font='bold 14px sans-serif';
+      ctx.fillText(dn,x,titleH+22);
+      ctx.fillStyle='#64748b';ctx.font='11px sans-serif';
+      ctx.fillText(fmtD(dayDates[i]).replace(/\/26$/,''),x,titleH+38);
+    });
+    // Rows
+    var catColors2={west:'#3b82f6',east:'#10b981',morris:'#f59e0b',laundry:'#8b5cf6',other:'#64748b'};
+    visShifts.forEach(function(shift,ri){
+      var y=titleH+headH-20+ri*cellH;
+      // Row background alternating
+      ctx.fillStyle=ri%2===0?'#111c30':'#0f172a';ctx.fillRect(0,y,w,cellH);
+      // Category color bar
+      ctx.fillStyle=catColors2[shift.category]||'#64748b';ctx.fillRect(0,y,4,cellH);
+      // Shift name
+      ctx.fillStyle='#e2e8f0';ctx.font='bold 13px sans-serif';ctx.textAlign='left';
+      ctx.fillText(shift.name,12,y+22);
+      ctx.fillStyle='#64748b';ctx.font='10px sans-serif';
+      ctx.fillText((shift.start_time||'')+' - '+(shift.end_time||''),12,y+37);
+      // Day cells
+      dayDates.forEach(function(date,di){
+        var dow=new Date(date+'T12:00:00').getDay();
+        var x=shiftColW+di*cellW;
+        if(shift.name==='Laundry Day Fri'&&dow!==5){ctx.fillStyle='#0a0f1c';ctx.fillRect(x+2,y+4,cellW-4,cellH-8);return}
+        if(shift.name==='Laundry Day Sat'&&dow!==6){ctx.fillStyle='#0a0f1c';ctx.fillRect(x+2,y+4,cellW-4,cellH-8);return}
+        var a=assignments.find(function(a2){return a2.shift_id===shift.id&&a2.work_date&&a2.work_date.split('T')[0]===date});
+        if(a&&a.driver_name){
+          ctx.fillStyle='rgba(16,185,129,0.15)';ctx.fillRect(x+3,y+6,cellW-6,cellH-12);
+          ctx.strokeStyle='#10b981';ctx.lineWidth=1;ctx.strokeRect(x+3,y+6,cellW-6,cellH-12);
+          ctx.fillStyle='#4ade80';ctx.font='bold 13px sans-serif';ctx.textAlign='center';
+          ctx.fillText(a.driver_name,x+cellW/2,y+cellH/2+5);
+        }else{
+          ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+          ctx.strokeRect(x+3,y+6,cellW-6,cellH-12);ctx.setLineDash([]);
+          ctx.fillStyle='#475569';ctx.font='11px sans-serif';ctx.textAlign='center';
+          ctx.fillText('Open',x+cellW/2,y+cellH/2+4);
+        }
+      });
+    });
+    // Footer
+    ctx.fillStyle='#475569';ctx.font='10px sans-serif';ctx.textAlign='left';
+    ctx.fillText('Generated '+new Date().toLocaleDateString(),12,h-8);
+    // Download as PNG
+    canvas.toBlob(function(blob){
+      var url=URL.createObjectURL(blob);var link=document.createElement('a');
+      link.download='Schedule_'+weekOf+'.png';link.href=url;link.click();
+      setTimeout(function(){URL.revokeObjectURL(url)},1000);
+    },'image/png');
+  };
+
   const exportSchedulePDF=()=>{
     var doc=new jspdf.jsPDF('landscape','mm','letter');
     doc.setFillColor(15,23,42);doc.rect(0,0,280,20,'F');
@@ -2070,7 +2138,7 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
         React.createElement('span',{style:{margin:0,fontSize:'16px',fontWeight:'bold'}},'Week of '+fmtD(weekOf)),
         React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'14px'}},'\u25b6'),
         React.createElement('button',{onClick:()=>{var dt=new Date();var day=dt.getDay();setWeekOf(addDays(localDateStr(dt),-(day===0?6:day-1)))},style:{...S.inp,padding:'6px 10px',cursor:'pointer',fontSize:'11px'}},'Today')),
-      React.createElement('div',{style:{display:'flex',gap:'8px'}},canManage&&React.createElement('button',{onClick:genWeek,disabled:generating,style:{...S.btn,opacity:generating?0.6:1}},generating?'Generating...':'Generate Week'),React.createElement('button',{onClick:exportSchedulePDF,style:{...S.btn,background:'#dc2626',padding:'6px 12px',fontSize:'12px'}},'PDF'))),
+      React.createElement('div',{style:{display:'flex',gap:'8px'}},canManage&&React.createElement('button',{onClick:genWeek,disabled:generating,style:{...S.btn,opacity:generating?0.6:1}},generating?'Generating...':'Generate Week'),React.createElement('button',{onClick:exportSchedulePDF,style:{...S.btn,background:'#dc2626',padding:'6px 12px',fontSize:'12px'}},'PDF'),React.createElement('button',{onClick:exportScheduleImage,style:{...S.btn,background:'#059669',padding:'6px 12px',fontSize:'12px'}},'\ud83d\udcf7 Photo'))),
 
     React.createElement('div',{style:{overflowX:'auto'}},
       React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'800px'}},
