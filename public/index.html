@@ -1325,7 +1325,7 @@ function Payments({cleaners,settings,t,isAdmin}){
     
     Object.keys(groupedByWeek).sort().reverse().map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
       React.createElement('h3',{style:{marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}},
-        React.createElement('span',null,(payView==='monthly'?'Month of ':'Week of ')+fmtD(week)),
+        React.createElement('span',null,(function(){var wkRecs=data.filter(function(d){return d.week_start&&d.week_start.split('T')[0]===week});var wkEndDate=wkRecs.length>0&&wkRecs[0].week_end?wkRecs[0].week_end.split('T')[0]:null;return(payView==='monthly'?'Month: ':'Week: ')+fmtD(week)+(wkEndDate?' - '+fmtD(wkEndDate):'')})()),
         (function(){var wkInvs=data.filter(function(d){if(!d.week_start||d.week_start.split('T')[0]!==week)return false;if(paySearch&&!(d.cleaner_name||'').toLowerCase().includes(paySearch.toLowerCase()))return false;return true});var wkTotal=wkInvs.reduce(function(s,d){return s+parseFloat(d.invoice_amount||0)},0);var wkPaid=wkInvs.reduce(function(s,d){return s+parseFloat(d.amount_paid||0)},0);
           var wkUnpaid=wkInvs.filter(function(d){return d.status==='unpaid'}).reduce(function(s,d){return s+parseFloat(d.invoice_amount||0)-parseFloat(d.amount_paid||0)},0);
           return React.createElement('span',{style:{fontSize:'14px',fontWeight:'normal'}},
@@ -2135,7 +2135,7 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}},
       React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
         React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,-7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'14px'}},'\u25c0'),
-        React.createElement('span',{style:{margin:0,fontSize:'16px',fontWeight:'bold'}},'Week of '+fmtD(weekOf)),
+        React.createElement('span',{style:{margin:0,fontSize:'16px',fontWeight:'bold'}},'Week: '+fmtD(weekOf)+' - '+fmtD(addDays(weekOf,5))),
         React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'14px'}},'\u25b6'),
         React.createElement('button',{onClick:()=>{var dt=new Date();var day=dt.getDay();setWeekOf(addDays(localDateStr(dt),-(day===0?6:day-1)))},style:{...S.inp,padding:'6px 10px',cursor:'pointer',fontSize:'11px'}},'Today')),
       React.createElement('div',{style:{display:'flex',gap:'8px'}},canManage&&React.createElement('button',{onClick:genWeek,disabled:generating,style:{...S.btn,opacity:generating?0.6:1}},generating?'Generating...':'Generate Week'),React.createElement('button',{onClick:exportSchedulePDF,style:{...S.btn,background:'#dc2626',padding:'6px 12px',fontSize:'12px'}},'PDF'),React.createElement('button',{onClick:exportScheduleImage,style:{...S.btn,background:'#059669',padding:'6px 12px',fontSize:'12px'}},'\ud83d\udcf7 Photo'))),
