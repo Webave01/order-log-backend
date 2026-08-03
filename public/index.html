@@ -1240,8 +1240,8 @@ function Payments({cleaners,settings,t,isAdmin}){
         var dt=new Date(dateStr+'T12:00:00');var dow=dt.getDay();var monOffset=dow===0?6:dow-1;
         var weekMon=new Date(dt.getTime());weekMon.setDate(dt.getDate()-monOffset);
         var wk=localDateStr(weekMon);
-        if(!weeklyBreakdown[wk])weeklyBreakdown[wk]={orders:[],total:0};
-        weeklyBreakdown[wk].orders.push(o);weeklyBreakdown[wk].total+=parseFloat(o.total||0);
+        if(!weeklyBreakdown[wk])weeklyBreakdown[wk]={orders:[],total:0,weight:0};
+        weeklyBreakdown[wk].orders.push(o);weeklyBreakdown[wk].total+=parseFloat(o.total||0);weeklyBreakdown[wk].weight+=parseFloat(o.weight||0);
       });
     }
     setViewInv({cleaner:cleaner||{name:inv.cleaner_name},displayName:invoiceName(cleaner?.name||inv.cleaner_name),start:wkStart,end:wkEnd,orders:d.orders,ordersTotal:d.ordersTotal,congestionZone:d.congestionZone,congestionDays:d.congestionDays,congestionSurcharge:d.congestionSurcharge,total:d.grandTotal,invoiceId,weeklyBreakdown,isMonthly:payView==='monthly'});
@@ -1402,7 +1402,7 @@ function Payments({cleaners,settings,t,isAdmin}){
                   var wb=viewInv.weeklyBreakdown[wk];var wkEnd=new Date(wk+'T12:00:00');wkEnd.setDate(wkEnd.getDate()+5);
                   var rows=[];
                   rows.push(React.createElement('tr',{key:wk+'h',style:{background:'#e0e7ff'}},
-                    React.createElement('td',{colSpan:7,style:{padding:'8px',fontWeight:'bold',fontSize:'13px',color:'#3730a3'}},'Week of '+fmtD(wk)+' - '+fmtD(localDateStr(wkEnd))+' ('+wb.orders.length+' orders, '+fmtC(wb.total)+')')));
+                    React.createElement('td',{colSpan:7,style:{padding:'8px',fontWeight:'bold',fontSize:'13px',color:'#3730a3'}},'Week of '+fmtD(wk)+' - '+fmtD(localDateStr(wkEnd))+' ('+wb.orders.length+' orders, '+Math.round(wb.weight).toLocaleString()+' lbs, '+fmtC(wb.total)+')')));
                   wb.orders.forEach(function(o,i){rows.push(React.createElement('tr',{key:wk+'-'+i,style:{borderBottom:'1px solid #ddd'}},
                     React.createElement('td',{style:{padding:'6px 8px',fontSize:'13px'}},i+1),
                     React.createElement('td',{style:{padding:'6px 8px',fontSize:'13px'}},fmtD(o.pickup_date)),
