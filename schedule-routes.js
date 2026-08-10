@@ -301,6 +301,46 @@ module.exports = function(pool, authenticate, adminOnly) {
     } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
   });
 
+  // Copy current week's assignments to next week
+  router.post('/shift-assignments/copy-week', authenticate, canManageSchedule, async (req, res) => {
+    const { from_start, to_start } = req.body;
+    if (!from_start || !to_start) return res.status(400).json({ error: 'from_start and to_start required' });
+    try {
+      // Get all assignments with drivers from source week
+      const fromEnd = new Date(from_start + 'T12:00:00');
+      fromEnd.setDate(fromEnd.getDate() + 5);
+      const fromEndStr = fromEnd.toISOString().split('T')[0];
+      
+      const source = await pool.query(
+        'SELECT * FROM shift_assignments WHERE work_date >= $1 AND work_date <= $2 AND driver_id IS NOT NULL',
+        [from_start, fromEndStr]
+      );
+      
+      let copied = 0, skipped = 0;
+      for (const a of source.rows) {
+        // Calculate target date (same day offset in new week)
+        const srcDate = new Date(a.work_date);
+        const fromDate = new Date(from_start + 'T12:00:00');
+        const dayOffset = Math.round((srcDate - fromDate) / 86400000);
+        const targetDate = new Date(to_start + 'T12:00:00');
+        targetDate.setDate(targetDate.getDate() + dayOffset);
+        const targetStr = targetDate.toISOString().split('T')[0];
+        
+        // Check if target slot already has a driver - don't overwrite
+        const existing = await pool.query('SELECT id, driver_id FROM shift_assignments WHERE shift_id = $1 AND work_date = $2', [a.shift_id, targetStr]);
+        if (existing.rows.length > 0 && existing.rows[0].driver_id) { skipped++; continue; }
+        
+        await pool.query(
+          `INSERT INTO shift_assignments (shift_id, driver_id, work_date, status, pay_override) VALUES ($1,$2,$3,'assigned',$4)
+           ON CONFLICT (shift_id, work_date) DO UPDATE SET driver_id=$2, status='assigned', pay_override=$4`,
+          [a.shift_id, a.driver_id, targetStr, a.pay_override]
+        );
+        copied++;
+      }
+      res.json({ success: true, copied, skipped });
+    } catch (err) { console.error('Copy week error:', err); res.status(500).json({ error: err.message }); }
+  });
+
   // =============================================
   // SHIFT REQUESTS (Drivers can create, Admin/Manager approve)
   // =============================================
