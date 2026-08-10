@@ -2217,6 +2217,14 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
     try{await api.post('/shift-requests',{shift_id:requesting.shift.id,work_date:requesting.date,driver_name:name});
       onRefresh();loadAll();notify('Request submitted');setRequesting(null);setReqDriver('');setReqCustom('')}catch(e){alert(e.message)}};
 
+  const copyToNextWeek=async()=>{
+    if(!confirm('Copy this week\'s assigned drivers to next week? Existing assignments next week won\'t be overwritten.'))return;
+    setGenerating(true);
+    try{var r=await api.post('/shift-assignments/copy-week',{from_start:weekOf,to_start:addDays(weekOf,7)});
+      notify(r.copied+' shifts copied'+(r.skipped?', '+r.skipped+' skipped (already assigned)':''));
+      setWeekOf(addDays(weekOf,7))}catch(e){alert(e.message)}
+    setGenerating(false)};
+
   const genWeek=async()=>{setGenerating(true);try{await api.post('/shift-assignments/generate-week',{start_date:weekOf});await onRefresh();notify('Week generated')}catch(e){alert(e.message)}setGenerating(false)};
 
   const assign=async(shiftId,date,driverId)=>{
@@ -2244,7 +2252,7 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
         React.createElement('span',{style:{margin:0,fontSize:'16px',fontWeight:'bold'}},'Week: '+fmtD(weekOf)+' - '+fmtD(addDays(weekOf,5))),
         React.createElement('button',{onClick:()=>setWeekOf(addDays(weekOf,7)),style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'14px'}},'\u25b6'),
         React.createElement('button',{onClick:()=>{var dt=new Date();var day=dt.getDay();setWeekOf(addDays(localDateStr(dt),-(day===0?6:day-1)))},style:{...S.inp,padding:'6px 10px',cursor:'pointer',fontSize:'11px'}},'Today')),
-      React.createElement('div',{style:{display:'flex',gap:'8px'}},canManage&&React.createElement('button',{onClick:genWeek,disabled:generating,style:{...S.btn,opacity:generating?0.6:1}},generating?'Generating...':'Generate Week'),React.createElement('button',{onClick:exportSchedulePDF,style:{...S.btn,background:'#dc2626',padding:'6px 12px',fontSize:'12px'}},'PDF'),React.createElement('button',{onClick:exportScheduleImage,style:{...S.btn,background:'#059669',padding:'6px 12px',fontSize:'12px'}},'\ud83d\udcf7 Photo'))),
+      React.createElement('div',{style:{display:'flex',gap:'8px'}},canManage&&React.createElement('button',{onClick:genWeek,disabled:generating,style:{...S.btn,opacity:generating?0.6:1,padding:'6px 12px',fontSize:'12px'}},generating?'...':'Generate Week'),canManage&&React.createElement('button',{onClick:copyToNextWeek,disabled:generating,style:{...S.btn,background:'#8b5cf6',opacity:generating?0.6:1,padding:'6px 12px',fontSize:'12px'}},'Copy \u2192 Next Wk'),React.createElement('button',{onClick:exportSchedulePDF,style:{...S.btn,background:'#dc2626',padding:'6px 12px',fontSize:'12px'}},'PDF'),React.createElement('button',{onClick:exportScheduleImage,style:{...S.btn,background:'#059669',padding:'6px 12px',fontSize:'12px'}},'\ud83d\udcf7 Photo'))),
 
     React.createElement('div',{style:{overflowX:'auto'}},
       React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'800px'}},
