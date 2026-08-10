@@ -310,7 +310,7 @@ module.exports = function(pool, authenticate, adminOnly) {
       const result = await pool.query(`
         SELECT sr.*, s.name as shift_name, s.start_time, s.end_time, s.base_pay, s.category
         FROM shift_requests sr JOIN shifts s ON sr.shift_id = s.id
-        ORDER BY sr.created_at DESC LIMIT 200
+        ORDER BY sr.work_date ASC, sr.created_at ASC LIMIT 200
       `);
       res.json(result.rows);
     } catch (err) { res.status(500).json({ error: 'Server error' }); }
@@ -336,6 +336,11 @@ module.exports = function(pool, authenticate, adminOnly) {
       if (request.rows.length === 0) return res.status(404).json({ error: 'Not found' });
       
       const sr = request.rows[0];
+      if (status === 'denied') {
+        // Denied requests are removed entirely
+        await pool.query('DELETE FROM shift_requests WHERE id = $1', [req.params.id]);
+        return res.json({ success: true, removed: true });
+      }
       await pool.query('UPDATE shift_requests SET status = $1 WHERE id = $2', [status, req.params.id]);
       
       // If approved, assign the driver
@@ -350,6 +355,10 @@ module.exports = function(pool, authenticate, adminOnly) {
             'INSERT INTO shift_assignments (shift_id, driver_id, work_date, status) VALUES ($1,$2,$3,$4) ON CONFLICT (shift_id, work_date) DO UPDATE SET driver_id=$2, status=$4',
             [sr.shift_id, driver.rows[0].id, sr.work_date, 'assigned']
           );
+          // Remove the request - assignment now shows on the grid
+          await pool.query('DELETE FROM shift_requests WHERE id = $1', [req.params.id]);
+          // Also remove any competing pending requests for the same slot
+          await pool.query("DELETE FROM shift_requests WHERE shift_id = $1 AND work_date = $2 AND status = 'pending'", [sr.shift_id, sr.work_date]);
           res.json({ success: true, assigned: driver.rows[0].name });
         } else {
           // No driver found - still mark approved but warn admin
