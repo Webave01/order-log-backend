@@ -2356,7 +2356,7 @@ function ShiftGrid({shifts,assignments,drivers,weekOf,setWeekOf,addDays,dayNames
 }
 
 function ShiftRequests({requests,shifts,drivers,notify,onRefresh,isAdmin,canManage}){
-  const pending=requests.filter(r=>r.status==='pending');
+  const pending=requests.filter(r=>r.status==='pending').sort(function(a,b){return(a.work_date||'').localeCompare(b.work_date||'')});
   const handled=requests.filter(r=>r.status!=='pending');
   const clearHandled=async()=>{if(!confirm('Delete all handled requests? ('+handled.length+' items)'))return;try{await api.del('/shift-requests/handled');notify('Cleared');await onRefresh()}catch(e){alert(e.message)}};
   const delRequest=async(id)=>{try{await api.del('/shift-requests/'+id);notify('Deleted');await onRefresh()}catch(e){alert(e.message)}};
