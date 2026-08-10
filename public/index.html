@@ -1846,7 +1846,9 @@ function PayStatement({drivers,shifts,notify,addDays}){
     doc.setFontSize(9);doc.setTextColor(200,200,210);
     doc.text('Kleen Panda / Green Suds Group LLC',14,19);doc.text('113 East Tremont Ave, Bronx NY',14,24);
     doc.setFontSize(10);doc.setTextColor(255,255,255);
-    doc.text('Contractor: '+psDriver,140,12);
+    var psDrvObj=drivers.find(function(d){return d.name===psDriver});
+    var psFullName=(psDrvObj&&psDrvObj.legal_name)?psDrvObj.legal_name:psDriver;
+    doc.text('Contractor: '+psFullName,140,12);
     doc.text('Period: '+fmtD(psStart)+' - '+fmtD(addDays(psStart,6)),140,18);
     doc.text('Date: '+new Date().toLocaleDateString(),140,24);
     var body=psShifts.map(function(r){return[fmtD(r.date),r.shift,fmtC2(r.pay)]});
@@ -1881,7 +1883,7 @@ function PayStatement({drivers,shifts,notify,addDays}){
           React.createElement('input',{type:'date',value:psStart,onChange:function(e){setPsStart(e.target.value);setPsLoaded(false)},style:S.inp})),
         React.createElement('button',{onClick:loadShifts,style:S.btn},'Load Shifts'))),
     psLoaded&&React.createElement('div',{style:{...S.card}},
-      React.createElement('h4',{style:{marginBottom:'12px'}},psDriver+' \u2014 '+fmtD(psStart)+' to '+fmtD(addDays(psStart,6))),
+      React.createElement('h4',{style:{marginBottom:'12px'}},(function(){var dObj=drivers.find(function(d){return d.name===psDriver});return(dObj&&dObj.legal_name?dObj.legal_name:psDriver)})()+' \u2014 '+fmtD(psStart)+' to '+fmtD(addDays(psStart,6))),
       psShifts.length===0?React.createElement('div',{style:{color:'#94a3b8',padding:'12px'}},'No assigned shifts this week.'):
       React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',marginBottom:'16px'}},
         React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
@@ -2880,6 +2882,13 @@ function DriverProfilePanel({notify}){
       React.createElement('button',{onClick:save,disabled:sav,style:{...S.btn,width:'100%',padding:'14px',fontSize:'16px',marginTop:'16px',opacity:sav?0.6:1}},sav?'Saving...':'\ud83d\udcbe Save Profile')));
 }
 
+
+// Auto-open calendar picker on any date input click
+document.addEventListener('click',function(e){
+  if(e.target&&e.target.type==='date'&&typeof e.target.showPicker==='function'){
+    try{e.target.showPicker()}catch(err){}
+  }
+},true);
 
 try{ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App))}catch(e){document.getElementById('root').style.display='none';document.getElementById('crash-msg').style.display='block';document.getElementById('crash-detail').textContent='Startup error: '+e.message}
 </script>
