@@ -681,14 +681,16 @@ function RoutesPanel({isAdmin,notify}){
         {n:7,addr:'301 W 57th St, 10019',name:'Central Park',note:'WAIT FOR ALL BAGS'},
         {n:8,addr:'1395 6th Ave, 10019',name:'Carnegie',note:'Cross to EAST Side'},
         {n:9,addr:'894 2nd Ave, 10017',name:'Columbia',note:'via FDR'},
-        {n:10,addr:'435 East 86th St, 10028',name:'Morris',note:'Pickup by 11:00-11:30 AM'}]},
+        {n:10,addr:'435 East 86th St, 10028',name:'Morris',note:'Pickup by 11:00-11:30 AM'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
     'west-last':{title:'WEST - Last Trip',time:'Leave by 3:30 PM LATEST',color:'#3b82f6',
       stops:[{n:1,addr:'301 W 57th St, 10019',name:'Central Park'},{n:2,addr:'311 W 54th St, 10019',name:'Seed'},
         {n:3,addr:'360 W 43rd St, 10036',name:'Oxford/43st'},{n:4,addr:'608 10th Ave & 44th St, 10036',name:'Omni'},
         {n:5,addr:'347 W 44th St, 10036',name:'Yuri Cleaners'},{n:6,addr:'324 W 49th St, 10019',name:'M&M / 49th'},
         {n:7,addr:'461 W 49th St, 10019',name:'New Cleaner / 49th'},
         {n:8,addr:'1395 6th Ave, 10019',name:'Carnegie',note:'Cross to EAST Side'},
-        {n:9,addr:'894 2nd Ave, 10017',name:'Columbia'}]},
+        {n:9,addr:'894 2nd Ave, 10017',name:'Columbia'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
     'east-first':{title:'EAST - First Trip',time:'7:30 AM - 11:30 AM',color:'#10b981',
       stops:[{n:1,addr:'1604 1st Ave & 83rd St',name:'Smile Cleaners',cross:'83rd St'},
         {n:2,addr:'309 E 83rd St & 1st Ave',name:'Golden Star',cross:'1st Ave'},
@@ -703,7 +705,8 @@ function RoutesPanel({isAdmin,notify}){
         {n:11,addr:'2644 Broadway Ave',name:'Oxford/101 St',cross:'101st St'},
         {n:12,addr:'366 W 118th St',name:'Harlem',cross:'Manhattan Ave'},
         {n:13,addr:'354 St. Nicholas Ave',name:'SkyBlue',cross:'128th St'},
-        {n:14,addr:'3656 Broadway, 10031',name:'Nordic',cross:'Broadway 151st St'}]},
+        {n:14,addr:'3656 Broadway, 10031',name:'Nordic',cross:'Broadway 151st St'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
     'east-last':{title:'EAST - Last Trip',time:'12:00 PM - 5:00 PM',color:'#10b981',
       stops:[{n:1,addr:'1604 1st Ave & 83rd St',name:'Smile Cleaners',cross:'83rd St'},
         {n:2,addr:'309 E 83rd St & 1st Ave',name:'Golden Star',cross:'1st Ave'},
@@ -715,13 +718,15 @@ function RoutesPanel({isAdmin,notify}){
         {n:8,addr:'2644 Broadway Ave',name:'Oxford/101 St',cross:'101st St'},
         {n:9,addr:'366 W 118th St',name:'Harlem',cross:'Manhattan Ave'},
         {n:10,addr:'354 St. Nicholas Ave',name:'SkyBlue',cross:'128th St'},
-        {n:11,addr:'3656 Broadway, 10031',name:'Nordic',cross:'Broadway 151st St'}]},
+        {n:11,addr:'3656 Broadway, 10031',name:'Nordic',cross:'Broadway 151st St'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
     'schools':{title:'SCHOOLS - Life Skills Preschool',time:'Pickup Fri or Sat / Delivery Mon',color:'#8b5cf6',
       stops:[{n:1,addr:'25 Westchester Square, Bronx NY 10461',name:'Life Skills Preschool',note:'Pickup bin on curb. LOCK CODE: 6892'},
         {n:2,addr:'816 Clarence Ave, Bronx NY 10456',name:'Life Skills Preschool',note:'Pickup in REAR of building'},
-        {n:3,addr:'240 Parsons Blvd, Whitestone NY 11357',name:'Life Skills Preschool',note:'Pickup in bin'}]},
+        {n:3,addr:'240 Parsons Blvd, Whitestone NY 11357',name:'Life Skills Preschool',note:'Pickup in bin'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
     'sleep':{title:'SLEEP CENTER',time:'',color:'#f59e0b',
-      stops:[{n:1,addr:'3427 Buckner Blvd, Bronx NY 10461',name:'Sleep Center'}]}
+      stops:[{n:1,addr:'3427 Buckner Blvd, Bronx NY 10461',name:'Sleep Center'},{type:'return',addr:'113 E Tremont Ave, Bronx NY'}]}
   };
 
   useEffect(function(){api.get('/driver-routes').then(function(r){setRoutes(r||DEFAULTS)}).catch(function(){setRoutes(DEFAULTS)})},[]);
@@ -732,18 +737,21 @@ function RoutesPanel({isAdmin,notify}){
   const updStop=(idx,field,val)=>{var r={...routes};r[sel]={...r[sel],stops:r[sel].stops.map(function(s,i){return i===idx?{...s,[field]:val}:s})};setRoutes(r)};
   const moveStop=(idx,dir)=>{var r={...routes};var st=[...r[sel].stops];var ni=idx+dir;
     if(ni<0||ni>=st.length)return;var tmp=st[idx];st[idx]=st[ni];st[ni]=tmp;
-    st=st.map(function(s,i){return{...s,n:i+1}});r[sel]={...r[sel],stops:st};setRoutes(r)};
+    var cnt=0;st=st.map(function(s){if(s.type==='return')return s;cnt++;return{...s,n:cnt}});r[sel]={...r[sel],stops:st};setRoutes(r)};
   const delStop=(idx)=>{if(!confirm('Remove this stop?'))return;var r={...routes};
-    var st=r[sel].stops.filter(function(_,i){return i!==idx}).map(function(s,i){return{...s,n:i+1}});
+    var c2=0;var st=r[sel].stops.filter(function(_,i){return i!==idx}).map(function(s){if(s.type==='return')return s;c2++;return{...s,n:c2}});
     r[sel]={...r[sel],stops:st};setRoutes(r)};
   const addStop=()=>{var r={...routes};var st=[...r[sel].stops,{n:r[sel].stops.length+1,name:'',addr:'',cross:'',note:''}];
+    r[sel]={...r[sel],stops:st};setRoutes(r)};
+  const addReturn=()=>{var r={...routes};var st=[...r[sel].stops,{type:'return',addr:'113 E Tremont Ave, Bronx NY',note:''}];
+    st=st.map(function(s,i){return s.type==='return'?s:{...s,n:st.slice(0,i).filter(function(x){return x.type!=='return'}).length+1}});
     r[sel]={...r[sel],stops:st};setRoutes(r)};
   const updRoute=(field,val)=>{var r={...routes};r[sel]={...r[sel],[field]:val};setRoutes(r)};
 
   if(!routes)return React.createElement('div',{style:{padding:'20px',color:'#94a3b8'}},'Loading routes...');
   var r=sel?routes[sel]:null;
   const mapUrl=(addr)=>'https://maps.google.com/?q='+encodeURIComponent(addr);
-  const allStopsUrl=(stops)=>{var pts=stops.map(function(s){return encodeURIComponent(s.addr)});
+  const allStopsUrl=(stops)=>{var pts=stops.filter(function(s){return s.addr}).map(function(s){return encodeURIComponent(s.addr)});
     return'https://www.google.com/maps/dir/'+encodeURIComponent('113 E Tremont Ave, Bronx NY')+'/'+pts.join('/')+'/'+encodeURIComponent('113 E Tremont Ave, Bronx NY')};
 
   return React.createElement('div',null,
@@ -753,9 +761,11 @@ function RoutesPanel({isAdmin,notify}){
         editMode&&React.createElement('button',{onClick:resetDefaults,style:{...S.inp,cursor:'pointer',padding:'8px 12px',fontSize:'12px',color:'#f87171'}},'Reset Defaults'),
         editMode&&React.createElement('button',{onClick:save,disabled:saving,style:{...S.btn,background:'#10b981',padding:'8px 14px',fontSize:'13px'}},saving?'Saving...':'Save Changes'),
         React.createElement('button',{onClick:function(){setEditMode(!editMode)},style:{...S.btn,background:editMode?'#64748b':'#8b5cf6',padding:'8px 14px',fontSize:'13px'}},editMode?'Done':'Edit Route'))),
-    React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:'8px',marginBottom:'20px'}},
-      Object.keys(routes).map(function(k){var rt=routes[k];
-        return React.createElement('button',{key:k,onClick:function(){setSel(k);setEditMode(false)},style:{padding:'14px 10px',borderRadius:'8px',border:'2px solid '+(sel===k?rt.color:'#334155'),background:sel===k?rt.color:'transparent',color:sel===k?'#fff':'#94a3b8',cursor:'pointer',fontSize:'13px',fontWeight:'bold',lineHeight:'1.3'}},rt.title)})),
+    React.createElement('div',{style:{marginBottom:'20px'}},
+      React.createElement('label',{style:{...S.lbl,marginBottom:'6px',display:'block'}},'Select Route'),
+      React.createElement('select',{value:sel,onChange:function(e){setSel(e.target.value);setEditMode(false)},style:{...S.inp,width:'100%',padding:'14px',fontSize:'16px',fontWeight:'bold'}},
+        React.createElement('option',{value:''},'-- Choose your route --'),
+        Object.keys(routes).map(function(k){return React.createElement('option',{key:k,value:k},routes[k].title)}))),
     !r&&React.createElement('div',{style:{...S.card,textAlign:'center',padding:'40px',color:'#94a3b8'}},'Select a route above'),
     r&&React.createElement('div',null,
       React.createElement('div',{style:{...S.card,marginBottom:'12px',borderLeft:'4px solid '+r.color}},
@@ -767,8 +777,9 @@ function RoutesPanel({isAdmin,notify}){
             React.createElement('h3',{style:{margin:0,color:r.color}},r.title),
             r.time&&React.createElement('div',{style:{fontSize:'14px',color:'#fbbf24',fontWeight:'bold',marginTop:'4px'}},r.time)),
           React.createElement('a',{href:allStopsUrl(r.stops),target:'_blank',style:{...S.btn,textDecoration:'none',padding:'8px 14px',fontSize:'13px',display:'inline-block'}},'Open Full Route in Maps'))),
-      React.createElement('div',{style:{fontSize:'13px',color:'#64748b',marginBottom:'8px',padding:'8px',background:'#0f172a',borderRadius:'6px'}},'START: 113 E Tremont Ave, Bronx NY'),
-      r.stops.map(function(s,idx){return React.createElement('div',{key:idx,style:{...S.card,marginBottom:'6px',borderLeft:'3px solid '+r.color}},
+      
+      React.createElement('div',{style:{padding:'10px',background:'rgba(59,130,246,0.1)',border:'1px solid #3b82f6',borderRadius:'8px',marginBottom:'10px',textAlign:'center'}},React.createElement('div',{style:{fontSize:'16px',fontWeight:'bold',color:'#60a5fa'}},'START: 113 E Tremont Ave, Bronx NY')),
+      r.stops.map(function(s,idx){return React.createElement('div',{key:idx,style:{...S.card,marginBottom:'6px',borderLeft:s.type==='return'?'4px solid #f59e0b':'3px solid '+r.color,background:s.type==='return'?'rgba(245,158,11,0.08)':undefined}},
         editMode?React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'flex-start'}},
           React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'2px'}},
             React.createElement('button',{onClick:function(){moveStop(idx,-1)},disabled:idx===0,style:{padding:'2px 8px',borderRadius:'4px',border:'1px solid #475569',background:'transparent',color:idx===0?'#334155':'#94a3b8',cursor:idx===0?'default':'pointer',fontSize:'12px'}},'\u25b2'),
@@ -781,6 +792,13 @@ function RoutesPanel({isAdmin,notify}){
               React.createElement('input',{value:s.cross||'',onChange:function(e){updStop(idx,'cross',e.target.value)},style:{...S.inp,padding:'6px',fontSize:'12px'},placeholder:'Cross street'}),
               React.createElement('input',{value:s.note||'',onChange:function(e){updStop(idx,'note',e.target.value)},style:{...S.inp,padding:'6px',fontSize:'12px'},placeholder:'Special note'}))),
           React.createElement('button',{onClick:function(){delStop(idx)},style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'18px',padding:'4px'}},'\u2715')):
+        (s.type==='return'?
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',justifyContent:'center',padding:'6px'}},
+            React.createElement('div',{style:{textAlign:'center'}},
+              React.createElement('div',{style:{fontSize:'20px',fontWeight:'bold',color:'#fbbf24',letterSpacing:'0.5px'}},'↺ RETURN TO BASE'),
+              React.createElement('div',{style:{fontSize:'15px',color:'#e2e8f0',fontWeight:'bold',marginTop:'4px'}},s.addr||'113 E Tremont Ave, Bronx NY'),
+              s.note&&React.createElement('div',{style:{fontSize:'13px',color:'#fbbf24',marginTop:'4px'}},s.note)),
+            React.createElement('a',{href:mapUrl(s.addr||'113 E Tremont Ave, Bronx NY'),target:'_blank',style:{padding:'10px 16px',borderRadius:'6px',background:'#f59e0b',color:'#000',textDecoration:'none',fontSize:'13px',fontWeight:'bold',whiteSpace:'nowrap'}},'Navigate')):
         React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
           React.createElement('div',{style:{minWidth:'32px',height:'32px',borderRadius:'50%',background:r.color,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'bold',fontSize:'14px'}},s.n),
           React.createElement('div',{style:{flex:1}},
@@ -788,9 +806,9 @@ function RoutesPanel({isAdmin,notify}){
             React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8'}},s.addr),
             s.cross&&React.createElement('div',{style:{fontSize:'12px',color:'#64748b'}},'Cross: '+s.cross),
             s.note&&React.createElement('div',{style:{fontSize:'12px',color:'#fbbf24',fontWeight:'bold',marginTop:'4px'}},s.note)),
-          React.createElement('a',{href:mapUrl(s.addr),target:'_blank',style:{padding:'8px 12px',borderRadius:'6px',border:'1px solid '+r.color,color:r.color,textDecoration:'none',fontSize:'12px',fontWeight:'bold',whiteSpace:'nowrap'}},'Navigate')))}),
-      editMode&&React.createElement('button',{onClick:addStop,style:{...S.btn,width:'100%',marginTop:'8px',background:'#334155'}},'+ Add Stop'),
-      React.createElement('div',{style:{fontSize:'13px',color:'#64748b',marginTop:'8px',padding:'8px',background:'#0f172a',borderRadius:'6px',textAlign:'center'}},'RETURN TO: 113 E Tremont Ave, Bronx NY')));
+          React.createElement('a',{href:mapUrl(s.addr),target:'_blank',style:{padding:'8px 12px',borderRadius:'6px',border:'1px solid '+r.color,color:r.color,textDecoration:'none',fontSize:'12px',fontWeight:'bold',whiteSpace:'nowrap'}},'Navigate'))))}),
+      editMode&&React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'8px'}},React.createElement('button',{onClick:addStop,style:{...S.btn,flex:1,background:'#334155'}},'+ Add Stop'),React.createElement('button',{onClick:addReturn,style:{...S.btn,flex:1,background:'#f59e0b',color:'#000'}},'\u21ba + Add Return to Base')),
+      ));
 }
 
 function VehicleLog({isAdmin,user,notify,drivers}){
