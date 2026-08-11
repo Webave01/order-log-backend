@@ -2135,6 +2135,28 @@ app.delete('/api/vehicle-logs/:id', authenticate, adminOnly, async (req, res) =>
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Get driver routes config
+app.get('/api/driver-routes', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT value FROM settings WHERE key = 'driverRoutes'");
+    if (result.rows.length > 0 && result.rows[0].value) {
+      return res.json(JSON.parse(result.rows[0].value));
+    }
+    res.json(null);
+  } catch (err) { res.json(null); }
+});
+
+// Save driver routes config (admin only)
+app.post('/api/driver-routes', authenticate, adminOnly, async (req, res) => {
+  try {
+    await pool.query(
+      "INSERT INTO settings (key, value) VALUES ('driverRoutes', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+      [JSON.stringify(req.body)]
+    );
+    res.json({ success: true });
+  } catch (err) { console.error('Save routes error:', err); res.status(500).json({ error: err.message }); }
+});
+
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ error: 'API endpoint not found' });
