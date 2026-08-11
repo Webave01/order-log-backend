@@ -671,7 +671,7 @@ function Reports({t}){
 
 function RoutesPanel({isAdmin,notify}){
   const[sel,setSel]=useState('');const[editMode,setEditMode]=useState(false);
-  const[routes,setRoutes]=useState(null);const[saving,setSaving]=useState(false);
+  const[routes,setRoutes]=useState(null);const[saving,setSaving]=useState(false);const[banner,setBanner]=useState('DO NOT TAKE RFK BRIDGE TOLL');
 
   const DEFAULTS={
     'west-first':{title:'WEST - First Trip',time:'Leave by 7:45 AM',color:'#3b82f6',
@@ -729,9 +729,9 @@ function RoutesPanel({isAdmin,notify}){
       stops:[{n:1,addr:'3427 Buckner Blvd, Bronx NY 10461',name:'Sleep Center'},{type:'return',addr:'113 E Tremont Ave, Bronx NY'}]}
   };
 
-  useEffect(function(){api.get('/driver-routes').then(function(r){setRoutes(r||DEFAULTS)}).catch(function(){setRoutes(DEFAULTS)})},[]);
+  useEffect(function(){api.get('/driver-routes').then(function(r){if(r&&r._banner!==undefined)setBanner(r._banner);setRoutes(r||DEFAULTS)}).catch(function(){setRoutes(DEFAULTS)})},[]);
 
-  const save=async()=>{setSaving(true);try{await api.post('/driver-routes',routes);notify('Routes saved');setEditMode(false)}catch(e){alert(e.message)}setSaving(false)};
+  const save=async()=>{setSaving(true);try{var payload={...routes,_banner:banner};await api.post('/driver-routes',payload);notify('Routes saved');setEditMode(false)}catch(e){alert(e.message)}setSaving(false)};
   const resetDefaults=()=>{if(!confirm('Reset all routes to original defaults?'))return;setRoutes(JSON.parse(JSON.stringify(DEFAULTS)))};
 
   const updStop=(idx,field,val)=>{var r={...routes};r[sel]={...r[sel],stops:r[sel].stops.map(function(s,i){return i===idx?{...s,[field]:val}:s})};setRoutes(r)};
@@ -750,7 +750,7 @@ function RoutesPanel({isAdmin,notify}){
 
   if(!routes)return React.createElement('div',{style:{padding:'20px',color:'#94a3b8'}},'Loading routes...');
   var r=sel?routes[sel]:null;
-  const mapUrl=(addr)=>'https://maps.google.com/?q='+encodeURIComponent(addr);
+  const mapUrl=(addr)=>'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(addr);
   const allStopsUrl=(stops)=>{var pts=stops.filter(function(s){return s.addr}).map(function(s){return encodeURIComponent(s.addr)});
     return'https://www.google.com/maps/dir/'+encodeURIComponent('113 E Tremont Ave, Bronx NY')+'/'+pts.join('/')+'/'+encodeURIComponent('113 E Tremont Ave, Bronx NY')};
 
@@ -765,7 +765,7 @@ function RoutesPanel({isAdmin,notify}){
       React.createElement('label',{style:{...S.lbl,marginBottom:'6px',display:'block'}},'Select Route'),
       React.createElement('select',{value:sel,onChange:function(e){setSel(e.target.value);setEditMode(false)},style:{...S.inp,width:'100%',padding:'14px',fontSize:'16px',fontWeight:'bold'}},
         React.createElement('option',{value:''},'-- Choose your route --'),
-        Object.keys(routes).map(function(k){return React.createElement('option',{key:k,value:k},routes[k].title)}))),
+        Object.keys(routes).filter(function(k){return k.charAt(0)!=='_'}).map(function(k){return React.createElement('option',{key:k,value:k},routes[k].title)}))),
     !r&&React.createElement('div',{style:{...S.card,textAlign:'center',padding:'40px',color:'#94a3b8'}},'Select a route above'),
     r&&React.createElement('div',null,
       React.createElement('div',{style:{...S.card,marginBottom:'12px',borderLeft:'4px solid '+r.color}},
@@ -808,6 +808,9 @@ function RoutesPanel({isAdmin,notify}){
             s.note&&React.createElement('div',{style:{fontSize:'12px',color:'#fbbf24',fontWeight:'bold',marginTop:'4px'}},s.note)),
           React.createElement('a',{href:mapUrl(s.addr),target:'_blank',style:{padding:'8px 12px',borderRadius:'6px',border:'1px solid '+r.color,color:r.color,textDecoration:'none',fontSize:'12px',fontWeight:'bold',whiteSpace:'nowrap'}},'Navigate'))))}),
       editMode&&React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'8px'}},React.createElement('button',{onClick:addStop,style:{...S.btn,flex:1,background:'#334155'}},'+ Add Stop'),React.createElement('button',{onClick:addReturn,style:{...S.btn,flex:1,background:'#f59e0b',color:'#000'}},'\u21ba + Add Return to Base')),
+      React.createElement('div',{style:{marginTop:'16px',padding:'16px',background:'rgba(239,68,68,0.15)',border:'2px solid #ef4444',borderRadius:'8px',textAlign:'center'}},
+        editMode?React.createElement('input',{value:banner,onChange:function(e){setBanner(e.target.value)},style:{...S.inp,width:'100%',textAlign:'center',fontSize:'16px',fontWeight:'bold',color:'#fca5a5',borderColor:'#ef4444'},placeholder:'Warning banner text'}):
+        React.createElement('div',{style:{fontSize:'18px',fontWeight:'bold',color:'#fca5a5',letterSpacing:'0.5px'}},'\u26a0\ufe0f '+banner)),
       ));
 }
 
