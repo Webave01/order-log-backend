@@ -89,7 +89,7 @@ const S={
 function App(){
   const[user,setUser]=useState(null);
   const[loading,setLoading]=useState(true);
-  const[view,setView]=useState('orders');
+  const[view,setView]=useState('orders');const[newIncidents,setNewIncidents]=useState(null);
   const[orders,setOrders]=useState([]);
   const[cleaners,setCleaners]=useState([]);
   const[extras,setExtras]=useState([]);
@@ -104,11 +104,24 @@ function App(){
   useEffect(()=>{localStorage.setItem('lang',lang)},[lang]);
   useEffect(()=>{sessionStorage.setItem('staffName',staffName)},[staffName]);
   useEffect(()=>{
-    if(api.token){api.get('/me').then(d=>{setUser(d.user);if(d.user.role==='driver'){setStaffName(d.user.username);setView('schedule')}else{setView('orders')}loadData().finally(()=>setLoading(false))}).catch(()=>{api.clearToken();setLoading(false)})}
+    if(api.token){api.get('/me').then(d=>{setUser(d.user);if(d.user.role==='driver'){setStaffName(d.user.username);setView('schedule')}else{setView('orders')}loadData().finally(()=>{setLoading(false);checkIncidents(d.user.role==='admin')})}).catch(()=>{api.clearToken();setLoading(false)})}
     else setLoading(false);
     var safety=setTimeout(function(){setLoading(false)},30000);
     return function(){clearTimeout(safety)};
   },[]);
+
+  const checkIncidents=async(isAdminUser)=>{
+    if(!isAdminUser)return;
+    try{
+      var logs=await api.get('/vehicle-logs');
+      var lastSeen=localStorage.getItem('lastIncidentCheck')||'2000-01-01';
+      var newOnes=logs.filter(function(l){return l.has_issues&&!l.resolved&&l.created_at>lastSeen});
+      var allOpen=logs.filter(function(l){return l.has_issues&&!l.resolved});
+      if(newOnes.length>0||allOpen.length>0){setNewIncidents({newCount:newOnes.length,openCount:allOpen.length,items:allOpen.slice(0,5)})}
+    }catch(e){}
+  };
+
+  const dismissIncidents=()=>{localStorage.setItem('lastIncidentCheck',new Date().toISOString());setNewIncidents(null)};
 
   const loadData=async()=>{
     try{
@@ -123,7 +136,7 @@ function App(){
     setLoading(false);
   };
 
-  const handleLogin=async(u,p)=>{const d=await api.post('/login',{username:u.toLowerCase().trim(),password:p});api.setToken(d.token);setUser(d.user);if(d.user.role==='driver'){setStaffName(d.user.username);setView('schedule')}else{setView('orders')}await loadData()};
+  const handleLogin=async(u,p)=>{const d=await api.post('/login',{username:u.toLowerCase().trim(),password:p});api.setToken(d.token);setUser(d.user);if(d.user.role==='driver'){setStaffName(d.user.username);setView('schedule')}else{setView('orders')}await loadData();checkIncidents(d.user.role==='admin')};
   const handleLogout=()=>{api.clearToken();setUser(null);setOrders([]);sessionStorage.removeItem('staffName');setStaffName('');setView('orders')};
   const notify=m=>{setToast(m);setTimeout(()=>setToast(''),2000)};
 
@@ -170,6 +183,22 @@ function App(){
         React.createElement('button',{onClick:function(){window.open('/paystub','_blank')},style:{padding:'8px 12px',borderRadius:'8px',border:'1px solid #10b981',background:'transparent',color:'#10b981',cursor:'pointer',fontSize:'12px',fontWeight:'600',whiteSpace:'nowrap'}},'\ud83d\udcb0 Pay Stub'),
         React.createElement('button',{onClick:function(){window.open('/onboard','_blank')},style:{padding:'8px 12px',borderRadius:'8px',border:'1px solid #8b5cf6',background:'transparent',color:'#c4b5fd',cursor:'pointer',fontSize:'12px',fontWeight:'600',whiteSpace:'nowrap'}},'\ud83d\ude90 Onboard'))),
     toast&&React.createElement('div',{style:{position:'fixed',top:20,right:20,background:'#065f46',color:'#fff',padding:'12px 20px',borderRadius:'8px',zIndex:999}},toast),
+    newIncidents&&React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000,padding:'20px'}},
+      React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'480px',border:'2px solid #ef4444',overflow:'hidden'}},
+        React.createElement('div',{style:{background:'rgba(239,68,68,0.15)',padding:'16px',borderBottom:'1px solid #ef4444'}},
+          React.createElement('div',{style:{fontSize:'20px',fontWeight:'bold',color:'#fca5a5'}},'\u26a0\ufe0f '+newIncidents.openCount+' Open Vehicle Issue'+(newIncidents.openCount===1?'':'s')),
+          newIncidents.newCount>0&&React.createElement('div',{style:{fontSize:'13px',color:'#fbbf24',marginTop:'4px'}},newIncidents.newCount+' new since last login')),
+        React.createElement('div',{style:{padding:'16px',maxHeight:'320px',overflow:'auto'}},
+          newIncidents.items.map(function(l){return React.createElement('div',{key:l.id,style:{padding:'10px',marginBottom:'8px',background:'#0f172a',borderRadius:'6px',borderLeft:'3px solid '+(l.log_type==='ticket'?'#ef4444':l.log_type==='damage'?'#f59e0b':'#8b5cf6')}},
+            React.createElement('div',{style:{fontWeight:'bold',fontSize:'14px'}},
+              React.createElement('span',{style:{color:l.log_type==='ticket'?'#fca5a5':l.log_type==='damage'?'#fbbf24':'#c4b5fd',marginRight:'6px'}},(l.log_type||'').toUpperCase()),
+              l.driver_name),
+            React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',marginTop:'2px'}},(l.vehicle||'')+' \u2014 '+new Date(l.created_at).toLocaleDateString()),
+            l.notes&&React.createElement('div',{style:{fontSize:'12px',color:'#cbd5e1',marginTop:'4px'}},l.notes))}),
+          newIncidents.openCount>newIncidents.items.length&&React.createElement('div',{style:{fontSize:'12px',color:'#64748b',textAlign:'center',padding:'8px'}},'+ '+(newIncidents.openCount-newIncidents.items.length)+' more')),
+        React.createElement('div',{style:{padding:'16px',borderTop:'1px solid #334155',display:'flex',gap:'8px'}},
+          React.createElement('button',{onClick:function(){setView('vehicle');dismissIncidents()},style:{...S.btn,flex:1,background:'#dc2626'}},'Review Now'),
+          React.createElement('button',{onClick:dismissIncidents,style:{...S.cancel,flex:1}},'Dismiss')))),
     React.createElement('div',{style:{maxWidth:'1000px',margin:'0 auto',padding:'20px'}},
       view==='orders'&&React.createElement(Orders,{orders,cleaners,extras,settings,cleanerExtras,notify,loadData,isAdmin,hasPerm,user,staffName,setStaffName,staffNames,setStaffNames,calcTotal,lang,t}),
       view==='cleaners'&&hasPerm('cleaners')&&React.createElement(Cleaners,{cleaners,extras,cleanerExtras,notify,loadData,t}),
@@ -821,7 +850,7 @@ function VehicleLog({isAdmin,user,notify,drivers}){
   const[gallons,setGallons]=useState('');const[cost,setCost]=useState('');
   const[notes,setNotes]=useState('');const[vehicle,setVehicle]=useState('');
   const[driverName,setDriverName]=useState('');
-  const[photos,setPhotos]=useState([]);const[viewLog,setViewLog]=useState(null);
+  const[photos,setPhotos]=useState([]);const[viewLog,setViewLog]=useState(null);const[editingLog,setEditingLog]=useState(null);
   const[gasStart,setGasStart]=useState('');const[gasEnd,setGasEnd]=useState('');
   const[summary,setSummary]=useState(null);const[showSummary,setShowSummary]=useState(false);
 
@@ -838,6 +867,9 @@ function VehicleLog({isAdmin,user,notify,drivers}){
       has_issues:logType!=='gas',issues:notes,gas_level_start:gasStart||null,gas_level_end:gasEnd||null});
       notify('Submitted');setShowForm(false);setMileage('');setGallons('');setCost('');setNotes('');setPhotos([]);setGasStart('');setGasEnd('');loadLogs()}catch(e){alert(e.message)}};
 
+  const saveEdit=async()=>{if(!editingLog)return;
+    try{await api.put('/vehicle-logs/'+editingLog.id,editingLog);notify('Updated');setEditingLog(null);setViewLog(null);loadLogs()}catch(e){alert(e.message)}};
+  const updEdit=(f,v)=>{setEditingLog({...editingLog,[f]:v})};
   const resolve=async(id)=>{try{await api.put('/vehicle-logs/'+id+'/resolve');notify('Resolved');loadLogs()}catch(e){alert(e.message)}};
   const viewFull=async(id)=>{try{var r=await api.get('/vehicle-logs/'+id);setViewLog(r)}catch(e){alert(e.message)}};
   const delLog=async(id)=>{if(!confirm('Delete?'))return;try{await api.del('/vehicle-logs/'+id);notify('Deleted');loadLogs();setViewLog(null)}catch(e){alert(e.message)}};
@@ -950,7 +982,20 @@ function VehicleLog({isAdmin,user,notify,drivers}){
           React.createElement('div',null,
             React.createElement('span',{style:{padding:'3px 10px',borderRadius:'4px',fontSize:'12px',fontWeight:'bold',background:'rgba('+(viewLog.log_type==='ticket'?'239,68,68':viewLog.log_type==='damage'?'245,158,11':viewLog.log_type==='gas'?'16,185,129':'139,92,246')+',0.2)',color:typeColors[viewLog.log_type]||'#94a3b8',marginRight:'8px'}},typeLabels[viewLog.log_type]||viewLog.log_type),
             React.createElement('span',{style:{fontWeight:'bold',fontSize:'16px'}},viewLog.driver_name)),
-          React.createElement('button',{onClick:function(){setViewLog(null)},style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'\u00d7')),
+          React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},isAdmin&&!editingLog&&React.createElement('button',{onClick:function(){setEditingLog({...viewLog})},style:{padding:'4px 12px',borderRadius:'4px',border:'1px solid #8b5cf6',background:'transparent',color:'#c4b5fd',cursor:'pointer',fontSize:'12px'}},'Edit'),React.createElement('button',{onClick:function(){setViewLog(null);setEditingLog(null)},style:{background:'none',border:'none',color:'#94a3b8',fontSize:'24px',cursor:'pointer'}},'\u00d7'))),
+        editingLog?React.createElement('div',{style:{padding:'16px',display:'grid',gap:'8px'}},
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},'Driver'),React.createElement('input',{value:editingLog.driver_name||'',onChange:function(e){updEdit('driver_name',e.target.value)},style:S.inp})),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},'Type'),React.createElement('select',{value:editingLog.log_type||'',onChange:function(e){updEdit('log_type',e.target.value)},style:S.inp},[['ticket','Ticket'],['damage','Damage'],['maintenance','Maintenance'],['gas','Gas Fill-Up'],['other','Other']].map(function(t){return React.createElement('option',{key:t[0],value:t[0]},t[1])}))),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},'Vehicle'),React.createElement('select',{value:editingLog.vehicle||'',onChange:function(e){updEdit('vehicle',e.target.value)},style:S.inp},React.createElement('option',{value:''},'Select...'),React.createElement('option',{value:'Ford Transit'},'Ford Transit T-250'),React.createElement('option',{value:'RAM ProMaster'},'RAM ProMaster City'))),
+          React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px'}},
+            React.createElement('div',null,React.createElement('label',{style:S.lbl},'Mileage'),React.createElement('input',{type:'number',value:editingLog.mileage||'',onChange:function(e){updEdit('mileage',e.target.value)},style:S.inp})),
+            React.createElement('div',null,React.createElement('label',{style:S.lbl},'Gallons'),React.createElement('input',{type:'number',step:'0.01',value:editingLog.gallons||'',onChange:function(e){updEdit('gallons',e.target.value)},style:S.inp})),
+            React.createElement('div',null,React.createElement('label',{style:S.lbl},'Cost $'),React.createElement('input',{type:'number',step:'0.01',value:editingLog.cost||'',onChange:function(e){updEdit('cost',e.target.value)},style:S.inp}))),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},'Driver Description'),React.createElement('textarea',{value:editingLog.notes||'',onChange:function(e){updEdit('notes',e.target.value)},style:{...S.inp,minHeight:'60px'}})),
+          React.createElement('div',null,React.createElement('label',{style:{...S.lbl,color:'#fbbf24'}},'Admin Notes / Follow-up'),React.createElement('textarea',{value:editingLog.admin_notes||'',onChange:function(e){updEdit('admin_notes',e.target.value)},style:{...S.inp,minHeight:'70px',borderColor:'#f59e0b'},placeholder:'Ticket #, amount, disposition, repair cost, who paid, resolution details...'})),
+          React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'8px'}},
+            React.createElement('button',{onClick:saveEdit,style:{...S.btn,flex:1}},'Save Changes'),
+            React.createElement('button',{onClick:function(){setEditingLog(null)},style:{...S.cancel,flex:1}},'Cancel'))):
         React.createElement('div',{style:{padding:'16px'}},
           viewLog.vehicle&&React.createElement('div',{style:{marginBottom:'8px',color:'#94a3b8'}},'Vehicle: ',React.createElement('b',{style:{color:'#e2e8f0'}},viewLog.vehicle)),
           viewLog.mileage&&React.createElement('div',{style:{marginBottom:'8px',color:'#94a3b8'}},'Mileage: ',React.createElement('b',{style:{color:'#e2e8f0'}},viewLog.mileage.toLocaleString(),' mi')),
@@ -962,6 +1007,7 @@ function VehicleLog({isAdmin,user,notify,drivers}){
             React.createElement('span',{style:{color:'#94a3b8'}},'\u2192'),
             React.createElement('span',{style:{color:'#fbbf24',fontWeight:'bold'}},'End: '+(viewLog.gas_level_end||'N/A'))),
           viewLog.notes&&React.createElement('div',{style:{marginBottom:'12px',padding:'10px',background:'#0f172a',borderRadius:'6px',color:'#e2e8f0'}},viewLog.notes),
+          viewLog.admin_notes&&React.createElement('div',{style:{marginBottom:'12px',padding:'10px',background:'rgba(245,158,11,0.1)',border:'1px solid #f59e0b',borderRadius:'6px'}},React.createElement('div',{style:{fontSize:'11px',color:'#fbbf24',fontWeight:'bold',marginBottom:'4px'}},'ADMIN NOTES'),React.createElement('div',{style:{color:'#e2e8f0',fontSize:'13px'}},viewLog.admin_notes)),
           viewLog.issues&&viewLog.issues!==viewLog.notes&&React.createElement('div',{style:{marginBottom:'8px',color:'#fca5a5'}},'Issues: ',viewLog.issues),
           React.createElement('div',{style:{marginBottom:'12px',fontSize:'12px',color:'#64748b'}},'Submitted: '+new Date(viewLog.created_at).toLocaleString()),
           viewLog.resolved&&React.createElement('div',{style:{fontSize:'12px',color:'#4ade80',marginBottom:'12px'}},'Resolved by '+viewLog.resolved_by+' on '+new Date(viewLog.resolved_date).toLocaleDateString()),
