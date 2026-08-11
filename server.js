@@ -209,7 +209,8 @@ async function initDB() {
       ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS resolved_by VARCHAR(100);
       ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS resolved_date TIMESTAMP;
       ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS gas_level_start VARCHAR(10);
-      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS gas_level_end VARCHAR(10)
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS gas_level_end VARCHAR(10);
+      ALTER TABLE vehicle_logs ADD COLUMN IF NOT EXISTS admin_notes TEXT
     `);
 
     // Driver applications (onboarding)
@@ -2114,6 +2115,20 @@ app.get('/api/vehicle-logs/:id', authenticate, async (req, res) => {
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Vehicle log - edit (admin only)
+app.put('/api/vehicle-logs/:id', authenticate, adminOnly, async (req, res) => {
+  const { driver_name, log_type, mileage, gallons, cost, notes, vehicle, gas_level_start, gas_level_end, issues, admin_notes } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE vehicle_logs SET driver_name=COALESCE($1,driver_name), log_type=COALESCE($2,log_type), mileage=$3, gallons=$4, cost=$5,
+       notes=$6, vehicle=$7, gas_level_start=$8, gas_level_end=$9, issues=$10, admin_notes=$11 WHERE id=$12 RETURNING *`,
+      [driver_name, log_type, mileage || null, gallons || null, cost || null, notes, vehicle, gas_level_start || null, gas_level_end || null, issues, admin_notes, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json(result.rows[0]);
+  } catch (err) { console.error('Edit log error:', err); res.status(500).json({ error: err.message }); }
 });
 
 // Vehicle log - resolve issue (admin only)
