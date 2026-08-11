@@ -778,6 +778,9 @@ function RoutesPanel({isAdmin,notify}){
             r.time&&React.createElement('div',{style:{fontSize:'14px',color:'#fbbf24',fontWeight:'bold',marginTop:'4px'}},r.time)),
           React.createElement('a',{href:allStopsUrl(r.stops),target:'_blank',style:{...S.btn,textDecoration:'none',padding:'8px 14px',fontSize:'13px',display:'inline-block'}},'Open Full Route in Maps'))),
       
+      React.createElement('div',{style:{marginBottom:'12px',padding:'16px',background:'rgba(239,68,68,0.15)',border:'2px solid #ef4444',borderRadius:'8px',textAlign:'center'}},
+        editMode?React.createElement('input',{value:banner,onChange:function(e){setBanner(e.target.value)},style:{...S.inp,width:'100%',textAlign:'center',fontSize:'16px',fontWeight:'bold',color:'#fca5a5',borderColor:'#ef4444'},placeholder:'Warning banner text'}):
+        React.createElement('div',{style:{fontSize:'18px',fontWeight:'bold',color:'#fca5a5',letterSpacing:'0.5px'}},'\u26a0\ufe0f '+banner)),
       React.createElement('div',{style:{padding:'10px',background:'rgba(59,130,246,0.1)',border:'1px solid #3b82f6',borderRadius:'8px',marginBottom:'10px',textAlign:'center'}},React.createElement('div',{style:{fontSize:'16px',fontWeight:'bold',color:'#60a5fa'}},'START: 113 E Tremont Ave, Bronx NY')),
       r.stops.map(function(s,idx){return React.createElement('div',{key:idx,style:{...S.card,marginBottom:'6px',borderLeft:s.type==='return'?'4px solid #f59e0b':'3px solid '+r.color,background:s.type==='return'?'rgba(245,158,11,0.08)':undefined}},
         editMode?React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'flex-start'}},
@@ -808,9 +811,6 @@ function RoutesPanel({isAdmin,notify}){
             s.note&&React.createElement('div',{style:{fontSize:'12px',color:'#fbbf24',fontWeight:'bold',marginTop:'4px'}},s.note)),
           React.createElement('a',{href:mapUrl(s.addr),target:'_blank',style:{padding:'8px 12px',borderRadius:'6px',border:'1px solid '+r.color,color:r.color,textDecoration:'none',fontSize:'12px',fontWeight:'bold',whiteSpace:'nowrap'}},'Navigate'))))}),
       editMode&&React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'8px'}},React.createElement('button',{onClick:addStop,style:{...S.btn,flex:1,background:'#334155'}},'+ Add Stop'),React.createElement('button',{onClick:addReturn,style:{...S.btn,flex:1,background:'#f59e0b',color:'#000'}},'\u21ba + Add Return to Base')),
-      React.createElement('div',{style:{marginTop:'16px',padding:'16px',background:'rgba(239,68,68,0.15)',border:'2px solid #ef4444',borderRadius:'8px',textAlign:'center'}},
-        editMode?React.createElement('input',{value:banner,onChange:function(e){setBanner(e.target.value)},style:{...S.inp,width:'100%',textAlign:'center',fontSize:'16px',fontWeight:'bold',color:'#fca5a5',borderColor:'#ef4444'},placeholder:'Warning banner text'}):
-        React.createElement('div',{style:{fontSize:'18px',fontWeight:'bold',color:'#fca5a5',letterSpacing:'0.5px'}},'\u26a0\ufe0f '+banner)),
       ));
 }
 
