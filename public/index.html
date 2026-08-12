@@ -1396,6 +1396,14 @@ function Payments({cleaners,settings,t,isAdmin}){
   const updatePayment=async(id,updates)=>{try{await api.put('/invoice-tracking/'+id,updates);await load();setEditing(null)}catch(e){alert(e.message)}};
   
   const deleteInvoice=async(id)=>{if(!confirm('Delete this invoice record?'))return;try{await api.del('/invoice-tracking/'+id);await load()}catch(e){alert(e.message)}};
+  const fixMismatched=async()=>{
+    try{var m=await api.get('/invoice-tracking/mismatched');
+      if(m.length===0){alert('No mismatched records found. Weekly and monthly billing are clean.');return}
+      var list=m.slice(0,10).map(function(r){return r.cleaner_name+' \u2014 week of '+fmtD(r.week_start)+' \u2014 $'+parseFloat(r.invoice_amount).toFixed(2)}).join('\n');
+      if(!confirm('Found '+m.length+' WEEKLY invoice(s) for cleaners now set to MONTHLY billing.\n\nThese are duplicates of their monthly invoices:\n\n'+list+(m.length>10?'\n... and '+(m.length-10)+' more':'')+'\n\nDelete them? (Paid records are never touched.)'))return;
+      var r=await api.del('/invoice-tracking/mismatched');alert('Deleted '+r.deleted+' duplicate records');await load()
+    }catch(e){alert(e.message)}};
+
   const clearOldUnpaid=async()=>{var dt=prompt('Delete all UNPAID '+payView+' records before which date? (YYYY-MM-DD)');if(!dt)return;
     if(!confirm('This will permanently delete all unpaid '+payView+' invoice records before '+dt+'. Continue?'))return;
     try{var r=await api.del('/invoice-tracking/bulk-unpaid?before_date='+dt+'&billing_cycle='+payView);
@@ -1476,7 +1484,7 @@ function Payments({cleaners,settings,t,isAdmin}){
         React.createElement('button',{onClick:function(){setShowUnpaidOnly(!showUnpaidOnly)},style:{padding:'8px 12px',borderRadius:'6px',border:'1px solid '+(showUnpaidOnly?'#ef4444':'#475569'),background:showUnpaidOnly?'rgba(239,68,68,0.2)':'transparent',color:showUnpaidOnly?'#fca5a5':'#94a3b8',cursor:'pointer',fontSize:'12px',fontWeight:'600',whiteSpace:'nowrap'}},showUnpaidOnly?'🔴 Unpaid':'Unpaid'),
         (paySearch||showUnpaidOnly)&&React.createElement('button',{onClick:function(){setPaySearch('');setShowUnpaidOnly(false)},style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'12px'}},'Clear'),
         React.createElement('button',{onClick:exportExcel,style:{...S.btn,background:'#059669'}},'Export Excel'),
-        isAdmin&&React.createElement('button',{onClick:clearOldUnpaid,style:{...S.btn,background:'#dc2626',fontSize:'12px'}},'\ud83d\uddd1 Clear Old Unpaid'))),
+        isAdmin&&React.createElement('button',{onClick:fixMismatched,style:{...S.btn,background:'#8b5cf6',fontSize:'12px'}},'Fix Duplicates'),isAdmin&&React.createElement('button',{onClick:clearOldUnpaid,style:{...S.btn,background:'#dc2626',fontSize:'12px'}},'\ud83d\uddd1 Clear Old Unpaid'))),
     
     summary&&React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
       React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#60a5fa'}},fmtC(summary.overall.total_invoiced)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Invoiced')),
