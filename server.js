@@ -1864,6 +1864,33 @@ app.put('/api/invoice-tracking/:id', authenticate, requirePerm('invoices'), asyn
   }
 });
 
+// Find/remove weekly records belonging to cleaners now set to monthly billing
+app.get('/api/invoice-tracking/mismatched', authenticate, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT it.id, it.week_start, it.week_end, it.invoice_amount, it.status, c.name as cleaner_name
+      FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id
+      WHERE COALESCE(c.billing_cycle,'weekly') = 'monthly'
+        AND COALESCE(it.billing_cycle,'weekly') = 'weekly'
+        AND it.status != 'paid'
+      ORDER BY c.name, it.week_start`);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/invoice-tracking/mismatched', authenticate, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      DELETE FROM invoice_tracking it USING cleaners c
+      WHERE it.cleaner_id = c.id
+        AND COALESCE(c.billing_cycle,'weekly') = 'monthly'
+        AND COALESCE(it.billing_cycle,'weekly') = 'weekly'
+        AND it.status != 'paid'
+      RETURNING it.id`);
+    res.json({ success: true, deleted: result.rows.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Bulk delete unpaid invoice records before a date
 app.delete('/api/invoice-tracking/bulk-unpaid', authenticate, adminOnly, async (req, res) => {
   const { before_date, billing_cycle } = req.query;
