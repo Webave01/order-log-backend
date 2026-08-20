@@ -263,6 +263,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
   const[undoData,setUndoData]=useState(null);const[undoTimer,setUndoTimer]=useState(null);const[priorDate,setPriorDate]=useState('');
   const[priorOrders,setPriorOrders]=useState(null);
   const[photoModal,setPhotoModal]=useState(null);const[photoUploading,setPhotoUploading]=useState(false);
+  const[rapidMode,setRapidMode]=useState(false);
 
   const uploadPhoto=async(orderId,file)=>{
     setPhotoUploading(true);
@@ -336,7 +337,8 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
     user&&user.role==='driver'?React.createElement('div',{style:{background:'#065f46',padding:'12px 16px',borderRadius:'8px',marginBottom:'16px'}},'👤 Logged in as: ',React.createElement('strong',null,user.username)):React.createElement(StaffSelector,{staffName,setStaffName:function(n){setStaffName(n);setNameError(false)},staffNames,t}),
     React.createElement('div',{style:{textAlign:'center',marginBottom:'24px'}},
     nameError&&!staffName&&React.createElement('div',{style:{background:'#7f1d1d',border:'2px solid #ef4444',color:'#fecaca',padding:'14px 16px',borderRadius:'8px',marginBottom:'16px',textAlign:'center',fontSize:'16px',fontWeight:'bold'}},'\u26a0\ufe0f '+(lang==='es'?'Seleccione su nombre arriba':'Select your name above')),
-      React.createElement('button',{onClick:handleNew,style:{...S.btn,padding:'20px 60px',fontSize:'22px',fontWeight:'bold',opacity:staffName?1:0.5,boxShadow:'0 4px 15px rgba(59,130,246,0.4)'}},t.newOrder)),
+      React.createElement('button',{onClick:handleNew,style:{...S.btn,padding:'20px 60px',fontSize:'22px',fontWeight:'bold',opacity:staffName?1:0.5,boxShadow:'0 4px 15px rgba(59,130,246,0.4)'}},t.newOrder),
+      React.createElement('button',{onClick:function(){if(!staffName){setNameError(true);return}setNameError(false);setRapidMode(true)},style:{...S.btn,padding:'20px 30px',fontSize:'18px',fontWeight:'bold',marginLeft:'10px',background:'linear-gradient(90deg,#f59e0b,#dc2626)',opacity:staffName?1:0.5,boxShadow:'0 4px 15px rgba(245,158,11,0.4)'}},'\u26a1 Rapid')),
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
       React.createElement('h2',{style:{margin:0,fontSize:'22px'}},t.orders),
       React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
@@ -380,6 +382,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
                 React.createElement('div',{style:{flex:1}}),
                 React.createElement('button',{onClick:function(){openPhotos(o)},style:{padding:o.photos&&o.photos.length>0?'4px 10px':'4px 6px',borderRadius:'6px',border:'none',background:o.photos&&o.photos.length>0?'rgba(139,92,246,0.2)':'transparent',color:o.photos&&o.photos.length>0?'#c4b5fd':'#475569',cursor:'pointer',fontSize:o.photos&&o.photos.length>0?'13px':'12px',fontWeight:o.photos&&o.photos.length>0?'600':'400'}},'\ud83d\udcf7'+(o.photos&&o.photos.length>0?' '+o.photos.length:''))))})),
     showForm&&React.createElement(OrderForm,{order:editing,cleaners,extras,cleanerExtras,staffName,isAdmin:isAdmin,onSave:save,onClose:()=>{setShowForm(false);setEditing(null)},lang,t}),
+    rapidMode&&React.createElement(RapidEntry,{cleaners,staffName,notify,loadData,onClose:function(){setRapidMode(false)},t}),
     showImport&&React.createElement(ImportModal,{cleaners,staffName,onClose:()=>setShowImport(false),onImport:loadData,notify,t}),
     photoModal&&React.createElement('div',{style:S.modal,onClick:function(e){if(e.target===e.currentTarget)setPhotoModal(null)}},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'700px',maxHeight:'90vh',overflow:'auto',border:'1px solid #334155'}},
@@ -424,6 +427,112 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
                     React.createElement('button',{onClick:function(){deletePhoto(photoModal.order.id,idx)},
                       style:{padding:'4px 8px',borderRadius:'4px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer',fontSize:'11px'}},'\u2715'))))})))))
     );
+}
+
+function RapidEntry({cleaners,staffName,notify,loadData,onClose,t}){
+  const getDefaultDate=()=>{const now=new Date();const hour=now.getHours();const target=hour>=6&&hour<9?new Date(now.setDate(now.getDate()-1)):now;
+    const y=target.getFullYear();const m=String(target.getMonth()+1).padStart(2,'0');const dd=String(target.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd};
+  const[cid,setCid]=useState('');const[pdate,setPdate]=useState(getDefaultDate());
+  const[svc,setSvc]=useState('same-day');const[color,setColor]=useState('Blue');
+  const[onum,setOnum]=useState('');const[wt,setWt]=useState('');
+  const[entered,setEntered]=useState([]);const[busy,setBusy]=useState(false);
+  const[warn,setWarn]=useState('');const[cSearch,setCSearch]=useState('');
+  const onumRef=useRef(null);const wtRef=useRef(null);
+
+  const cleaner=cleaners.find(function(c){return c.id===cid});
+  const isAddr=cleaner&&cleaner.has_addresses;
+  const locked=!!cid;
+  const filtered=cSearch?cleaners.filter(function(c){return c.name.toLowerCase().includes(cSearch.toLowerCase())}):cleaners;
+
+  useEffect(function(){if(locked&&onumRef.current)onumRef.current.focus()},[locked]);
+
+  const pickCleaner=(c)=>{
+    if(c.has_addresses){setWarn(c.name+' uses individual addresses \u2014 use the full New Order form for this client.');return}
+    setWarn('');setCid(c.id);setCSearch('');setEntered([]);
+    setColor(c.default_color||'Blue');
+  };
+
+  const saveOne=async()=>{
+    if(!onum.trim()){onumRef.current&&onumRef.current.focus();return}
+    if(!wt||parseFloat(wt)<=0){wtRef.current&&wtRef.current.focus();return}
+    setBusy(true);
+    var payload={order_num:onum.trim(),weight:parseFloat(wt),service_type:svc,pickup_date:pdate,
+      bag_color:color,cleaner_id:cid,extras:[],notes:'',staff_name:staffName,price_adjustment:0};
+    try{
+      var res=await api.post('/orders',payload);
+      var dupFlag=entered.some(function(e){return e.order_num===onum.trim()});
+      setEntered([{id:res.id,order_num:onum.trim(),weight:parseFloat(wt),dup:dupFlag}].concat(entered));
+      setOnum('');setWt('');
+      if(onumRef.current)onumRef.current.focus();
+    }catch(e){alert(e.message)}
+    setBusy(false);
+  };
+
+  const undoLast=async()=>{
+    if(entered.length===0)return;
+    var last=entered[0];
+    if(!confirm('Remove order #'+last.order_num+' ('+last.weight+' lbs)?'))return;
+    try{await api.del('/orders/'+last.id);setEntered(entered.slice(1));notify('Removed')}catch(e){alert(e.message)}
+  };
+
+  const finish=async()=>{await loadData();onClose()};
+  const switchCleaner=()=>{setCid('');setOnum('');setWt('');setEntered([]);setCSearch('')};
+
+  var totalWt=entered.reduce(function(s,e){return s+e.weight},0);
+
+  return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#0f172a',zIndex:1500,overflow:'auto'}},
+    React.createElement('div',{style:{maxWidth:'700px',margin:'0 auto',padding:'16px'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}},
+        React.createElement('h2',{style:{margin:0,color:'#fbbf24'}},'\u26a1 Rapid Entry'),
+        React.createElement('button',{onClick:finish,style:{...S.btn,background:'#334155',padding:'10px 20px'}},'Done')),
+
+      warn&&React.createElement('div',{style:{padding:'10px',background:'rgba(245,158,11,0.15)',border:'1px solid #f59e0b',borderRadius:'6px',color:'#fbbf24',marginBottom:'12px',fontSize:'13px'}},warn),
+
+      !locked?React.createElement('div',null,
+        React.createElement('label',{style:{...S.lbl,marginBottom:'6px',display:'block'}},'1. Pick the cleaner for this cart'),
+        React.createElement('input',{value:cSearch,onChange:function(e){setCSearch(e.target.value)},placeholder:'Type to filter...',autoFocus:true,style:{...S.inp,width:'100%',padding:'14px',fontSize:'17px',marginBottom:'10px'}}),
+        React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:'8px'}},
+          filtered.map(function(c){return React.createElement('button',{key:c.id,onClick:function(){pickCleaner(c)},style:{padding:'16px 10px',borderRadius:'8px',border:'2px solid '+(c.has_addresses?'#475569':'#3b82f6'),background:'transparent',color:c.has_addresses?'#64748b':'#e2e8f0',cursor:'pointer',fontSize:'15px',fontWeight:'bold'}},c.name)}))):
+
+      React.createElement('div',null,
+        React.createElement('div',{style:{...S.card,marginBottom:'12px',borderLeft:'4px solid #3b82f6'}},
+          React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}},
+            React.createElement('div',null,
+              React.createElement('div',{style:{fontSize:'20px',fontWeight:'bold',color:'#60a5fa'}},cleaner.name),
+              React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8'}},fmtD(pdate)+' \u2022 '+svc+' \u2022 '+color)),
+            React.createElement('button',{onClick:switchCleaner,style:{...S.inp,cursor:'pointer',padding:'8px 14px',fontSize:'13px'}},'Switch Cleaner')),
+          React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginTop:'10px'}},
+            React.createElement('div',null,React.createElement('label',{style:S.lbl},'Date'),
+              React.createElement('input',{type:'date',value:pdate,onChange:function(e){setPdate(e.target.value)},style:{...S.inp,padding:'6px',fontSize:'13px'}})),
+            React.createElement('div',null,React.createElement('label',{style:S.lbl},'Service'),
+              React.createElement('select',{value:svc,onChange:function(e){setSvc(e.target.value)},style:{...S.inp,padding:'6px',fontSize:'13px'}},
+                React.createElement('option',{value:'same-day'},'Same Day'),
+                React.createElement('option',{value:'24-hour'},'24 Hour'))),
+            React.createElement('div',null,React.createElement('label',{style:S.lbl},'Bag Color'),
+              React.createElement('select',{value:color,onChange:function(e){setColor(e.target.value)},style:{...S.inp,padding:'6px',fontSize:'13px'}},
+                COLORS.map(function(c){return React.createElement('option',{key:c,value:c},c)}))))),
+
+        React.createElement('div',{style:{...S.card,marginBottom:'12px',border:'2px solid #f59e0b'}},
+          React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}},
+            React.createElement('div',null,
+              React.createElement('label',{style:{...S.lbl,fontSize:'13px'}},'Order #',entered.length>0&&React.createElement('span',{style:{color:'#64748b',fontWeight:'normal',marginLeft:'8px'}},'last order# '+entered[0].order_num)),
+              React.createElement('input',{ref:onumRef,value:onum,onChange:function(e){setOnum(e.target.value)},
+                onKeyDown:function(e){if(e.key==='Enter'){e.preventDefault();wtRef.current&&wtRef.current.focus()}},
+                inputMode:'numeric',style:{...S.inp,width:'100%',padding:'18px',fontSize:'26px',fontWeight:'bold',textAlign:'center'}})),
+            React.createElement('div',null,
+              React.createElement('label',{style:{...S.lbl,fontSize:'13px'}},'Weight (lbs)'),
+              React.createElement('input',{ref:wtRef,value:wt,onChange:function(e){setWt(e.target.value)},
+                onKeyDown:function(e){if(e.key==='Enter'){e.preventDefault();saveOne()}},
+                inputMode:'decimal',style:{...S.inp,width:'100%',padding:'18px',fontSize:'26px',fontWeight:'bold',textAlign:'center'}}))),
+          React.createElement('button',{onClick:saveOne,disabled:busy,style:{...S.btn,width:'100%',marginTop:'10px',padding:'16px',fontSize:'18px',fontWeight:'bold',opacity:busy?0.6:1}},busy?'Saving...':'Save & Next  (Enter)')),
+
+        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+          React.createElement('span',{style:{fontWeight:'bold',color:'#4ade80'}},entered.length+' bags \u2022 '+totalWt.toFixed(1)+' lbs'),
+          entered.length>0&&React.createElement('button',{onClick:undoLast,style:{padding:'6px 14px',borderRadius:'6px',border:'1px solid #ef4444',background:'transparent',color:'#fca5a5',cursor:'pointer',fontSize:'12px'}},'\u21a9 Undo Last')),
+        React.createElement('div',{style:{maxHeight:'240px',overflow:'auto'}},
+          entered.map(function(e,i){return React.createElement('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:'8px 12px',background:i===0?'rgba(74,222,128,0.1)':'#0f172a',borderRadius:'6px',marginBottom:'4px',fontSize:'14px',border:e.dup?'1px solid #ef4444':'none'}},
+            React.createElement('span',{style:{fontWeight:'bold'}},'#'+e.order_num,e.dup&&React.createElement('span',{style:{color:'#fca5a5',fontSize:'11px',marginLeft:'6px'}},'DUPLICATE')),
+            React.createElement('span',{style:{color:'#94a3b8'}},e.weight+' lbs'))}))))); 
 }
 
 function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave,onClose,lang,t}){
@@ -779,9 +888,28 @@ function RoutesPanel({isAdmin,notify}){
 
   if(!routes)return React.createElement('div',{style:{padding:'20px',color:'#94a3b8'}},'Loading routes...');
   var r=sel?routes[sel]:null;
-  const mapUrl=(addr)=>'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(addr);
-  const allStopsUrl=(stops)=>{var pts=stops.filter(function(s){return s.addr}).map(function(s){return encodeURIComponent(s.addr)});
-    return'https://www.google.com/maps/dir/'+encodeURIComponent('113 E Tremont Ave, Bronx NY')+'/'+pts.join('/')+'/'+encodeURIComponent('113 E Tremont Ave, Bronx NY')};
+  const mapUrl=(addr)=>'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(addr);
+  const BASE_ADDR='113 E Tremont Ave, Bronx NY 10453';
+  // Google Maps supports origin + destination + max 8 intermediate waypoints.
+  // Split the route into legs of 9 stops so every link actually loads.
+  const buildLegs=(stops)=>{
+    var addrs=stops.filter(function(s){return s.addr&&s.addr.trim()}).map(function(s){return s.addr.trim()});
+    if(addrs.length===0)return [];
+    var legs=[],chunk=9,i=0;
+    while(i<addrs.length){
+      var slice=addrs.slice(i,i+chunk);
+      var origin=i===0?BASE_ADDR:addrs[i-1];
+      var dest=slice[slice.length-1];
+      var mid=slice.slice(0,-1);
+      var u='https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(origin)+'&destination='+encodeURIComponent(dest);
+      if(mid.length>0)u+='&waypoints='+mid.map(function(a){return encodeURIComponent(a)}).join('%7C');
+      legs.push({url:u,from:i===0?'Base':addrs[i-1],to:dest,count:slice.length});
+      i+=chunk;
+    }
+    // final leg back to base
+    legs.push({url:'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(addrs[addrs.length-1])+'&destination='+encodeURIComponent(BASE_ADDR),from:addrs[addrs.length-1],to:'Base',count:1});
+    return legs;
+  };
 
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}},
@@ -805,7 +933,8 @@ function RoutesPanel({isAdmin,notify}){
           React.createElement('div',null,
             React.createElement('h3',{style:{margin:0,color:r.color}},r.title),
             r.time&&React.createElement('div',{style:{fontSize:'14px',color:'#fbbf24',fontWeight:'bold',marginTop:'4px'}},r.time)),
-          React.createElement('a',{href:allStopsUrl(r.stops),target:'_blank',style:{...S.btn,textDecoration:'none',padding:'8px 14px',fontSize:'13px',display:'inline-block'}},'Open Full Route in Maps'))),
+          React.createElement('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},
+            buildLegs(r.stops).map(function(lg,li){return React.createElement('a',{key:li,href:lg.url,target:'_blank',rel:'noopener',style:{...S.btn,textDecoration:'none',padding:'8px 12px',fontSize:'12px',display:'inline-block',background:li===buildLegs(r.stops).length-1?'#f59e0b':undefined,color:li===buildLegs(r.stops).length-1?'#000':undefined}},li===buildLegs(r.stops).length-1?'\u21ba Back to Base':'Maps: Part '+(li+1))})))),
       
       React.createElement('div',{style:{marginBottom:'12px',padding:'16px',background:'rgba(239,68,68,0.15)',border:'2px solid #ef4444',borderRadius:'8px',textAlign:'center'}},
         editMode?React.createElement('input',{value:banner,onChange:function(e){setBanner(e.target.value)},style:{...S.inp,width:'100%',textAlign:'center',fontSize:'16px',fontWeight:'bold',color:'#fca5a5',borderColor:'#ef4444'},placeholder:'Warning banner text'}):
