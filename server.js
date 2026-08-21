@@ -29,6 +29,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // === Schedule Routes (Driver Scheduling & Pay) ===
 const scheduleRoutes = require('./schedule-routes');
+// Node 18+ has native fetch; guard for older runtimes
+if (typeof fetch === 'undefined') { try { global.fetch = require('node-fetch'); } catch (e) { console.warn('fetch unavailable - ticket scanning requires Node 18+'); } }
 
 const authenticate = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -152,6 +154,7 @@ async function initDB() {
     await client.query(`
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS has_addresses BOOLEAN DEFAULT false;
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20) DEFAULT 'weekly';
+      ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS ticket_format TEXT;
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_name VARCHAR(255);
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_address VARCHAR(255);
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_phone VARCHAR(50);
@@ -929,11 +932,11 @@ app.get('/api/cleaners', authenticate, async (req, res) => {
 });
 
 app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, dba_name, dba_address, dba_phone } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, ticket_format, dba_name, dba_address, dba_phone } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, dba_name, dba_address, dba_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *',
-      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', dba_name || null, dba_address || null, dba_phone || null]
+      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, ticket_format, dba_name, dba_address, dba_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *',
+      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', ticket_format || null, dba_name || null, dba_address || null, dba_phone || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -943,11 +946,11 @@ app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res
 
 app.put('/api/cleaners/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { id } = req.params;
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, dba_name, dba_address, dba_phone } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, ticket_format, dba_name, dba_address, dba_phone } = req.body;
   try {
     const result = await pool.query(
-      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, has_addresses=$8, billing_cycle=$9, dba_name=$10, dba_address=$11, dba_phone=$12 WHERE id=$13 RETURNING *',
-      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', dba_name || null, dba_address || null, dba_phone || null, id]
+      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, has_addresses=$8, billing_cycle=$9, ticket_format=$10, dba_name=$11, dba_address=$12, dba_phone=$13 WHERE id=$14 RETURNING *',
+      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', ticket_format || null, dba_name || null, dba_address || null, dba_phone || null, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Cleaner not found' });
     res.json(result.rows[0]);
@@ -2197,6 +2200,102 @@ app.post('/api/driver-routes', authenticate, adminOnly, async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) { console.error('Save routes error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// Scan a ticket photo and extract order details
+const COLOR_OPTIONS=['Army','Beige','Black','Blue','Brown','Cream','Flowers','Fresh Direct','Green','Grey','Ikea','Indigo','Maroon','Marshalls','Orange','Other','Pink','Plastic','Purple','Rainbow','Red','Shopping bag','Tan','Teal','Violet','White','Yellow'];
+
+app.post('/api/scan-ticket', authenticate, async (req, res) => {
+  const { image } = req.body;
+  if (!image) return res.status(400).json({ error: 'No image provided' });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'Ticket scanning is not configured. Add ANTHROPIC_API_KEY in Render environment settings.' });
+  try {
+    const cleanersRes = await pool.query('SELECT id, name, ticket_format FROM cleaners ORDER BY name');
+    const cleanerList = cleanersRes.rows.map(c => c.name + (c.ticket_format ? ' [' + c.ticket_format + ']' : '')).join('\n');
+
+    const base64 = image.replace(/^data:image\/\w+;base64,/, '');
+    const mediaType = (image.match(/^data:(image\/\w+);base64,/) || [null, 'image/jpeg'])[1];
+
+    const colorList = COLOR_OPTIONS.join(', ');
+    const prompt = 'You are reading a dry cleaner ticket photo for a laundry pickup service. The ticket is usually pinned to or resting on a laundry bag.\n\n' +
+      'Extract these fields and return ONLY raw JSON, no markdown fences, no commentary:\n' +
+      '{"cleaner":"<name>","order_num":"<4 digits>","weight":<number>,"bag_color":"<color>","bag_color_confidence":"high|medium|low","confidence":"high|medium|low"}\n\n' +
+      'RULES:\n' +
+      '1. cleaner: The shop name printed on the ticket. Match it to the CLOSEST entry from this list of known clients and return that exact list name. If the ticket shows a street address that distinguishes locations of the same brand, use it to pick the right entry.\n' +
+      'KNOWN CLIENTS:\n' + cleanerList + '\n\n' +
+      '2. order_num: Find the ticket/invoice number. It often prints with a dash such as 514-686. Remove any dash or space, then return ONLY THE LAST 4 DIGITS. Example: 514-686 becomes 4686. Example: 8809 becomes 8809.\n\n' +
+      '3. weight: The pounds for this bag. Usually printed near text like "lbs" or "WASH", for example "1 -11 lbs." means 11. Return just the number. If no weight is printed, return 0.\n\n' +
+      '4. bag_color: Look at the LAUNDRY BAG the ticket is attached to or sitting on - NOT the ticket paper itself, and NOT the background. Report the dominant color of the bag fabric or its drawstring/ties. Return the closest match from this exact list: ' + colorList + '. ' +
+      'If the bag shows a store logo, prefer that brand name if it is in the list (Ikea, Marshalls, Fresh Direct). If it is a clear or translucent plastic bag use "Plastic". If no bag is visible in the photo, return empty string and set bag_color_confidence to "low".\n\n' +
+      '5. bag_color_confidence: "high" if the bag is clearly visible and the color is unambiguous, "medium" if partially visible or between two shades, "low" if barely visible or not visible.\n\n' +
+      '6. confidence: overall read quality for the TICKET fields (cleaner, order_num, weight). "high" if all clearly legible, "medium" if you inferred something, "low" if blurry or obscured.\n\n' +
+      'If a field truly cannot be read, use empty string for text or 0 for weight, and set confidence to "low".';
+
+    // Model is configurable in Settings; default to Sonnet 5
+    let scanModel = 'claude-sonnet-5';
+    try {
+      const ms = await pool.query("SELECT value FROM settings WHERE key = 'scanModel'");
+      if (ms.rows.length > 0 && ms.rows[0].value) scanModel = ms.rows[0].value;
+    } catch (e) {}
+
+    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: scanModel,
+        max_tokens: 300,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+            { type: 'text', text: prompt }
+          ]
+        }]
+      })
+    });
+
+    const data = await anthropicRes.json();
+    if (data.error) return res.status(502).json({ error: data.error.message || 'Vision service error' });
+
+    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    let parsed;
+    try { parsed = JSON.parse(clean); }
+    catch (e) { return res.status(422).json({ error: 'Could not read ticket. Enter manually.', raw: clean.slice(0, 200) }); }
+
+    // Resolve cleaner name to an id
+    let cleanerId = null;
+    if (parsed.cleaner) {
+      const exact = cleanersRes.rows.find(c => c.name.toLowerCase() === String(parsed.cleaner).toLowerCase());
+      if (exact) cleanerId = exact.id;
+      else {
+        const partial = cleanersRes.rows.find(c => c.name.toLowerCase().includes(String(parsed.cleaner).toLowerCase()) || String(parsed.cleaner).toLowerCase().includes(c.name.toLowerCase()));
+        if (partial) cleanerId = partial.id;
+      }
+    }
+
+    let num = String(parsed.order_num || '').replace(/\D/g, '');
+    if (num.length > 4) num = num.slice(-4);
+
+    res.json({
+      cleaner_id: cleanerId,
+      cleaner_name: parsed.cleaner || '',
+      order_num: num,
+      weight: parseFloat(parsed.weight) || 0,
+      bag_color: (COLOR_OPTIONS.indexOf(parsed.bag_color) >= 0 ? parsed.bag_color : ''),
+      bag_color_confidence: parsed.bag_color_confidence || 'low',
+      confidence: parsed.confidence || 'medium',
+      model: scanModel,
+      usage: data.usage || null
+    });
+  } catch (err) {
+    console.error('Scan ticket error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('*', (req, res) => {
