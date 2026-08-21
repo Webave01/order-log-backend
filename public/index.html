@@ -22,6 +22,24 @@ input[type=number]{-moz-appearance:textfield}
 </head>
 <body>
 <div id="root"></div>
+<div id="crash-msg" style="display:none;padding:40px;max-width:700px;margin:40px auto;background:#1e293b;border:2px solid #ef4444;border-radius:12px;color:#e2e8f0;font-family:system-ui,sans-serif">
+  <h2 style="color:#fca5a5;margin:0 0 12px">App failed to start</h2>
+  <p style="color:#94a3b8;margin:0 0 16px">Send this message to support:</p>
+  <pre id="crash-detail" style="background:#0f172a;padding:16px;border-radius:8px;color:#fbbf24;white-space:pre-wrap;word-break:break-word;font-size:13px;margin:0 0 16px"></pre>
+  <button onclick="location.reload()" style="padding:12px 24px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:15px;font-weight:bold;cursor:pointer">Reload</button>
+</div>
+<script>
+window.addEventListener('error',function(ev){
+  var r=document.getElementById('root');
+  if(r&&r.innerHTML.trim()===''){
+    r.style.display='none';
+    var m=document.getElementById('crash-msg');
+    var d=document.getElementById('crash-detail');
+    if(m)m.style.display='block';
+    if(d)d.textContent=(ev.message||'Unknown error')+'\n'+(ev.filename||'')+' line '+(ev.lineno||'?');
+  }
+});
+</script>
 <script>
 const{useState,useEffect,useRef}=React;
 const API=location.hostname==='localhost'?'http://localhost:3001/api':'https://order-log-backend.onrender.com/api';
@@ -263,7 +281,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
   const[undoData,setUndoData]=useState(null);const[undoTimer,setUndoTimer]=useState(null);const[priorDate,setPriorDate]=useState('');
   const[priorOrders,setPriorOrders]=useState(null);
   const[photoModal,setPhotoModal]=useState(null);const[photoUploading,setPhotoUploading]=useState(false);
-  const[rapidMode,setRapidMode]=useState(false);
+  const[rapidMode,setRapidMode]=useState(false);const[scanMode,setScanMode]=useState(false);
 
   const uploadPhoto=async(orderId,file)=>{
     setPhotoUploading(true);
@@ -338,7 +356,8 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
     React.createElement('div',{style:{textAlign:'center',marginBottom:'24px'}},
     nameError&&!staffName&&React.createElement('div',{style:{background:'#7f1d1d',border:'2px solid #ef4444',color:'#fecaca',padding:'14px 16px',borderRadius:'8px',marginBottom:'16px',textAlign:'center',fontSize:'16px',fontWeight:'bold'}},'\u26a0\ufe0f '+(lang==='es'?'Seleccione su nombre arriba':'Select your name above')),
       React.createElement('button',{onClick:handleNew,style:{...S.btn,padding:'20px 60px',fontSize:'22px',fontWeight:'bold',opacity:staffName?1:0.5,boxShadow:'0 4px 15px rgba(59,130,246,0.4)'}},t.newOrder),
-      React.createElement('button',{onClick:function(){if(!staffName){setNameError(true);return}setNameError(false);setRapidMode(true)},style:{...S.btn,padding:'20px 30px',fontSize:'18px',fontWeight:'bold',marginLeft:'10px',background:'linear-gradient(90deg,#f59e0b,#dc2626)',opacity:staffName?1:0.5,boxShadow:'0 4px 15px rgba(245,158,11,0.4)'}},'\u26a1 Rapid')),
+      React.createElement('button',{onClick:function(){if(!staffName){setNameError(true);return}setNameError(false);setRapidMode(true)},style:{...S.btn,padding:'20px 30px',fontSize:'18px',fontWeight:'bold',marginLeft:'10px',background:'linear-gradient(90deg,#f59e0b,#dc2626)',opacity:staffName?1:0.5,boxShadow:'0 4px 15px rgba(245,158,11,0.4)'}},'\u26a1 Fast Orders'),
+      React.createElement('button',{onClick:function(){if(!staffName){setNameError(true);return}setNameError(false);setScanMode(true)},style:{...S.btn,padding:'20px 30px',fontSize:'18px',fontWeight:'bold',marginLeft:'10px',background:'linear-gradient(90deg,#10b981,#0891b2)',opacity:staffName?1:0.5,boxShadow:'0 4px 15px rgba(16,185,129,0.4)'}},'\ud83d\udcf7 Scan')),
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
       React.createElement('h2',{style:{margin:0,fontSize:'22px'}},t.orders),
       React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
@@ -383,6 +402,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
                 React.createElement('button',{onClick:function(){openPhotos(o)},style:{padding:o.photos&&o.photos.length>0?'4px 10px':'4px 6px',borderRadius:'6px',border:'none',background:o.photos&&o.photos.length>0?'rgba(139,92,246,0.2)':'transparent',color:o.photos&&o.photos.length>0?'#c4b5fd':'#475569',cursor:'pointer',fontSize:o.photos&&o.photos.length>0?'13px':'12px',fontWeight:o.photos&&o.photos.length>0?'600':'400'}},'\ud83d\udcf7'+(o.photos&&o.photos.length>0?' '+o.photos.length:''))))})),
     showForm&&React.createElement(OrderForm,{order:editing,cleaners,extras,cleanerExtras,staffName,isAdmin:isAdmin,onSave:save,onClose:()=>{setShowForm(false);setEditing(null)},lang,t}),
     rapidMode&&React.createElement(RapidEntry,{cleaners,staffName,notify,loadData,onClose:function(){setRapidMode(false)},t}),
+    scanMode&&React.createElement(ScanEntry,{cleaners,staffName,notify,loadData,onClose:function(){setScanMode(false)},t}),
     showImport&&React.createElement(ImportModal,{cleaners,staffName,onClose:()=>setShowImport(false),onImport:loadData,notify,t}),
     photoModal&&React.createElement('div',{style:S.modal,onClick:function(e){if(e.target===e.currentTarget)setPhotoModal(null)}},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'700px',maxHeight:'90vh',overflow:'auto',border:'1px solid #334155'}},
@@ -427,6 +447,136 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
                     React.createElement('button',{onClick:function(){deletePhoto(photoModal.order.id,idx)},
                       style:{padding:'4px 8px',borderRadius:'4px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer',fontSize:'11px'}},'\u2715'))))})))))
     );
+}
+
+function ScanEntry({cleaners,staffName,notify,loadData,onClose,t}){
+  const getDefaultDate=()=>{const now=new Date();const hour=now.getHours();const target=hour>=6&&hour<9?new Date(now.setDate(now.getDate()-1)):now;
+    const y=target.getFullYear();const m=String(target.getMonth()+1).padStart(2,'0');const dd=String(target.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd};
+  const[pdate,setPdate]=useState(getDefaultDate());const[svc,setSvc]=useState('same-day');
+  const[scanning,setScanning]=useState(false);const[busy,setBusy]=useState(false);
+  const[preview,setPreview]=useState(null);const[imgData,setImgData]=useState(null);
+  const[cid,setCid]=useState('');const[onum,setOnum]=useState('');const[wt,setWt]=useState('');
+  const[color,setColor]=useState('Blue');const[conf,setConf]=useState('');const[colorConf,setColorConf]=useState('');
+  const[entered,setEntered]=useState([]);const[err,setErr]=useState('');
+  const fileRef=useRef(null);const onumRef=useRef(null);
+
+  const compress=(file)=>new Promise(function(resolve){
+    var reader=new FileReader();
+    reader.onload=function(e){
+      var img=new Image();
+      img.onload=function(){
+        var canvas=document.createElement('canvas');var maxW=1400;var scale=Math.min(1,maxW/img.width);
+        canvas.width=img.width*scale;canvas.height=img.height*scale;
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        resolve(canvas.toDataURL('image/jpeg',0.75));
+      };img.src=e.target.result;
+    };reader.readAsDataURL(file);
+  });
+
+  const handlePhoto=async(e)=>{
+    var file=e.target.files[0];if(!file)return;
+    e.target.value='';setErr('');setConf('');
+    var img=await compress(file);
+    setImgData(img);setPreview(img);setScanning(true);
+    try{
+      var r=await api.post('/scan-ticket',{image:img});
+      if(r.cleaner_id)setCid(r.cleaner_id);
+      setOnum(r.order_num||'');setWt(r.weight?String(r.weight):'');setConf(r.confidence||'');
+      if(r.bag_color){setColor(r.bag_color);setColorConf(r.bag_color_confidence||'')}else{setColorConf('')}
+      if(!r.cleaner_id&&r.cleaner_name)setErr('Could not match "'+r.cleaner_name+'" to a client. Pick it below.');
+    }catch(ex){setErr(ex.message||'Read failed. Enter the values manually.')}
+    setScanning(false);
+    setTimeout(function(){if(onumRef.current)onumRef.current.focus()},100);
+  };
+
+  const saveOne=async()=>{
+    if(!cid){setErr('Select the cleaner');return}
+    if(!onum.trim()){setErr('Order # required');return}
+    if(!wt||parseFloat(wt)<=0){setErr('Weight required');return}
+    setBusy(true);setErr('');
+    try{
+      var res=await api.post('/orders',{order_num:onum.trim(),weight:parseFloat(wt),service_type:svc,pickup_date:pdate,
+        bag_color:color,cleaner_id:cid,extras:[],notes:'',staff_name:staffName,price_adjustment:0});
+      if(imgData){try{await api.post('/orders/'+res.id+'/photos',{image:imgData,label:'ticket'})}catch(e){}}
+      var cn=(cleaners.find(function(c){return c.id===cid})||{}).name||'';
+      setEntered([{id:res.id,order_num:onum.trim(),weight:parseFloat(wt),cleaner:cn,color:color}].concat(entered));
+      setOnum('');setWt('');setPreview(null);setImgData(null);setConf('');setColorConf('');
+      if(fileRef.current)fileRef.current.click();
+    }catch(e){setErr(e.message)}
+    setBusy(false);
+  };
+
+  const skipPhoto=()=>{setPreview(null);setImgData(null);setConf('');setColorConf('');setErr('');setTimeout(function(){if(onumRef.current)onumRef.current.focus()},50)};
+  const undoLast=async()=>{
+    if(entered.length===0)return;var last=entered[0];
+    if(!confirm('Remove order #'+last.order_num+'?'))return;
+    try{await api.del('/orders/'+last.id);setEntered(entered.slice(1));notify('Removed')}catch(e){alert(e.message)}
+  };
+  const finish=async()=>{await loadData();onClose()};
+
+  var totalWt=entered.reduce(function(s,e){return s+e.weight},0);
+  var confColor=conf==='high'?'#4ade80':conf==='medium'?'#fbbf24':'#f87171';
+
+  return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#0f172a',zIndex:1500,overflow:'auto'}},
+    React.createElement('div',{style:{maxWidth:'700px',margin:'0 auto',padding:'16px'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
+        React.createElement('h2',{style:{margin:0,color:'#34d399'}},'\ud83d\udcf7 Scan Ticket'),
+        React.createElement('button',{onClick:finish,style:{...S.btn,background:'#334155',padding:'10px 20px'}},'Done')),
+
+      React.createElement('div',{style:{...S.card,marginBottom:'12px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}},
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Date'),
+          React.createElement('input',{type:'date',value:pdate,onChange:function(e){setPdate(e.target.value)},style:{...S.inp,padding:'6px',fontSize:'13px'}})),
+        React.createElement('div',null,React.createElement('label',{style:S.lbl},'Service'),
+          React.createElement('select',{value:svc,onChange:function(e){setSvc(e.target.value)},style:{...S.inp,padding:'6px',fontSize:'13px'}},
+            React.createElement('option',{value:'same-day'},'Same Day'),React.createElement('option',{value:'24-hour'},'24 Hour')))),
+
+      React.createElement('input',{ref:fileRef,type:'file',accept:'image/*',capture:'environment',style:{display:'none'},onChange:handlePhoto}),
+
+      !preview&&!scanning&&React.createElement('button',{onClick:function(){fileRef.current&&fileRef.current.click()},style:{...S.btn,width:'100%',padding:'28px',fontSize:'20px',fontWeight:'bold',background:'linear-gradient(90deg,#10b981,#0891b2)',marginBottom:'12px'}},'\ud83d\udcf7 Take Photo of Ticket'),
+
+      scanning&&React.createElement('div',{style:{...S.card,textAlign:'center',padding:'30px',marginBottom:'12px',border:'2px solid #10b981'}},
+        preview&&React.createElement('img',{src:preview,style:{maxWidth:'160px',borderRadius:'8px',marginBottom:'12px',opacity:0.5}}),
+        React.createElement('div',{style:{fontSize:'17px',color:'#34d399',fontWeight:'bold'}},'Reading ticket...')),
+
+      (preview&&!scanning)&&React.createElement('div',{style:{...S.card,marginBottom:'12px',border:'2px solid #10b981'}},
+        React.createElement('div',{style:{display:'flex',gap:'12px',marginBottom:'12px'}},
+          React.createElement('img',{src:preview,style:{width:'110px',borderRadius:'8px',cursor:'pointer'},onClick:function(){var w=window.open('');w.document.write('<img src="'+preview+'" style="max-width:100%">')}}),
+          React.createElement('div',{style:{flex:1}},
+            conf&&React.createElement('div',{style:{fontSize:'12px',color:confColor,fontWeight:'bold',marginBottom:'6px'}},'Read confidence: '+conf.toUpperCase()+(conf!=='high'?' \u2014 verify below':'')),
+            React.createElement('label',{style:S.lbl},'Cleaner'),
+            React.createElement('select',{value:cid,onChange:function(e){setCid(parseInt(e.target.value)||'')},style:{...S.inp,width:'100%',padding:'10px',fontSize:'15px',fontWeight:'bold',borderColor:cid?'#10b981':'#ef4444'}},
+              React.createElement('option',{value:''},'Select cleaner...'),
+              cleaners.map(function(c){return React.createElement('option',{key:c.id,value:c.id},c.name)})))),
+        React.createElement('div',{style:{marginBottom:'10px'}},
+          React.createElement('label',{style:S.lbl},'Bag Color',colorConf&&React.createElement('span',{style:{marginLeft:'8px',fontWeight:'normal',color:colorConf==='high'?'#4ade80':colorConf==='medium'?'#fbbf24':'#f87171'}},'read: '+colorConf)),
+          React.createElement('select',{value:color,onChange:function(e){setColor(e.target.value);setColorConf('')},style:{...S.inp,width:'100%',padding:'12px',fontSize:'16px',fontWeight:'bold',borderColor:colorConf==='high'?'#10b981':colorConf==='medium'?'#f59e0b':'#475569'}},
+            COLORS.map(function(c){return React.createElement('option',{key:c,value:c},c)}))),
+        React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}},
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},'Order # (last 4)'),
+            React.createElement('input',{ref:onumRef,value:onum,onChange:function(e){setOnum(e.target.value)},
+              onKeyDown:function(e){if(e.key==='Enter'){e.preventDefault();saveOne()}},
+              inputMode:'numeric',style:{...S.inp,width:'100%',padding:'16px',fontSize:'24px',fontWeight:'bold',textAlign:'center'}})),
+          React.createElement('div',null,React.createElement('label',{style:S.lbl},'Weight (lbs)'),
+            React.createElement('input',{value:wt,onChange:function(e){setWt(e.target.value)},
+              onKeyDown:function(e){if(e.key==='Enter'){e.preventDefault();saveOne()}},
+              inputMode:'decimal',style:{...S.inp,width:'100%',padding:'16px',fontSize:'24px',fontWeight:'bold',textAlign:'center'}}))),
+        err&&React.createElement('div',{style:{color:'#fca5a5',fontSize:'13px',marginTop:'8px'}},err),
+        React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px'}},
+          React.createElement('button',{onClick:saveOne,disabled:busy,style:{...S.btn,flex:2,padding:'16px',fontSize:'17px',fontWeight:'bold',opacity:busy?0.6:1}},busy?'Saving...':'Confirm & Next'),
+          React.createElement('button',{onClick:function(){fileRef.current&&fileRef.current.click()},style:{...S.inp,flex:1,cursor:'pointer',padding:'16px',fontSize:'13px'}},'Retake'))),
+
+      (!preview&&!scanning)&&React.createElement('div',{style:{textAlign:'center',marginBottom:'12px'}},
+        React.createElement('button',{onClick:skipPhoto,style:{background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:'13px',textDecoration:'underline'}},'or enter manually without a photo')),
+
+      err&&!preview&&React.createElement('div',{style:{padding:'10px',background:'rgba(239,68,68,0.1)',border:'1px solid #ef4444',borderRadius:'6px',color:'#fca5a5',marginBottom:'12px',fontSize:'13px'}},err),
+
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+        React.createElement('span',{style:{fontWeight:'bold',color:'#4ade80'}},entered.length+' bags \u2022 '+totalWt.toFixed(1)+' lbs'),
+        entered.length>0&&React.createElement('button',{onClick:undoLast,style:{padding:'6px 14px',borderRadius:'6px',border:'1px solid #ef4444',background:'transparent',color:'#fca5a5',cursor:'pointer',fontSize:'12px'}},'\u21a9 Undo Last')),
+      React.createElement('div',{style:{maxHeight:'200px',overflow:'auto'}},
+        entered.map(function(e,i){return React.createElement('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:'8px 12px',background:i===0?'rgba(74,222,128,0.1)':'#0f172a',borderRadius:'6px',marginBottom:'4px',fontSize:'14px'}},
+          React.createElement('span',null,React.createElement('b',null,'#'+e.order_num),React.createElement('span',{style:{color:'#64748b',marginLeft:'8px',fontSize:'12px'}},e.cleaner),e.color&&React.createElement('span',{style:{color:'#64748b',marginLeft:'6px',fontSize:'11px'}},'\u2022 '+e.color)),
+          React.createElement('span',{style:{color:'#94a3b8'}},e.weight+' lbs'))}))));
 }
 
 function RapidEntry({cleaners,staffName,notify,loadData,onClose,t}){
@@ -483,7 +633,7 @@ function RapidEntry({cleaners,staffName,notify,loadData,onClose,t}){
   return React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'#0f172a',zIndex:1500,overflow:'auto'}},
     React.createElement('div',{style:{maxWidth:'700px',margin:'0 auto',padding:'16px'}},
       React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}},
-        React.createElement('h2',{style:{margin:0,color:'#fbbf24'}},'\u26a1 Rapid Entry'),
+        React.createElement('h2',{style:{margin:0,color:'#fbbf24'}},'\u26a1 Fast Orders'),
         React.createElement('button',{onClick:finish,style:{...S.btn,background:'#334155',padding:'10px 20px'}},'Done')),
 
       warn&&React.createElement('div',{style:{padding:'10px',background:'rgba(245,158,11,0.15)',border:'1px solid #f59e0b',borderRadius:'6px',color:'#fbbf24',marginBottom:'12px',fontSize:'13px'}},warn),
@@ -1299,9 +1449,9 @@ function TrendsPanel({t}){
 }
 
 function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
-  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);const[showDba,setShowDba]=useState(false);
+  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);const[showDba,setShowDba]=useState(false);
   const[showAddrs,setShowAddrs]=useState(null);const[addrList,setAddrList]=useState([]);const[newAddr,setNewAddr]=useState('');const[newApt,setNewApt]=useState('');const[editAddr,setEditAddr]=useState(null);
-  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
+  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
   const del=async id=>{if(!confirm(t.delete+'?'))return;try{await api.del('/cleaners/'+id);notify('Deleted');await loadData()}catch(e){alert(e.message)}};
   const loadAddrs=async(cid)=>{try{const a=await api.get('/cleaner-addresses/'+cid);setAddrList(a)}catch(e){setAddrList([])}};
   const addAddr=async()=>{if(!newAddr.trim()){alert('Enter address');return}try{await api.post('/cleaner-addresses',{cleaner_id:showAddrs.id,address:newAddr.trim(),apt:newApt.trim()});setNewAddr('');setNewApt('');loadAddrs(showAddrs.id);notify('Address added')}catch(e){alert(e.message)}};
@@ -1309,7 +1459,7 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
   const saveAddr=async()=>{if(!editAddr)return;try{await api.put('/cleaner-addresses/'+editAddr.id,{address:editAddr.address,apt:editAddr.apt});setEditAddr(null);loadAddrs(showAddrs.id);notify('Updated')}catch(e){alert(e.message)}};
 
   return React.createElement('div',null,
-    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',dba_name:'',dba_address:'',dba_phone:''});setShowDba(false);setShow(true)},style:S.btn},t.addCleaner)),
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});setShowDba(false);setShow(true)},style:S.btn},t.addCleaner)),
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
       cleaners.map(c=>React.createElement('div',{key:c.id,style:S.card},
         React.createElement('div',{style:{fontWeight:'bold',marginBottom:'4px'}},c.name,c.has_addresses&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),c.billing_cycle==='monthly'&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'11px',color:'#fbbf24',background:'rgba(245,158,11,0.15)',padding:'2px 6px',borderRadius:'4px'}},'\ud83d\udcc5 Monthly'),c.dba_name&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#f59e0b'}},'\ud83c\udfe2 '+c.dba_name)),
@@ -1319,7 +1469,7 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
           React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:c.route==='east'?'#3b82f6':'#f59e0b'}},c.route==='east'?'\ud83d\uddfd East':'\ud83c\udf06 West'),
           c.congestion_zone&&React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#dc2626'}},'\ud83d\ude97 Congestion $'+parseFloat(c.congestion_rate||5).toFixed(2)+'/day')),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',flexWrap:'wrap'}},
-          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,address:c.address||'',rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false,billing_cycle:c.billing_cycle||'weekly',dba_name:c.dba_name||'',dba_address:c.dba_address||'',dba_phone:c.dba_phone||''});setShowDba(!!c.dba_name);setShow(true)},style:S.edit},t.edit),
+          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,address:c.address||'',rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false,billing_cycle:c.billing_cycle||'weekly',ticket_format:c.ticket_format||'',dba_name:c.dba_name||'',dba_address:c.dba_address||'',dba_phone:c.dba_phone||''});setShowDba(!!c.dba_name);setShow(true)},style:S.edit},t.edit),
           React.createElement('button',{onClick:()=>setShowPrices(c),style:{...S.edit,borderColor:'#f59e0b',color:'#f59e0b'}},t.customPrices),
           c.has_addresses&&React.createElement('button',{onClick:()=>{setShowAddrs(c);loadAddrs(c.id)},style:{...S.edit,borderColor:'#8b5cf6',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),
           React.createElement('button',{onClick:()=>del(c.id),style:S.del},t.delete))))),
@@ -1344,6 +1494,7 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
               React.createElement('span',{style:{fontSize:'13px',color:'#94a3b8'}},'\ud83d\udcc5 Billing:'),
               React.createElement('button',{type:'button',onClick:function(){setF({...f,billing_cycle:'weekly'})},style:{padding:'4px 12px',borderRadius:'6px',border:'1px solid '+(f.billing_cycle==='weekly'?'#3b82f6':'#475569'),background:f.billing_cycle==='weekly'?'rgba(59,130,246,0.2)':'transparent',color:f.billing_cycle==='weekly'?'#60a5fa':'#94a3b8',cursor:'pointer',fontSize:'13px',fontWeight:'600'}},'Weekly'),
               React.createElement('button',{type:'button',onClick:function(){setF({...f,billing_cycle:'monthly'})},style:{padding:'4px 12px',borderRadius:'6px',border:'1px solid '+(f.billing_cycle==='monthly'?'#f59e0b':'#475569'),background:f.billing_cycle==='monthly'?'rgba(245,158,11,0.2)':'transparent',color:f.billing_cycle==='monthly'?'#fbbf24':'#94a3b8',cursor:'pointer',fontSize:'13px',fontWeight:'600'}},'Monthly')),
+          React.createElement('div',{style:{marginTop:'8px'}},React.createElement('label',{style:S.lbl},'Ticket Scan Hint (optional)'),React.createElement('input',{value:f.ticket_format,onChange:function(e){setF({...f,ticket_format:e.target.value})},style:S.inp,placeholder:'e.g. green ticket, number top-left, weight near WASH'})),
             f.has_addresses&&React.createElement('div',{style:{marginTop:'6px',color:'#94a3b8',fontSize:'11px'}},'Staff will pick customer address from a list when entering orders. Bag color auto-set to Black.')),
           React.createElement('div',{style:{marginTop:'12px',padding:'12px',borderRadius:'8px',border:showDba?'1px solid #f59e0b':'1px solid #475569',background:showDba?'rgba(245,158,11,0.05)':'transparent'}},
             React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:showDba?'10px':'0'}},
@@ -1987,7 +2138,7 @@ function StaffNameManager({notify}){
 }
 
 function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t}){
-  const[f,setF]=useState({...settings,timezone:settings.timezone||'America/New_York',companyName:settings.companyName||'WEBSTER AVE LAUNDROMAT',companyAddress:settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',storePhone:settings.storePhone||'929-263-1560',managerPhone:settings.managerPhone||'347-632-2024',photoRetentionDays:settings.photoRetentionDays||45});
+  const[f,setF]=useState({...settings,timezone:settings.timezone||'America/New_York',scanModel:settings.scanModel||'claude-sonnet-5',companyName:settings.companyName||'WEBSTER AVE LAUNDROMAT',companyAddress:settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',storePhone:settings.storePhone||'929-263-1560',managerPhone:settings.managerPhone||'347-632-2024',photoRetentionDays:settings.photoRetentionDays||45});
   const[sav,setSav]=useState(false);const[clr,setClr]=useState(false);const[conf,setConf]=useState('');const[exp,setExp]=useState(false);
   const[driverRules,setDriverRules]=useState('');const[driverApps,setDriverApps]=useState([]);const[showApps,setShowApps]=useState(false);const[viewApp,setViewApp]=useState(null);const[rulesSaving,setRulesSaving]=useState(false);
   const[payrollTaxes,setPayrollTaxes]=useState([
@@ -2006,7 +2157,7 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
   const saveTaxes=async()=>{setTaxSaving(true);try{var r=await api.put('/payroll-taxes',{taxes:payrollTaxes});if(r.success){notify('Tax rates saved');try{var t=await api.get('/payroll-taxes');if(t.taxes&&Array.isArray(t.taxes))setPayrollTaxes(t.taxes)}catch(e){}}else{alert('Save failed: '+(r.error||'unknown'))}}catch(e){alert('Save error: '+e.message)}setTaxSaving(false)};
   const updateTax=(idx,key,val)=>{var t=[...payrollTaxes];t[idx]={...t[idx],[key]:val};setPayrollTaxes(t)};
   const deleteApp=async(id)=>{if(!confirm('Delete this application?'))return;try{await api.del('/driver-applications/'+id);setDriverApps(driverApps.filter(a=>a.id!==id));if(viewApp&&viewApp.id===id)setViewApp(null);notify('Deleted')}catch(e){alert(e.message)}};
-  const save=async e=>{e.preventDefault();setSav(true);try{await api.put('/settings',{sameDayMult:parseFloat(f.sameDayMult),defaultRate:parseFloat(f.defaultRate),companyName:f.companyName,companyAddress:f.companyAddress,storePhone:f.storePhone,managerPhone:f.managerPhone,photoRetentionDays:parseInt(f.photoRetentionDays)||45,timezone:f.timezone});setSettings(f);notify('Saved')}catch(e){alert(e.message)}setSav(false)};
+  const save=async e=>{e.preventDefault();setSav(true);try{await api.put('/settings',{sameDayMult:parseFloat(f.sameDayMult),defaultRate:parseFloat(f.defaultRate),companyName:f.companyName,companyAddress:f.companyAddress,storePhone:f.storePhone,managerPhone:f.managerPhone,photoRetentionDays:parseInt(f.photoRetentionDays)||45,timezone:f.timezone,scanModel:f.scanModel});setSettings(f);notify('Saved')}catch(e){alert(e.message)}setSav(false)};
   const clear=async()=>{const need=lang==='es'?'BORRAR':'DELETE';if(conf!==need){alert('Type '+need);return}setClr(true);try{const res=await api.del('/orders/clear-all');alert('Cleared '+res.deleted+' orders!');setConf('');window.location.reload()}catch(e){console.error('Clear error:',e);alert('Error: '+e.message)}setClr(false)};
   const exportDB=async()=>{setExp(true);try{const data=await api.get('/export-database');const wb=XLSX.utils.book_new();if(data.orders&&data.orders.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.orders),'Orders')}if(data.cleaners&&data.cleaners.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.cleaners),'Cleaners')}if(data.extras&&data.extras.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.extras),'Extras')}if(data.cleaner_extras&&data.cleaner_extras.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.cleaner_extras),'CleanerExtras')}if(data.invoice_tracking&&data.invoice_tracking.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.invoice_tracking),'InvoiceTracking')}if(data.settings&&data.settings.length>0){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data.settings),'Settings')}XLSX.writeFile(wb,'database_backup_'+new Date().toISOString().split('T')[0]+'.xlsx');notify('Backup downloaded!')}catch(e){alert(e.message)}setExp(false)};
 
@@ -2032,6 +2183,16 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
         React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},'Auto-Delete Photos After (days)'),
           React.createElement('input',{type:'number',min:'7',max:'365',value:f.photoRetentionDays,onChange:e=>setF({...f,photoRetentionDays:e.target.value}),style:{...S.inp,maxWidth:'120px'}})),
         React.createElement('p',{style:{color:'#64748b',fontSize:'12px',marginTop:'-8px'}},'Photos older than this are automatically deleted. Default: 45 days.')),
+      React.createElement('div',{style:{marginTop:'20px',paddingTop:'16px',borderTop:'1px solid #334155'}},
+        React.createElement('h4',{style:{color:'#34d399',marginBottom:'12px'}},'\ud83c\udf10 Regional & Scanning'),
+        React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},'Timezone'),
+          React.createElement('select',{value:f.timezone,onChange:function(e){setF({...f,timezone:e.target.value})},style:S.inp},
+            [['America/New_York','Eastern (NYC)'],['America/Chicago','Central'],['America/Denver','Mountain'],['America/Los_Angeles','Pacific'],['UTC','UTC']].map(function(tz){return React.createElement('option',{key:tz[0],value:tz[0]},tz[1])}))),
+        React.createElement('div',{style:{marginBottom:'8px'}},React.createElement('label',{style:S.lbl},'Ticket Scan Model'),
+          React.createElement('select',{value:f.scanModel,onChange:function(e){setF({...f,scanModel:e.target.value})},style:S.inp},
+            React.createElement('option',{value:'claude-sonnet-5'},'Sonnet 5 \u2014 best accuracy (~$17/mo at 5k scans)'),
+            React.createElement('option',{value:'claude-haiku-4-5-20251001'},'Haiku 4.5 \u2014 faster, cheaper (~$8/mo at 5k scans)'))),
+        React.createElement('p',{style:{color:'#64748b',fontSize:'12px'}},'Sonnet handles glare, folded tickets, and similar cleaner names better. Switch to Haiku if your scans are consistently clean.')),
       React.createElement('button',{type:'submit',disabled:sav,style:{...S.btn,width:'100%',opacity:sav?0.6:1,marginTop:'16px'}},sav?'...':t.saveSettings)),
     React.createElement('div',{style:{...S.card,maxWidth:'500px',marginBottom:'20px',border:'1px solid #6366f1'}},
       React.createElement(StaffNameManager,{notify})),
@@ -3261,7 +3422,7 @@ document.addEventListener('click',function(e){
   }
 },true);
 
-try{ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App))}catch(e){document.getElementById('root').style.display='none';document.getElementById('crash-msg').style.display='block';document.getElementById('crash-detail').textContent='Startup error: '+e.message}
+try{ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App))}catch(e){var _r=document.getElementById('root');var _m=document.getElementById('crash-msg');var _d=document.getElementById('crash-detail');if(_r)_r.style.display='none';if(_m)_m.style.display='block';if(_d)_d.textContent='Startup error: '+(e&&e.message?e.message:e)+'\n'+(e&&e.stack?e.stack.split('\n').slice(0,4).join('\n'):'');console.error(e)}
 </script>
 </body>
 </html>
