@@ -1791,17 +1791,31 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
     const settings = {};
     settingsResult.rows.forEach(row => { var v = parseFloat(row.value); if (!isNaN(v)) settings[row.key] = v; });
 
-    // Remove existing unpaid records ONLY for targeted cleaners in this exact date range
+    // Remove existing UNPAID records for targeted cleaners on this start date.
+    // Not filtered by cycle: the unique key is (cleaner_id, week_start), so a stale
+    // record of the other cycle would block the insert and silently update instead.
     let cleanerIds = cleaners.rows.map(c => c.id);
+    let blockedPaid = [];
     if (cleanerIds.length > 0) {
       await pool.query(
-        `DELETE FROM invoice_tracking WHERE cleaner_id = ANY($1::int[]) 
-         AND week_start = $2 AND COALESCE(billing_cycle, 'weekly') = $3 AND status != 'paid'`,
-        [cleanerIds, week_start, billing_cycle || 'weekly']
+        `DELETE FROM invoice_tracking WHERE cleaner_id = ANY($1::int[])
+         AND week_start = $2 AND status != 'paid'`,
+        [cleanerIds, week_start]
       );
+      // Anything still sitting on this start date is PAID - we won't touch it, but we must report it
+      const stillThere = await pool.query(
+        `SELECT c.name, COALESCE(it.billing_cycle,'weekly') AS cyc FROM invoice_tracking it
+         JOIN cleaners c ON c.id = it.cleaner_id
+         WHERE it.cleaner_id = ANY($1::int[]) AND it.week_start = $2`,
+        [cleanerIds, week_start]
+      );
+      blockedPaid = stillThere.rows
+        .filter(r => r.cyc !== (billing_cycle || 'weekly'))
+        .map(r => r.name);
     }
 
     let generated = 0;
+    let noOrders = [];
     for (const cleaner of cleaners.rows) {
       // If end_date is Saturday, include following Sunday (Sunday orders belong to prior week)
       let genEnd = week_end;
@@ -1814,7 +1828,7 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
         'SELECT * FROM orders WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 AND deleted_at IS NULL',
         [cleaner.id, week_start, genEnd]
       );
-      if (orders.rows.length === 0) continue;
+      if (orders.rows.length === 0) { noOrders.push(cleaner.name); continue; }
 
       const cleanerPrices = cleanerExtrasMap[cleaner.id] || {};
       const uniquePickupDates = new Set();
@@ -1847,10 +1861,10 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
       );
       generated++;
     }
-    res.json({ generated });
+    res.json({ generated, noOrders, blockedPaid, considered: cleaners.rows.length });
   } catch (err) {
     console.error('Generate week error:', err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
