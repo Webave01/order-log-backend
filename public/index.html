@@ -1722,7 +1722,14 @@ function Payments({cleaners,settings,t,isAdmin}){
   const setLM=()=>{const n=new Date();const lastDay=new Date(n.getFullYear(),n.getMonth(),0);const firstDay=new Date(lastDay.getFullYear(),lastDay.getMonth(),1);setStart(localDateStr(firstDay));setEnd(localDateStr(lastDay))};
   const setTM=()=>{const n=new Date();const firstDay=new Date(n.getFullYear(),n.getMonth(),1);setStart(localDateStr(firstDay));setEnd(localDateStr(n))};
   
-  const generateWeek=async(cid)=>{if(!start||!end){alert('Select dates');return}setLd(true);try{var body={week_start:start,week_end:end,billing_cycle:payView};if(cid)body.cleaner_id=parseInt(cid);await api.post('/invoice-tracking/generate-week',body);await load()}catch(e){alert(e.message)}setLd(false)};
+  const generateWeek=async(cid)=>{if(!start||!end){alert('Select dates');return}setLd(true);
+    try{var body={week_start:start,week_end:end,billing_cycle:payView};if(cid)body.cleaner_id=parseInt(cid);
+      var r=await api.post('/invoice-tracking/generate-week',body);await load();
+      var msg=r.generated+' invoice'+(r.generated===1?'':'s')+' generated';
+      if(r.blockedPaid&&r.blockedPaid.length>0)msg+='\n\nBLOCKED \u2014 a PAID '+(payView==='monthly'?'weekly':'monthly')+' record already exists on '+fmtD(start)+' for:\n'+r.blockedPaid.join(', ')+'\n\nDelete or unmark that record first.';
+      if(r.noOrders&&r.noOrders.length>0)msg+='\n\nNo orders found in this date range for:\n'+r.noOrders.join(', ');
+      if((r.blockedPaid&&r.blockedPaid.length)||(r.noOrders&&r.noOrders.length)||r.generated===0)alert(msg);else notify(msg);
+    }catch(e){alert(e.message)}setLd(false)};
   
   const updatePayment=async(id,updates)=>{try{await api.put('/invoice-tracking/'+id,updates);await load();setEditing(null)}catch(e){alert(e.message)}};
   
