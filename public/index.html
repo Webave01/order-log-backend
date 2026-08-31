@@ -537,6 +537,7 @@ function ScanEntry({cleaners,staffName,notify,loadData,onClose,t}){
       var cn=(cleaners.find(function(c){return c.id===cid})||{}).name||'';
       setEntered([{id:res.id,order_num:onum.trim(),weight:parseFloat(wt),cleaner:cn,color:color}].concat(entered));
       setOnum('');setWt('');setPreview(null);setImgData(null);setConf('');setColorConf('');
+      loadData();
       if(manualMode){setTimeout(function(){if(onumRef.current)onumRef.current.focus()},50)}
       else if(isTouch||!hasWebcam){if(fileRef.current)fileRef.current.click()}else{openCam()}
     }catch(e){setErr(e.message)}
@@ -547,7 +548,7 @@ function ScanEntry({cleaners,staffName,notify,loadData,onClose,t}){
   const undoLast=async()=>{
     if(entered.length===0)return;var last=entered[0];
     if(!confirm('Remove order #'+last.order_num+'?'))return;
-    try{await api.del('/orders/'+last.id);setEntered(entered.slice(1));notify('Removed')}catch(e){alert(e.message)}
+    try{await api.del('/orders/'+last.id);setEntered(entered.slice(1));loadData();notify('Removed')}catch(e){alert(e.message)}
   };
   const finish=async()=>{await loadData();onClose()};
 
@@ -662,7 +663,7 @@ function RapidEntry({cleaners,staffName,notify,loadData,onClose,t}){
       var res=await api.post('/orders',payload);
       var dupFlag=entered.some(function(e){return e.order_num===onum.trim()});
       setEntered([{id:res.id,order_num:onum.trim(),weight:parseFloat(wt),dup:dupFlag}].concat(entered));
-      setOnum('');setWt('');
+      setOnum('');setWt('');loadData();
       if(onumRef.current)onumRef.current.focus();
     }catch(e){alert(e.message)}
     setBusy(false);
@@ -672,7 +673,7 @@ function RapidEntry({cleaners,staffName,notify,loadData,onClose,t}){
     if(entered.length===0)return;
     var last=entered[0];
     if(!confirm('Remove order #'+last.order_num+' ('+last.weight+' lbs)?'))return;
-    try{await api.del('/orders/'+last.id);setEntered(entered.slice(1));notify('Removed')}catch(e){alert(e.message)}
+    try{await api.del('/orders/'+last.id);setEntered(entered.slice(1));loadData();notify('Removed')}catch(e){alert(e.message)}
   };
 
   const finish=async()=>{await loadData();onClose()};
@@ -2375,7 +2376,7 @@ function PayStatement({drivers,shifts,notify,addDays}){
   const updAdj=(i,field,val)=>{var a=[...adjustments];a[i]={...a[i],[field]:val};setAdjustments(a)};
   const rmAdj=(i)=>{setAdjustments(adjustments.filter(function(_,j){return j!==i}))};
 
-  var shiftTotal=psShifts.reduce(function(s,r){return s+r.pay},0);
+  var shiftTotal=psShifts.filter(function(r){return r.pay&&r.pay>0}).reduce(function(s,r){return s+r.pay},0);
   var adjTotal=adjustments.reduce(function(s,a){return s+(a.sign*(parseFloat(a.amount)||0))},0);
   var netPay=shiftTotal+adjTotal;
 
@@ -2391,7 +2392,7 @@ function PayStatement({drivers,shifts,notify,addDays}){
     doc.text('Contractor: '+psFullName,140,12);
     doc.text('Period: '+fmtD(psStart)+' - '+fmtD(addDays(psStart,6)),140,18);
     doc.text('Date: '+new Date().toLocaleDateString(),140,24);
-    var body=psShifts.map(function(r){return[fmtD(r.date),r.shift,fmtC2(r.pay)]});
+    var body=psShifts.filter(function(r){return r.pay&&r.pay>0}).map(function(r){return[fmtD(r.date),r.shift,fmtC2(r.pay)]});
     doc.autoTable({startY:34,head:[['Date','Route / Shift','Amount']],body:body,theme:'grid',
       styles:{fontSize:10,cellPadding:3},headStyles:{fillColor:[30,41,59],fontSize:10},
       columnStyles:{2:{halign:'right',cellWidth:35}}});
@@ -2424,13 +2425,13 @@ function PayStatement({drivers,shifts,notify,addDays}){
         React.createElement('button',{onClick:loadShifts,style:S.btn},'Load Shifts'))),
     psLoaded&&React.createElement('div',{style:{...S.card}},
       React.createElement('h4',{style:{marginBottom:'12px'}},(function(){var dObj=drivers.find(function(d){return d.name===psDriver});return(dObj&&dObj.legal_name?dObj.legal_name:psDriver)})()+' \u2014 '+fmtD(psStart)+' to '+fmtD(addDays(psStart,6))),
-      psShifts.length===0?React.createElement('div',{style:{color:'#94a3b8',padding:'12px'}},'No assigned shifts this week.'):
+      psShifts.filter(function(r){return r.pay&&r.pay>0}).length===0?React.createElement('div',{style:{color:'#94a3b8',padding:'12px'}},'No paid shifts this week.'):
       React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',marginBottom:'16px'}},
         React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
           React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Date'),
           React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Shift'),
           React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},'Pay'))),
-        React.createElement('tbody',null,psShifts.map(function(r,i){return React.createElement('tr',{key:i,style:{borderBottom:'1px solid #1e293b'}},
+        React.createElement('tbody',null,psShifts.filter(function(r){return r.pay&&r.pay>0}).map(function(r,i){return React.createElement('tr',{key:i,style:{borderBottom:'1px solid #1e293b'}},
           React.createElement('td',{style:{padding:'8px'}},fmtD(r.date)),
           React.createElement('td',{style:{padding:'8px'}},r.shift),
           React.createElement('td',{style:{padding:'8px',textAlign:'right',color:'#4ade80',fontWeight:'bold'}},fmtC2(r.pay)))}))),
