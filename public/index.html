@@ -405,7 +405,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
               React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #334155',alignItems:'center'}},
                 React.createElement('button',{onClick:()=>{setEditing(o);setShowForm(true)},style:S.edit},t.edit),React.createElement('button',{onClick:()=>del(o.id),style:S.del},t.delete),
                 React.createElement('div',{style:{flex:1}}),
-                React.createElement('button',{onClick:function(){openPhotos(o)},style:{padding:o.photos&&o.photos.length>0?'4px 10px':'4px 6px',borderRadius:'6px',border:'none',background:o.photos&&o.photos.length>0?'rgba(139,92,246,0.2)':'transparent',color:o.photos&&o.photos.length>0?'#c4b5fd':'#475569',cursor:'pointer',fontSize:o.photos&&o.photos.length>0?'13px':'12px',fontWeight:o.photos&&o.photos.length>0?'600':'400'}},'\ud83d\udcf7'+(o.photos&&o.photos.length>0?' '+o.photos.length:''))))})),
+                React.createElement('button',{onClick:function(){openPhotos(o)},style:{padding:o.photo_count>0?'4px 10px':'4px 6px',borderRadius:'6px',border:'none',background:o.photo_count>0?'rgba(139,92,246,0.2)':'transparent',color:o.photo_count>0?'#c4b5fd':'#475569',cursor:'pointer',fontSize:o.photo_count>0?'13px':'12px',fontWeight:o.photo_count>0?'600':'400'}},'\ud83d\udcf7'+(o.photo_count>0?' '+o.photo_count:''))))})),
     showForm&&React.createElement(OrderForm,{order:editing,cleaners,extras,cleanerExtras,staffName,isAdmin:isAdmin,onSave:save,onClose:()=>{setShowForm(false);setEditing(null)},lang,t}),
     rapidMode&&React.createElement(RapidEntry,{cleaners,staffName,notify,loadData,onClose:function(){setRapidMode(false)},t}),
     scanMode&&React.createElement(ScanEntry,{cleaners,staffName,notify,loadData,onClose:function(){setScanMode(false)},t}),
@@ -2017,12 +2017,13 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
           });
           if(enriched.length>0)allSeq.push({cleaner:c,warnings:enriched});
         }
-        // Weight checks for all cleaners
+        // Weight checks for all cleaners: >50 lbs, 0 lbs with no extras, under 5 lbs
         var badWeights=[];
         inv.orders&&inv.orders.forEach(function(o){
           var w=parseFloat(o.weight||0);
           if(w>50)badWeights.push({...o,issue:'Weight '+w+' lbs - verify',cleaner_name:c.name});
           if(w===0&&(!o.extras||o.extras.length===0))badWeights.push({...o,issue:'Zero weight with no extras',cleaner_name:c.name});
+          if(w>0&&w<5)badWeights.push({...o,issue:'Only '+w+' lbs - should this be extras only (0 lbs)?',cleaner_name:c.name});
         });
         if(badWeights.length>0)allWeightErrors.push({cleaner:c,errors:badWeights});
         // Find Sunday orders
@@ -2045,12 +2046,13 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
           var dupAddrs=[];
           Object.entries(addrMap).forEach(function(entry){if(entry[1].length>1)dupAddrs.push({address:entry[1][0].customer_address+(entry[1][0].customer_apt?' Apt '+entry[1][0].customer_apt:''),orders:entry[1]})});
           if(dupAddrs.length>0)allAddrDups.push({cleaner:c,duplicates:dupAddrs});
-          // Weight checks: >50 lbs flagged, 0 weight with no extras
+          // Weight checks: >50 lbs, 0 lbs with no extras, and under 5 lbs
           var badWeights=[];
           inv.orders.forEach(function(o){
             var w=parseFloat(o.weight||0);
             if(w>50)badWeights.push({...o,issue:'Weight '+w+' lbs - verify'});
             if(w===0&&(!o.extras||o.extras.length===0))badWeights.push({...o,issue:'Zero weight with no extras'});
+            if(w>0&&w<5)badWeights.push({...o,issue:'Only '+w+' lbs - should this be extras only (0 lbs)?'});
           });
           if(badWeights.length>0)allWeightErrors.push({cleaner:c,errors:badWeights});
           // Sunday check
