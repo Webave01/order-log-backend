@@ -24,7 +24,7 @@ pool.on('connect', async (client) => {
 });
 
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '3mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // === Schedule Routes (Driver Scheduling & Pay) ===
@@ -287,6 +287,9 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // One-time: strip photo blobs already stored in order_history snapshots
+    await client.query("UPDATE order_history SET previous_data = previous_data - 'photos' WHERE previous_data ? 'photos'");
 
     // Fix any Sunday pickup_dates to Saturday (business rule: no Sunday pickups)
     await client.query("UPDATE orders SET pickup_date = pickup_date - INTERVAL '1 day' WHERE EXTRACT(DOW FROM pickup_date) = 0");
@@ -624,7 +627,7 @@ app.get('/api/me', authenticate, async (req, res) => {
 app.get('/api/orders', authenticate, async (req, res) => {
   try {
     const { cleaner_id, start_date, end_date, limit = 1500, search } = req.query;
-    let query = 'SELECT o.* FROM orders o';
+    let query = 'SELECT o.id, o.order_num, o.cleaner_id, o.weight, o.service_type, o.pickup_date, o.bag_color, o.extras, o.notes, o.staff_name, o.price_adjustment, o.customer_address, o.customer_apt, o.created_at, o.updated_at, o.deleted_at, COALESCE(jsonb_array_length(o.photos),0) AS photo_count FROM orders o';
     const params = [];
     const conditions = ['o.deleted_at IS NULL'];
 
@@ -635,7 +638,7 @@ app.get('/api/orders', authenticate, async (req, res) => {
     }
 
     if (search) {
-      query = `SELECT o.* FROM orders o LEFT JOIN cleaners c ON o.cleaner_id = c.id`;
+      query = `SELECT o.id, o.order_num, o.cleaner_id, o.weight, o.service_type, o.pickup_date, o.bag_color, o.extras, o.notes, o.staff_name, o.price_adjustment, o.customer_address, o.customer_apt, o.created_at, o.updated_at, o.deleted_at, COALESCE(jsonb_array_length(o.photos),0) AS photo_count FROM orders o LEFT JOIN cleaners c ON o.cleaner_id = c.id`;
       params.push('%' + search + '%');
       conditions.push(`(o.order_num ILIKE $${params.length} OR c.name ILIKE $${params.length} OR o.customer_address ILIKE $${params.length} OR o.customer_apt ILIKE $${params.length} OR o.notes ILIKE $${params.length})`);
     }
@@ -717,8 +720,9 @@ app.put('/api/orders/:id', authenticate, async (req, res) => {
   if(pickup_date){var pd=new Date(pickup_date+'T12:00:00');if(pd.getDay()===0){pd.setDate(pd.getDate()-1);pickup_date=pd.toISOString().split('T')[0]}}
   try {
     // Save previous state to history
-    const prev = await pool.query('SELECT * FROM orders WHERE id = $1', [id]);
-    if (prev.rows.length > 0) await pool.query('INSERT INTO order_history (order_id, action, previous_data, changed_by) VALUES ($1, $2, $3, $4)', [id, 'edit', JSON.stringify(prev.rows[0]), req.user.username]);
+    const prev = await pool.query('SELECT id, order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt, created_at FROM orders WHERE id = $1', [id]);
+    if (prev.rows.length > 0) var _p = prev.rows[0]; if (_p) delete _p.photos;
+      await pool.query('INSERT INTO order_history (order_id, action, previous_data, changed_by) VALUES ($1, $2, $3, $4)', [id, 'edit', JSON.stringify(_p), req.user.username]);
     const result = await pool.query(
       `UPDATE orders SET order_num=$1, cleaner_id=$2, weight=$3, service_type=$4, pickup_date=$5, bag_color=$6, extras=$7, notes=$8, staff_name=$9, price_adjustment=$10, customer_address=$11, customer_apt=$12, updated_at=CURRENT_TIMESTAMP WHERE id=$13 RETURNING *`,
       [order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras || [], notes, staff_name, price_adjustment || 0, customer_address || null, customer_apt || null, id]
@@ -734,7 +738,7 @@ app.put('/api/orders/:id', authenticate, async (req, res) => {
 app.delete('/api/orders/:id', authenticate, async (req, res) => {
   try {
     // Save to history before soft-deleting
-    const order = await pool.query('SELECT * FROM orders WHERE id = $1', [req.params.id]);
+    const order = await pool.query('SELECT id, order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt, created_at FROM orders WHERE id = $1', [req.params.id]);
     if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     await pool.query('INSERT INTO order_history (order_id, action, previous_data, changed_by) VALUES ($1, $2, $3, $4)',
       [req.params.id, 'delete', JSON.stringify(order.rows[0]), req.user.username]);
@@ -813,21 +817,52 @@ async function cleanupOldPhotos() {
   try {
     const settingResult = await pool.query("SELECT value FROM settings WHERE key = 'photoRetentionDays'");
     const retentionDays = settingResult.rows.length > 0 ? parseInt(settingResult.rows[0].value) : 45;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - retentionDays);
-    
-    const result = await pool.query("SELECT id, photos FROM orders WHERE photos IS NOT NULL AND photos != '[]'::jsonb");
-    let cleaned = 0;
-    for (const row of result.rows) {
-      const photos = row.photos || [];
-      const filtered = photos.filter(p => new Date(p.uploaded_at) > cutoff);
-      if (filtered.length < photos.length) {
-        await pool.query('UPDATE orders SET photos = $1::jsonb WHERE id = $2', [JSON.stringify(filtered), row.id]);
-        cleaned += photos.length - filtered.length;
-      }
+
+    // Filter entirely in SQL so photo blobs never enter Node's memory.
+    // Processed in small batches to keep each statement light.
+    let totalCleaned = 0;
+    for (let pass = 0; pass < 40; pass++) {
+      const result = await pool.query(
+        `WITH batch AS (
+           SELECT id FROM orders
+           WHERE photos IS NOT NULL
+             AND jsonb_array_length(photos) > 0
+             AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements(photos) e
+               WHERE (e->>'uploaded_at')::timestamptz <= NOW() - ($1 || ' days')::interval
+             )
+           LIMIT 200
+         )
+         UPDATE orders o SET photos = COALESCE((
+           SELECT jsonb_agg(e) FROM jsonb_array_elements(o.photos) e
+           WHERE (e->>'uploaded_at')::timestamptz > NOW() - ($1 || ' days')::interval
+         ), '[]'::jsonb)
+         FROM batch WHERE o.id = batch.id
+         RETURNING o.id`,
+        [String(retentionDays)]
+      );
+      if (result.rows.length === 0) break;
+      totalCleaned += result.rows.length;
     }
-    if (cleaned > 0) console.log(`Photo cleanup: removed ${cleaned} photos older than ${retentionDays} days`);
+    if (totalCleaned > 0) console.log(`Photo cleanup: trimmed ${totalCleaned} orders past ${retentionDays} days`);
   } catch (err) { console.error('Photo cleanup error:', err); }
+}
+
+async function cleanupOrderHistory() {
+  try {
+    const settingResult = await pool.query("SELECT value FROM settings WHERE key = 'photoRetentionDays'");
+    const retentionDays = settingResult.rows.length > 0 ? parseInt(settingResult.rows[0].value) : 45;
+    const result = await pool.query(
+      `DELETE FROM order_history
+       WHERE id IN (
+         SELECT id FROM order_history
+         WHERE created_at < NOW() - ($1 || ' days')::interval
+         LIMIT 5000
+       ) RETURNING id`,
+      [String(retentionDays)]
+    );
+    if (result.rows.length > 0) console.log(`Order history cleanup: removed ${result.rows.length} entries past ${retentionDays} days`);
+  } catch (err) { console.error('Order history cleanup error:', err); }
 }
 
 app.delete('/api/orders/clear-all', authenticate, adminOnly, async (req, res) => {
@@ -842,7 +877,7 @@ app.delete('/api/orders/clear-all', authenticate, adminOnly, async (req, res) =>
 app.get('/api/orders/export', authenticate, requirePerm('orders'), async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT o.*, c.name as cleaner_name, c.rate as rate_per_lb, c.route 
+      SELECT o.id, o.order_num, o.cleaner_id, o.weight, o.service_type, o.pickup_date, o.bag_color, o.extras, o.notes, o.staff_name, o.price_adjustment, o.customer_address, o.customer_apt, c.name as cleaner_name, c.rate as rate_per_lb, c.route 
       FROM orders o LEFT JOIN cleaners c ON o.cleaner_id = c.id 
       ORDER BY o.pickup_date DESC, o.created_at DESC
     `);
@@ -1248,7 +1283,7 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
     }
 
     const ordersResult = await pool.query(
-      `SELECT o.*, c.name as cleaner_name, c.rate as cleaner_rate, c.min_weight, c.congestion_zone, c.congestion_rate
+      `SELECT o.id, o.order_num, o.cleaner_id, o.weight, o.service_type, o.pickup_date, o.bag_color, o.extras, o.notes, o.staff_name, o.price_adjustment, o.customer_address, o.customer_apt, c.name as cleaner_name, c.rate as cleaner_rate, c.min_weight, c.congestion_zone, c.congestion_rate
        FROM orders o JOIN cleaners c ON o.cleaner_id = c.id 
        WHERE o.cleaner_id = $1 AND o.pickup_date >= $2 AND o.pickup_date <= $3 AND (o.deleted_at IS NULL) ORDER BY o.pickup_date, o.order_num`,
       [cleaner_id, start_date, adjustedEnd]
@@ -1405,7 +1440,7 @@ app.get('/api/reports/invoices-all', authenticate, requirePerm('invoices'), asyn
 
     for (const cleaner of cleanersResult.rows) {
       const ordersResult = await pool.query(
-        `SELECT * FROM orders WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 AND deleted_at IS NULL ORDER BY pickup_date, order_num`,
+        `SELECT id, order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt, created_at FROM orders WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 AND deleted_at IS NULL ORDER BY pickup_date, order_num`,
         [cleaner.id, start_date, adjustedEnd2]
       );
 
@@ -1605,7 +1640,7 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
     settingsResult.rows.forEach(row => { var v = parseFloat(row.value); if (!isNaN(v)) settings[row.key] = v; });
 
     const ordersResult = await pool.query(
-      'SELECT * FROM orders WHERE pickup_date >= $1 AND pickup_date <= $2',
+      'SELECT id, order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt, created_at FROM orders WHERE deleted_at IS NULL AND pickup_date >= $1 AND pickup_date <= $2',
       [start_date, end_date]
     );
     console.log('daily-stats query:', start_date, 'to', end_date, '- found', ordersResult.rows.length, 'orders');
@@ -1825,7 +1860,7 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
         genEnd = sun.toISOString().split('T')[0];
       }
       const orders = await pool.query(
-        'SELECT * FROM orders WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 AND deleted_at IS NULL',
+        'SELECT id, order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt, created_at FROM orders WHERE cleaner_id = $1 AND pickup_date >= $2 AND pickup_date <= $3 AND deleted_at IS NULL',
         [cleaner.id, week_start, genEnd]
       );
       if (orders.rows.length === 0) { noOrders.push(cleaner.name); continue; }
@@ -1934,7 +1969,7 @@ app.delete('/api/invoice-tracking/:id', authenticate, requirePerm('invoices'), a
 app.get('/api/export-database', authenticate, adminOnly, async (req, res) => {
   try {
     const [orders, cleaners, extras, cleaner_extras, settings, invoice_tracking] = await Promise.all([
-      pool.query('SELECT * FROM orders ORDER BY pickup_date DESC'),
+      pool.query('SELECT id, order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt, created_at FROM orders WHERE deleted_at IS NULL ORDER BY pickup_date DESC LIMIT 20000'),
       pool.query('SELECT * FROM cleaners ORDER BY name'),
       pool.query('SELECT * FROM extras ORDER BY name'),
       pool.query('SELECT * FROM cleaner_extras'),
@@ -2124,7 +2159,7 @@ app.post('/api/vehicle-logs', authenticate, async (req, res) => {
 app.get('/api/vehicle-logs', authenticate, async (req, res) => {
   const { start_date, end_date, log_type, driver_name } = req.query;
   try {
-    let query = 'SELECT * FROM vehicle_logs WHERE 1=1';
+    let query = 'SELECT id, driver_name, log_type, mileage, gallons, cost, notes, vehicle, gas_level_start, gas_level_end, checklist, has_issues, issues, resolved, resolved_by, resolved_date, admin_notes, created_at, COALESCE(jsonb_array_length(photos),0) AS photo_count FROM vehicle_logs WHERE 1=1';
     const params = [];
     if (start_date) { params.push(start_date); query += ' AND created_at >= $' + params.length; }
     if (end_date) { params.push(end_date + 'T23:59:59'); query += ' AND created_at <= $' + params.length; }
@@ -2133,8 +2168,7 @@ app.get('/api/vehicle-logs', authenticate, async (req, res) => {
     query += ' ORDER BY created_at DESC LIMIT 200';
     const result = await pool.query(query, params);
     // Strip photo data from list view (send only metadata)
-    const rows = result.rows.map(r => ({...r, photo_count: (r.photos || []).length, photos: (r.photos || []).map(p => ({name: p.name || 'photo', type: p.type}))}));
-    res.json(rows);
+    res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -2146,7 +2180,7 @@ app.get('/api/vehicle-logs/summary', authenticate, async (req, res) => {
       "SELECT driver_name, vehicle, COUNT(*) as total_logs, COUNT(CASE WHEN log_type='gas' THEN 1 END) as gas_logs, COUNT(CASE WHEN has_issues THEN 1 END) as issue_count, SUM(COALESCE(cost,0)) as total_fuel_cost, MAX(mileage) as last_mileage, MIN(mileage) as first_mileage FROM vehicle_logs GROUP BY driver_name, vehicle ORDER BY driver_name"
     );
     const openIssues = await pool.query(
-      "SELECT * FROM vehicle_logs WHERE has_issues = true AND resolved = false ORDER BY created_at DESC"
+      "SELECT id, driver_name, log_type, mileage, vehicle, notes, issues, admin_notes, created_at FROM vehicle_logs WHERE has_issues = true AND resolved = false ORDER BY created_at DESC LIMIT 50"
     );
     res.json({ byDriver: byDriver.rows, openIssues: openIssues.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2329,7 +2363,9 @@ initDB().then(() => {
     console.log(`Server running on port ${PORT}`);
     cleanupOldOrders();
     cleanupOldPhotos();
+    cleanupOrderHistory();
     setInterval(cleanupOldOrders, 24 * 60 * 60 * 1000);
     setInterval(cleanupOldPhotos, 24 * 60 * 60 * 1000);
+    setInterval(cleanupOrderHistory, 24 * 60 * 60 * 1000);
   });
 });
