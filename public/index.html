@@ -228,7 +228,7 @@ function App(){
       view==='cleaners'&&hasPerm('cleaners')&&React.createElement(Cleaners,{cleaners,extras,cleanerExtras,notify,loadData,t}),
       view==='extras'&&hasPerm('extras')&&React.createElement(Extras,{extras,notify,loadData,t}),
       view==='invoices'&&hasPerm('invoices')&&React.createElement(Invoices,{cleaners,extras,cleanerExtras,settings,t}),
-      view==='payments'&&hasPerm('payments')&&React.createElement(Payments,{cleaners,settings,t,isAdmin}),
+      view==='payments'&&hasPerm('payments')&&React.createElement(Payments,{cleaners,settings,t,isAdmin,notify}),
       view==='reports'&&hasPerm('reports')&&React.createElement(Reports,{t}),
       view==='errors'&&hasPerm('errors')&&React.createElement(Errors,{cleaners,extras,cleanerExtras,settings,notify,loadData,calcTotal,t}),
       view==='schedule'&&React.createElement(Schedule,{isAdmin,notify,t,user}),
@@ -1709,7 +1709,7 @@ function Invoices({cleaners,extras,cleanerExtras,settings,t}){
       React.createElement('div',{style:{textAlign:'center',marginTop:'16px',fontStyle:'italic',color:'#64748b'}},'Thank you for your business!')));
 }
 
-function Payments({cleaners,settings,t,isAdmin}){
+function Payments({cleaners,settings,t,isAdmin,notify}){
   const[data,setData]=useState([]);const[summary,setSummary]=useState(null);const[ld,setLd]=useState(false);
   const[start,setStart]=useState('');const[end,setEnd]=useState('');const[editing,setEditing]=useState(null);
   const[editPay,setEditPay]=useState('');const[editNote,setEditNote]=useState('');const[editStat,setEditStat]=useState('unpaid');
