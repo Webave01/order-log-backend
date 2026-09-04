@@ -9,6 +9,7 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+if (!process.env.JWT_SECRET) console.warn('WARNING: JWT_SECRET not set. Using default - set this in Render Environment so sessions survive restarts.');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -39,7 +40,8 @@ const authenticate = (req, res, next) => {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
+    if (err && err.name === 'TokenExpiredError') return res.status(401).json({ error: 'Session expired. Please sign in again.', code: 'TOKEN_EXPIRED' });
+    res.status(401).json({ error: 'Session invalid. Please sign in again.', code: 'TOKEN_INVALID' });
   }
 };
 
@@ -577,7 +579,7 @@ app.post('/api/login', async (req, res) => {
     const user = result.rows[0];
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
     // Find linked driver if any
     let driver_id = null;
     if (user.role === 'driver') {
