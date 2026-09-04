@@ -2348,6 +2348,19 @@ app.post('/api/scan-ticket', authenticate, async (req, res) => {
   }
 });
 
+// All cleaner-specific extra prices in one call (replaces N sequential requests)
+app.get('/api/cleaner-extras-all', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT cleaner_id, extra_id, custom_price FROM cleaner_extras');
+    const map = {};
+    for (const row of result.rows) {
+      if (!map[row.cleaner_id]) map[row.cleaner_id] = {};
+      map[row.cleaner_id][row.extra_id] = parseFloat(row.custom_price);
+    }
+    res.json(map);
+  } catch (err) { console.error('cleaner-extras-all error:', err); res.status(500).json({ error: err.message }); }
+});
+
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ error: 'API endpoint not found' });
