@@ -158,13 +158,8 @@ function App(){
 
   const loadData=async()=>{
     try{
-      const[o,c,e,s,sn]=await Promise.all([api.get('/orders'),api.get('/cleaners'),api.get('/extras'),api.get('/settings'),api.get('/staff-names')]);
-      setOrders(o);setCleaners(c);setExtras(e);setSettings(s);setStaffNames(sn);
-      const ceMap={};
-      for(const cl of c){
-        try{const ce=await api.get('/cleaners/'+cl.id+'/extras');ceMap[cl.id]={};ce.forEach(x=>{ceMap[cl.id][x.extra_id]=parseFloat(x.custom_price)})}catch(e){}
-      }
-      setCleanerExtras(ceMap);
+      const[o,c,e,s,sn,ce]=await Promise.all([api.get('/orders'),api.get('/cleaners'),api.get('/extras'),api.get('/settings'),api.get('/staff-names'),api.get('/cleaner-extras-all').catch(function(){return{}})]);
+      setOrders(o);setCleaners(c);setExtras(e);setSettings(s);setStaffNames(sn);setCleanerExtras(ce||{});
     }catch(e){console.error(e)}
     setLoading(false);
   };
@@ -388,7 +383,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
         (staffNames||[]).map(s=>React.createElement('div',{key:s.id,style:{display:'flex',alignItems:'center',gap:'6px',background:'#1e293b',padding:'8px 12px',borderRadius:'6px',border:'1px solid #475569'}},
           React.createElement('span',null,s.name),
           React.createElement('button',{onClick:()=>delStaff(s.id,s.name),style:{background:'#ef4444',border:'none',color:'#fff',width:'20px',height:'20px',borderRadius:'4px',cursor:'pointer',fontSize:'12px',lineHeight:'1'}},'✕'))))),
-    cleaners.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'#64748b'}},t.noCleaners):
+    cleaners.length===0?React.createElement('div',{style:{textAlign:'center',padding:'40px',color:'#64748b'}},t.loading):
       React.createElement(React.Fragment,null,
         React.createElement('div',{style:{display:'flex',gap:'12px',marginBottom:'16px',flexWrap:'wrap'}},
           React.createElement('div',{style:{position:'relative',flex:'1',minWidth:'200px'}},
