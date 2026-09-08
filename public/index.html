@@ -1860,18 +1860,18 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
         React.createElement('button',{onClick:function(){var sel=document.getElementById('genCleanerId');generateWeek(sel?sel.value:'')},disabled:ld,style:{...S.btn,flex:1,opacity:ld?0.6:1}},ld?t.loading:'Generate from Orders'))),
     
     summary&&summary.cleaners&&React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
-      React.createElement('h3',{style:{marginBottom:'12px'}},'Balance by Cleaner (Unpaid Only)'),
+      React.createElement('h3',{style:{marginBottom:'12px'}},'Balance by Cleaner'),
       React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
         React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
           React.createElement('th',{style:{padding:'10px',textAlign:'left'}},'Cleaner'),
           React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Invoiced'),
           React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Paid'),
           React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Balance Due'))),
-        React.createElement('tbody',null,summary.cleaners.filter(c=>(cleanerUnpaid[c.cleaner_name]||0)>0).map((c,i)=>React.createElement('tr',{key:i,style:{borderBottom:'1px solid #334155'}},
+        React.createElement('tbody',null,summary.cleaners.slice().sort(function(a,b){return(a.cleaner_name||'').localeCompare(b.cleaner_name||'')}).map((c,i)=>React.createElement('tr',{key:i,style:{borderBottom:'1px solid #334155'}},
           React.createElement('td',{style:{padding:'10px'}},c.cleaner_name),
           React.createElement('td',{style:{padding:'10px',textAlign:'right'}},fmtC(c.total_invoiced)),
           React.createElement('td',{style:{padding:'10px',textAlign:'right',color:parseFloat(c.total_paid)>0?'#4ade80':'#64748b'}},parseFloat(c.total_paid)>0?fmtC(c.total_paid):'—'),
-          React.createElement('td',{style:{padding:'10px',textAlign:'right',color:'#ef4444',fontWeight:'bold'}},fmtC(cleanerUnpaid[c.cleaner_name]||0))))))),
+          React.createElement('td',{style:{padding:'10px',textAlign:'right',color:(cleanerUnpaid[c.cleaner_name]||0)>0?'#ef4444':'#4ade80',fontWeight:'bold'}},fmtC(cleanerUnpaid[c.cleaner_name]||0))))))),
     
     Object.keys(groupedByWeek).sort().reverse().map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
       React.createElement('h3',{style:{marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}},
@@ -2024,13 +2024,13 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
           });
           if(enriched.length>0)allSeq.push({cleaner:c,warnings:enriched});
         }
-        // Weight checks for all cleaners: >50 lbs, 0 lbs with no extras, under 5 lbs
+        // Weight checks for all cleaners: >50 lbs, 0 lbs with no extras, 1 lb or less
         var badWeights=[];
         inv.orders&&inv.orders.forEach(function(o){
           var w=parseFloat(o.weight||0);
           if(w>50)badWeights.push({...o,issue:'Weight '+w+' lbs - verify',cleaner_name:c.name});
           if(w===0&&(!o.extras||o.extras.length===0))badWeights.push({...o,issue:'Zero weight with no extras',cleaner_name:c.name});
-          if(w>0&&w<5)badWeights.push({...o,issue:'Only '+w+' lbs - should this be extras only (0 lbs)?',cleaner_name:c.name});
+          if(w>0&&w<=1)badWeights.push({...o,issue:'Only '+w+' lbs - should this be extras only (0 lbs)?',cleaner_name:c.name});
         });
         if(badWeights.length>0)allWeightErrors.push({cleaner:c,errors:badWeights});
         // Find Sunday orders
@@ -2053,13 +2053,13 @@ function Errors({cleaners,extras,cleanerExtras,settings,notify,loadData,calcTota
           var dupAddrs=[];
           Object.entries(addrMap).forEach(function(entry){if(entry[1].length>1)dupAddrs.push({address:entry[1][0].customer_address+(entry[1][0].customer_apt?' Apt '+entry[1][0].customer_apt:''),orders:entry[1]})});
           if(dupAddrs.length>0)allAddrDups.push({cleaner:c,duplicates:dupAddrs});
-          // Weight checks: >50 lbs, 0 lbs with no extras, and under 5 lbs
+          // Weight checks: >50 lbs, 0 lbs with no extras, and 1 lb or less
           var badWeights=[];
           inv.orders.forEach(function(o){
             var w=parseFloat(o.weight||0);
             if(w>50)badWeights.push({...o,issue:'Weight '+w+' lbs - verify'});
             if(w===0&&(!o.extras||o.extras.length===0))badWeights.push({...o,issue:'Zero weight with no extras'});
-            if(w>0&&w<5)badWeights.push({...o,issue:'Only '+w+' lbs - should this be extras only (0 lbs)?'});
+            if(w>0&&w<=1)badWeights.push({...o,issue:'Only '+w+' lbs - should this be extras only (0 lbs)?'});
           });
           if(badWeights.length>0)allWeightErrors.push({cleaner:c,errors:badWeights});
           // Sunday check
