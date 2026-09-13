@@ -96,6 +96,7 @@ const api={
 };
 
 const fmt$=n=>'$'+Number(n||0).toFixed(2);
+const photoSrc=function(p){return(p&&(p.url||p.data))||''};
 const fmtD=d=>{if(!d)return'';try{const s=d.toString().split('T')[0];const p=s.split('-');if(p.length!==3)return d;return parseInt(p[1])+'/'+parseInt(p[2])+'/'+p[0].slice(2)}catch(e){return d||''}};
 const fmtDF=d=>{if(!d)return'';try{const s=d.toString().split('T')[0];const p=s.split('-');if(p.length!==3)return d;const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return months[parseInt(p[1])-1]+' '+parseInt(p[2])+', '+p[0]}catch(e){return d||''}};
 const localDateStr=dt=>{return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0')};
@@ -446,13 +447,13 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
           React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
             photoModal.photos.map(function(p,idx){
               return React.createElement('div',{key:idx,style:{background:'#0f172a',borderRadius:'8px',border:'1px solid #334155',overflow:'hidden'}},
-                React.createElement('img',{src:p.data,style:{width:'100%',height:'auto',display:'block',cursor:'pointer'},onClick:function(){window.open(p.data,'_blank')}}),
+                React.createElement('img',{src:photoSrc(p),style:{width:'100%',height:'auto',display:'block',cursor:'pointer'},onClick:function(){window.open(photoSrc(p),'_blank')}}),
                 React.createElement('div',{style:{padding:'8px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
                   React.createElement('div',{style:{fontSize:'11px',color:'#64748b'}},
                     fmtD(p.uploaded_at)+' '+fmtTime(p.uploaded_at),
                     p.uploaded_by&&React.createElement('span',null,' \u2022 '+p.uploaded_by)),
                   React.createElement('div',{style:{display:'flex',gap:'6px'}},
-                    React.createElement('button',{onClick:function(){var link=document.createElement('a');link.href=p.data;link.download='order_'+photoModal.order.order_num+'_photo_'+(idx+1)+'.jpg';link.click()},
+                    React.createElement('button',{onClick:function(){var link=document.createElement('a');link.href=photoSrc(p);link.download='order_'+photoModal.order.order_num+'_photo_'+(idx+1)+'.jpg';link.click()},
                       style:{padding:'4px 8px',borderRadius:'4px',border:'1px solid #3b82f6',background:'transparent',color:'#60a5fa',cursor:'pointer',fontSize:'11px'}},'\u2b07 Save'),
                     React.createElement('button',{onClick:function(){deletePhoto(photoModal.order.id,idx)},
                       style:{padding:'4px 8px',borderRadius:'4px',border:'1px solid #ef4444',background:'transparent',color:'#ef4444',cursor:'pointer',fontSize:'11px'}},'\u2715'))))})))))
@@ -1268,7 +1269,7 @@ function VehicleLog({isAdmin,user,notify,drivers}){
         React.createElement('label',{style:{...S.lbl,marginBottom:'6px',display:'block'}},'Photos ('+photos.length+') \u2014 Recommended but optional'),
         React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'8px'}},
           photos.map(function(p,i){return React.createElement('div',{key:i,style:{position:'relative',width:'70px',height:'70px',borderRadius:'6px',overflow:'hidden',border:'1px solid #475569'}},
-            React.createElement('img',{src:p.data,style:{width:'100%',height:'100%',objectFit:'cover'}}),
+            React.createElement('img',{src:photoSrc(p),style:{width:'100%',height:'100%',objectFit:'cover'}}),
             React.createElement('button',{onClick:function(){setPhotos(photos.filter(function(_,j){return j!==i}))},style:{position:'absolute',top:0,right:0,background:'#ef4444',color:'#fff',border:'none',borderRadius:'0 0 0 4px',fontSize:'10px',cursor:'pointer',padding:'2px 5px'}},'X'))})),
         React.createElement('label',{style:{...S.btn,padding:'8px 20px',fontSize:'13px',cursor:'pointer',display:'inline-block'}},
           '+ Take Photo',React.createElement('input',{type:'file',accept:'image/*',capture:'environment',style:{display:'none'},onChange:addPhoto}))),
@@ -1354,7 +1355,7 @@ function VehicleLog({isAdmin,user,notify,drivers}){
           (viewLog.photos||[]).length>0&&React.createElement('div',null,
             React.createElement('div',{style:{fontWeight:'bold',marginBottom:'8px',color:'#94a3b8'}},'Photos:'),
             React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'8px'}},
-              (viewLog.photos||[]).map(function(p,i){return React.createElement('img',{key:i,src:p.data,style:{width:'100%',borderRadius:'6px',cursor:'pointer'},onClick:function(){var w=window.open('');w.document.write('<img src="'+p.data+'" style="max-width:100%">');w.document.title=p.name||'Photo'}})})))))));
+              (viewLog.photos||[]).map(function(p,i){return React.createElement('img',{key:i,src:photoSrc(p),style:{width:'100%',borderRadius:'6px',cursor:'pointer'},onClick:function(){window.open(photoSrc(p),'_blank')}})})))))));
 }
 
 function InvoiceRevenue({t}){
@@ -2210,6 +2211,56 @@ function StaffNameManager({notify}){
         React.createElement('button',{onClick:()=>del(s.id,s.name),style:{background:'#ef4444',border:'none',color:'#fff',width:'20px',height:'20px',borderRadius:'4px',cursor:'pointer',fontSize:'12px',lineHeight:'1'}},'\u2715')))));
 }
 
+function R2Migration(){
+  const[st,setSt]=useState(null);const[busy,setBusy]=useState(false);const[log,setLog]=useState('');
+  const[testing,setTesting]=useState(false);const[test,setTest]=useState(null);
+  const check=async()=>{try{setSt(await api.get('/admin/photo-storage-status'))}catch(e){setLog(e.message)}};
+  useEffect(function(){check()},[]);
+  const runTest=async()=>{setTesting(true);setTest(null);
+    try{var r=await api.post('/admin/test-r2',{});setTest(r);await check()}catch(e){setTest({ok:false,error:e.message})}
+    setTesting(false)};
+  const run=async()=>{
+    if(!confirm('Move photos from the database to Cloudflare R2? Runs in batches and is safe to repeat.'))return;
+    setBusy(true);setLog('Starting...');
+    var totalMoved=0,totalFailed=0,rounds=0;
+    try{
+      while(rounds<200){
+        var r=await api.post('/admin/migrate-photos-to-r2',{batch:25});
+        totalMoved+=r.photosMoved;totalFailed+=r.failed;rounds++;
+        setLog('Moved '+totalMoved+' photos \u2014 '+r.ordersRemaining+' orders left'+(totalFailed?' \u2014 '+totalFailed+' FAILED':''));
+        if(r.ordersRemaining===0||r.ordersProcessed===0)break;
+      }
+      setLog(totalFailed>0
+        ? 'Finished with '+totalFailed+' failures. Those photos stayed in the database. Run Test Connection to diagnose.'
+        : 'Done. Moved '+totalMoved+' photos. Run VACUUM FULL to reclaim disk space.');
+      await check();
+    }catch(e){setLog('Error: '+e.message)}
+    setBusy(false);
+  };
+  if(!st)return React.createElement('div',{style:{color:'#64748b',fontSize:'13px'}},'Checking storage...');
+  var h=st.health||{};
+  var hasFailures=h.failCount>0;
+  return React.createElement('div',null,
+    hasFailures&&React.createElement('div',{style:{padding:'10px',background:'rgba(239,68,68,0.15)',border:'2px solid #ef4444',borderRadius:'6px',marginBottom:'10px'}},
+      React.createElement('div',{style:{color:'#fca5a5',fontWeight:'bold',fontSize:'13px'}},'\u26a0\ufe0f '+h.failCount+' cloud upload failure'+(h.failCount===1?'':'s')),
+      React.createElement('div',{style:{color:'#fca5a5',fontSize:'12px',marginTop:'4px'}},h.lastError),
+      React.createElement('div',{style:{color:'#94a3b8',fontSize:'11px',marginTop:'4px'}},'Those photos were saved to the database instead. Fix the connection, then re-run the migration.')),
+    React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8',marginBottom:'10px'}},
+      React.createElement('div',null,'Database size: ',React.createElement('b',{style:{color:'#e2e8f0'}},st.db_size)),
+      React.createElement('div',null,'Cloud storage: ',React.createElement('b',{style:{color:st.r2Enabled?'#4ade80':'#f87171'}},st.r2Enabled?('Configured ('+st.bucket+')'):'NOT CONFIGURED \u2014 photos going to database')),
+      React.createElement('div',null,'Photos still in database: ',React.createElement('b',{style:{color:st.orders_with_base64>0?'#fbbf24':'#4ade80'}},st.orders_with_base64+' orders')),
+      React.createElement('div',null,'Photos on cloud storage: ',React.createElement('b',{style:{color:'#4ade80'}},st.orders_with_r2+' orders')),
+      h.successCount>0&&React.createElement('div',{style:{color:'#64748b',fontSize:'12px',marginTop:'4px'}},h.successCount+' successful uploads this session')),
+    React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+      React.createElement('button',{type:'button',onClick:runTest,disabled:testing,style:{...S.inp,cursor:'pointer',padding:'10px 16px',fontSize:'13px',color:'#60a5fa',opacity:testing?0.6:1}},testing?'Testing...':'Test Connection'),
+      st.r2Enabled&&st.orders_with_base64>0&&React.createElement('button',{type:'button',onClick:run,disabled:busy,style:{...S.btn,background:'#0891b2',padding:'10px 16px',fontSize:'13px',opacity:busy?0.6:1}},busy?'Migrating...':'Move Photos to Cloud')),
+    test&&React.createElement('div',{style:{marginTop:'8px',padding:'10px',borderRadius:'6px',fontSize:'12px',background:test.ok?'rgba(16,185,129,0.1)':'rgba(239,68,68,0.1)',border:'1px solid '+(test.ok?'#10b981':'#ef4444'),color:test.ok?'#4ade80':'#fca5a5'}},
+      test.ok
+        ? (test.publicAccess?'\u2713 Upload works and photos are publicly viewable.':'\u26a0\ufe0f Upload works, but photos may not display: '+(test.publicError||'public access issue'))
+        : '\u2717 '+test.error),
+    log&&React.createElement('div',{style:{marginTop:'8px',fontSize:'12px',color:'#94a3b8',padding:'8px',background:'#0f172a',borderRadius:'6px'}},log));
+}
+
 function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t}){
   const[f,setF]=useState({...settings,timezone:settings.timezone||'America/New_York',scanModel:settings.scanModel||'claude-sonnet-5',companyName:settings.companyName||'WEBSTER AVE LAUNDROMAT',companyAddress:settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456',storePhone:settings.storePhone||'929-263-1560',managerPhone:settings.managerPhone||'347-632-2024',photoRetentionDays:settings.photoRetentionDays||45});
   const[sav,setSav]=useState(false);const[clr,setClr]=useState(false);const[conf,setConf]=useState('');const[exp,setExp]=useState(false);
@@ -2266,6 +2317,9 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
             React.createElement('option',{value:'claude-sonnet-5'},'Sonnet 5 \u2014 best accuracy (~$17/mo at 5k scans)'),
             React.createElement('option',{value:'claude-haiku-4-5-20251001'},'Haiku 4.5 \u2014 faster, cheaper (~$8/mo at 5k scans)'))),
         React.createElement('p',{style:{color:'#64748b',fontSize:'12px'}},'Sonnet handles glare, folded tickets, and similar cleaner names better. Switch to Haiku if your scans are consistently clean.')),
+      React.createElement('div',{style:{marginTop:'20px',paddingTop:'16px',borderTop:'1px solid #334155'}},
+        React.createElement('h4',{style:{color:'#60a5fa',marginBottom:'8px'}},'\ud83d\udcbe Photo Storage'),
+        React.createElement(R2Migration,null)),
       React.createElement('button',{type:'submit',disabled:sav,style:{...S.btn,width:'100%',opacity:sav?0.6:1,marginTop:'16px'}},sav?'...':t.saveSettings)),
     React.createElement('div',{style:{...S.card,maxWidth:'500px',marginBottom:'20px',border:'1px solid #6366f1'}},
       React.createElement(StaffNameManager,{notify})),
@@ -2570,7 +2624,7 @@ function DriversPanel({drivers,notify,onRefresh,isAdmin}){
               (d.documents||[]).map(function(doc){return React.createElement('div',{key:doc.id||doc.name,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 8px',background:'#0f172a',borderRadius:'4px',fontSize:'12px'}},
                 React.createElement('span',{style:{cursor:'pointer',color:'#60a5fa',textDecoration:'underline'},onClick:async function(){
                   try{var full=await api.get('/drivers/'+d.id+'/documents/'+(doc.id||doc.name));
-                    if(full.data){var w=window.open('');w.document.write(full.type&&full.type.indexOf('pdf')>=0?'<embed src="'+full.data+'" width="100%" height="100%" type="application/pdf">':'<img src="'+full.data+'" style="max-width:100%">');w.document.title=full.name}}catch(e){alert(e.message)}
+                    var _src=full.url||full.data;if(_src){if(full.url){window.open(_src,'_blank')}else{var w=window.open('');w.document.write(full.type&&full.type.indexOf('pdf')>=0?'<embed src="'+_src+'" width="100%" height="100%" type="application/pdf">':'<img src="'+_src+'" style="max-width:100%">');w.document.title=full.name}}}catch(e){alert(e.message)}
                 }},doc.name||'Document'),
                 React.createElement('button',{onClick:async function(){if(!confirm('Delete '+doc.name+'?'))return;try{await api.del('/drivers/'+d.id+'/documents/'+(doc.id||doc.name));notify('Deleted');await onRefresh()}catch(e){alert(e.message)}},style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'14px'}},'\u2715'))})):
               React.createElement('div',{style:{fontSize:'12px',color:'#64748b',textAlign:'center',padding:'8px'}},'No documents uploaded')))))),
