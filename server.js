@@ -24,6 +24,92 @@ pool.on('connect', async (client) => {
   } catch(e) { await client.query("SET timezone = 'America/New_York'"); }
 });
 
+
+// ============================================================
+// Cloudflare R2 object storage (S3-compatible, signed manually
+// with Node crypto so no extra npm dependency is required)
+// ============================================================
+const crypto = require('crypto');
+const R2 = {
+  accountId: process.env.R2_ACCOUNT_ID || '',
+  accessKey: process.env.R2_ACCESS_KEY_ID || '',
+  secretKey: process.env.R2_SECRET_ACCESS_KEY || '',
+  bucket: process.env.R2_BUCKET || '',
+  publicUrl: (process.env.R2_PUBLIC_URL || '').replace(/\/+$/, ''),
+  get enabled() { return !!(this.accountId && this.accessKey && this.secretKey && this.bucket && this.publicUrl); },
+  get host() { return this.accountId + '.r2.cloudflarestorage.com'; }
+};
+if (!R2.enabled) console.warn('R2 not configured - photos will continue to be stored in the database.');
+
+
+// Track R2 health so failures are visible instead of silent
+const R2Health = { lastError: null, lastErrorAt: null, failCount: 0, successCount: 0 };
+function r2Fail(e) { R2Health.lastError = e.message; R2Health.lastErrorAt = new Date().toISOString(); R2Health.failCount++; console.error('R2 FAILURE:', e.message); }
+function r2Ok() { R2Health.successCount++; if (R2Health.failCount > 0 && R2Health.successCount > 3) { R2Health.lastError = null; R2Health.failCount = 0; } }
+
+function hmac(key, str) { return crypto.createHmac('sha256', key).update(str, 'utf8').digest(); }
+function sha256hex(buf) { return crypto.createHash('sha256').update(buf).digest('hex'); }
+
+// Minimal AWS Signature V4 for a single PUT/DELETE against R2
+async function r2Request(method, key, body, contentType) {
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.slice(0, 8);
+  const payloadHash = sha256hex(body || Buffer.alloc(0));
+  const canonicalUri = '/' + R2.bucket + '/' + key.split('/').map(encodeURIComponent).join('/');
+
+  const headers = {
+    'host': R2.host,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate
+  };
+  if (contentType) headers['content-type'] = contentType;
+
+  const signedHeaders = Object.keys(headers).sort().join(';');
+  const canonicalHeaders = Object.keys(headers).sort().map(h => h + ':' + headers[h] + '\n').join('');
+  const canonicalRequest = [method, canonicalUri, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  const scope = dateStamp + '/auto/s3/aws4_request';
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256hex(Buffer.from(canonicalRequest, 'utf8'))].join('\n');
+
+  let signingKey = hmac('AWS4' + R2.secretKey, dateStamp);
+  signingKey = hmac(signingKey, 'auto');
+  signingKey = hmac(signingKey, 's3');
+  signingKey = hmac(signingKey, 'aws4_request');
+  const signature = crypto.createHmac('sha256', signingKey).update(stringToSign, 'utf8').digest('hex');
+
+  headers['Authorization'] = 'AWS4-HMAC-SHA256 Credential=' + R2.accessKey + '/' + scope +
+    ', SignedHeaders=' + signedHeaders + ', Signature=' + signature;
+
+  const resp = await fetch('https://' + R2.host + canonicalUri, { method, headers, body: body || undefined });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error('R2 ' + method + ' failed (' + resp.status + '): ' + text.slice(0, 300));
+  }
+  return true;
+}
+
+// Upload a data URL to R2, return its public https URL
+async function r2Upload(dataUrl, prefix) {
+  const m = /^data:(image\/[\w+.-]+);base64,(.+)$/i.exec(dataUrl || '');
+  if (!m) throw new Error('Not a base64 image');
+  const contentType = m[1];
+  const buf = Buffer.from(m[2], 'base64');
+  const ext = contentType.split('/')[1].replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'jpg';
+  const key = (prefix || 'misc') + '/' + Date.now() + '-' + crypto.randomBytes(6).toString('hex') + '.' + ext;
+  await r2Request('PUT', key, buf, contentType);
+  r2Ok();
+  return R2.publicUrl + '/' + key;
+}
+
+// Delete by public URL (best effort - never blocks the caller)
+async function r2Delete(url) {
+  try {
+    if (!R2.enabled || !url || url.indexOf(R2.publicUrl) !== 0) return;
+    const key = url.slice(R2.publicUrl.length + 1);
+    await r2Request('DELETE', key, null, null);
+  } catch (e) { console.error('R2 delete failed:', e.message); }
+}
+
 app.use(cors());
 app.use(express.json({ limit: '3mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -782,9 +868,14 @@ app.post('/api/orders/:id/photos', authenticate, async (req, res) => {
     const order = await pool.query('SELECT photos FROM orders WHERE id = $1', [req.params.id]);
     if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     const photos = order.rows[0].photos || [];
-    photos.push({ data: image, label: label || '', uploaded_at: new Date().toISOString(), uploaded_by: req.user.username });
+    const entry = { label: label || '', uploaded_at: new Date().toISOString(), uploaded_by: req.user.username };
+    if (R2.enabled) {
+      try { entry.url = await r2Upload(image, 'orders/' + req.params.id); }
+      catch (e) { r2Fail(e); entry.data = image; entry.fallback = true; }
+    } else { entry.data = image; }
+    photos.push(entry);
     await pool.query('UPDATE orders SET photos = $1::jsonb WHERE id = $2', [JSON.stringify(photos), req.params.id]);
-    res.json({ success: true, count: photos.length });
+    res.json({ success: true, count: photos.length, storedIn: entry.url ? 'r2' : 'database', warning: entry.fallback ? 'Cloud storage unavailable - photo saved to database instead. Tell your admin.' : undefined });
   } catch (err) {
     console.error('Photo upload error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -807,9 +898,10 @@ app.delete('/api/orders/:id/photos/:index', authenticate, async (req, res) => {
     if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     const photos = order.rows[0].photos || [];
     const idx = parseInt(req.params.index);
-    if (idx < 0 || idx >= photos.length) return res.status(400).json({ error: 'Invalid index' });
-    photos.splice(idx, 1);
+    if (isNaN(idx) || idx < 0 || idx >= photos.length) return res.status(400).json({ error: 'Invalid photo index' });
+    const removed = photos.splice(idx, 1)[0];
     await pool.query('UPDATE orders SET photos = $1::jsonb WHERE id = $2', [JSON.stringify(photos), req.params.id]);
+    if (removed && removed.url) r2Delete(removed.url);
     res.json({ success: true, count: photos.length });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
@@ -2106,7 +2198,11 @@ app.post('/api/drivers/:id/documents', authenticate, adminOnly, async (req, res)
     const driver = await pool.query('SELECT documents FROM drivers WHERE id = $1', [req.params.id]);
     if (driver.rows.length === 0) return res.status(404).json({ error: 'Driver not found' });
     const docs = driver.rows[0].documents || [];
-    const doc = { id: Date.now().toString(), name: name || 'Document', type: type || 'file', data, uploaded: new Date().toISOString() };
+    const doc = { id: Date.now().toString(), name: name || 'Document', type: type || 'file', uploaded: new Date().toISOString() };
+    if (R2.enabled && /^data:image\//i.test(data)) {
+      try { doc.url = await r2Upload(data, 'drivers/' + req.params.id); }
+      catch (e) { r2Fail(e); doc.data = data; doc.fallback = true; }
+    } else { doc.data = data; }
     docs.push(doc);
     await pool.query('UPDATE drivers SET documents = $1 WHERE id = $2', [JSON.stringify(docs), req.params.id]);
     res.json({ success: true, doc: { id: doc.id, name: doc.name, type: doc.type, uploaded: doc.uploaded } });
@@ -2149,11 +2245,20 @@ app.get('/api/drivers/:id/documents/:docId', authenticate, async (req, res) => {
 app.post('/api/vehicle-logs', authenticate, async (req, res) => {
   const { driver_name, log_type, mileage, gallons, cost, notes, photos, vehicle, gas_level_start, gas_level_end } = req.body;
   try {
+    let storedPhotos = photos || [];
+    let vehicleFallback = false;
+    if (R2.enabled && storedPhotos.length > 0) {
+      storedPhotos = await Promise.all(storedPhotos.map(async function(p) {
+        if (!p || !p.data) return p;
+        try { return { name: p.name || 'photo', type: p.type || '', url: await r2Upload(p.data, 'vehicle') }; }
+        catch (e) { r2Fail(e); vehicleFallback = true; return p; }
+      }));
+    }
     const result = await pool.query(
       'INSERT INTO vehicle_logs (driver_name, log_type, mileage, gallons, cost, notes, photos, vehicle, gas_level_start, gas_level_end) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
-      [driver_name || req.user.username, log_type, mileage || null, gallons || null, cost || null, notes, JSON.stringify(photos || []), vehicle || null, gas_level_start || null, gas_level_end || null]
+      [driver_name || req.user.username, log_type, mileage || null, gallons || null, cost || null, notes, JSON.stringify(storedPhotos), vehicle || null, gas_level_start || null, gas_level_end || null]
     );
-    res.json(result.rows[0]);
+    res.json({ ...result.rows[0], warning: vehicleFallback ? 'Cloud storage unavailable - photos saved to database instead. Tell your admin.' : undefined });
   } catch (err) { console.error('Vehicle log error:', err); res.status(500).json({ error: err.message }); }
 });
 
@@ -2359,6 +2464,81 @@ app.get('/api/cleaner-extras-all', authenticate, async (req, res) => {
     }
     res.json(map);
   } catch (err) { console.error('cleaner-extras-all error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// One-time migration: move base64 photos already in Postgres over to R2
+app.post('/api/admin/migrate-photos-to-r2', authenticate, adminOnly, async (req, res) => {
+  if (!R2.enabled) return res.status(503).json({ error: 'R2 is not configured' });
+  const batch = Math.min(parseInt(req.body.batch) || 25, 100);
+  let moved = 0, failed = 0, ordersDone = 0;
+  try {
+    const rows = await pool.query(
+      `SELECT id, photos FROM orders
+       WHERE photos IS NOT NULL AND jsonb_array_length(photos) > 0
+         AND EXISTS (SELECT 1 FROM jsonb_array_elements(photos) e WHERE e ? 'data')
+       ORDER BY id LIMIT $1`, [batch]);
+
+    for (const row of rows.rows) {
+      const updated = [];
+      for (const p of (row.photos || [])) {
+        if (p && p.data && !p.url) {
+          try { updated.push({ label: p.label || '', uploaded_at: p.uploaded_at, uploaded_by: p.uploaded_by, url: await r2Upload(p.data, 'orders/' + row.id) }); moved++; }
+          catch (e) { console.error('migrate fail order ' + row.id + ':', e.message); updated.push(p); failed++; }
+        } else updated.push(p);
+      }
+      await pool.query('UPDATE orders SET photos = $1::jsonb WHERE id = $2', [JSON.stringify(updated), row.id]);
+      ordersDone++;
+    }
+
+    const remaining = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM orders
+       WHERE photos IS NOT NULL AND jsonb_array_length(photos) > 0
+         AND EXISTS (SELECT 1 FROM jsonb_array_elements(photos) e WHERE e ? 'data')`);
+
+    res.json({ ordersProcessed: ordersDone, photosMoved: moved, failed, ordersRemaining: remaining.rows[0].n });
+  } catch (err) { console.error('Migration error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// How much base64 is still sitting in the database
+app.get('/api/admin/photo-storage-status', authenticate, adminOnly, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM orders WHERE photos IS NOT NULL AND jsonb_array_length(photos) > 0
+            AND EXISTS (SELECT 1 FROM jsonb_array_elements(photos) e WHERE e ? 'data')) AS orders_with_base64,
+         (SELECT COUNT(*)::int FROM orders WHERE photos IS NOT NULL AND jsonb_array_length(photos) > 0
+            AND EXISTS (SELECT 1 FROM jsonb_array_elements(photos) e WHERE e ? 'url')) AS orders_with_r2,
+         pg_size_pretty(pg_database_size(current_database())) AS db_size`);
+    res.json({ ...r.rows[0], r2Enabled: R2.enabled, bucket: R2.bucket || null, health: R2Health });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Verify R2 credentials actually work by writing and deleting a test object
+app.post('/api/admin/test-r2', authenticate, adminOnly, async (req, res) => {
+  if (!R2.enabled) {
+    const missing = [];
+    if (!R2.accountId) missing.push('R2_ACCOUNT_ID');
+    if (!R2.accessKey) missing.push('R2_ACCESS_KEY_ID');
+    if (!R2.secretKey) missing.push('R2_SECRET_ACCESS_KEY');
+    if (!R2.bucket) missing.push('R2_BUCKET');
+    if (!R2.publicUrl) missing.push('R2_PUBLIC_URL');
+    return res.json({ ok: false, error: 'Not configured. Missing in Render Environment: ' + missing.join(', ') });
+  }
+  const px = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  try {
+    const url = await r2Upload(px, 'healthcheck');
+    let reachable = false, publicErr = null;
+    try {
+      const probe = await fetch(url, { method: 'GET' });
+      reachable = probe.ok;
+      if (!probe.ok) publicErr = 'Public URL returned ' + probe.status + '. Enable public access on the bucket.';
+    } catch (e) { publicErr = 'Public URL unreachable: ' + e.message; }
+    await r2Delete(url);
+    res.json({ ok: true, uploaded: true, publicAccess: reachable, publicError: publicErr, bucket: R2.bucket });
+  } catch (err) {
+    r2Fail(err);
+    res.json({ ok: false, error: err.message });
+  }
 });
 
 app.get('*', (req, res) => {
