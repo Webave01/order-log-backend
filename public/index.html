@@ -752,6 +752,12 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
   const[d,setD]=useState({order_num:order?.order_num||'',weight:order?.weight||'',service_type:order?.service_type||'same-day',pickup_date:order?.pickup_date?.split('T')[0]||getDefaultPickupDate(),bag_color:order?.bag_color||'Blue',cleaner_id:order?.cleaner_id||'',extras:order?.extras||[],notes:order?.notes||'',staff_name:order?.staff_name||staffName,price_adjustment:order?.price_adjustment||'',customer_address:order?.customer_address||'',customer_apt:order?.customer_apt||'',id:order?.id||null});
   const[saving,setSaving]=useState(false);const[dupWarn,setDupWarn]=useState(null);const[seqWarn,setSeqWarn]=useState(null);const[addrDupWarn,setAddrDupWarn]=useState(null);const[cleanerSearch,setCleanerSearch]=useState('');const[highlightIdx,setHighlightIdx]=useState(0);
   const[confirmPopup,setConfirmPopup]=useState(null);
+  const[ofPhotos,setOfPhotos]=useState([]);const[ofPhotoLd,setOfPhotoLd]=useState(false);const[ofZoom,setOfZoom]=useState(null);
+  useEffect(function(){
+    if(!order||!order.id)return;
+    setOfPhotoLd(true);
+    api.get('/orders/'+order.id+'/photos').then(function(p){setOfPhotos(Array.isArray(p)?p:[])}).catch(function(){setOfPhotos([])}).finally(function(){setOfPhotoLd(false)});
+  },[order&&order.id]);
   const[addrList,setAddrList]=useState([]);const[addrSearch,setAddrSearch]=useState('');const[addrHighlight,setAddrHighlight]=useState(0);const[showAddrDrop,setShowAddrDrop]=useState(false);
   const[isNewAddr,setIsNewAddr]=useState(order?.is_new_address||false);
   const[aptError,setAptError]=useState(false);const[autoNum,setAutoNum]=useState(false);
@@ -820,6 +826,12 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
       React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},
         React.createElement('h3',{style:{margin:0}},(order?t.edit:t.add)+' '+t.orders),
         React.createElement('button',{onClick:onClose,style:{background:'#ef4444',border:'none',color:'#fff',fontSize:'28px',cursor:'pointer',width:'44px',height:'44px',borderRadius:'8px',fontWeight:'bold'}},'\u2715')),
+      order&&order.id&&(ofPhotoLd||ofPhotos.length>0)&&React.createElement('div',{style:{padding:'12px 16px',borderBottom:'1px solid #334155',background:'#0f172a'}},
+        React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',fontWeight:'bold',marginBottom:'8px'}},ofPhotoLd?'Loading photos...':'\ud83d\udcf7 Ticket photo'+(ofPhotos.length>1?'s ('+ofPhotos.length+')':'')+' \u2014 tap to enlarge'),
+        React.createElement('div',{style:{display:'flex',gap:'8px',overflowX:'auto'}},
+          ofPhotos.map(function(p,i){return React.createElement('img',{key:i,src:photoSrc(p),onClick:function(){setOfZoom(photoSrc(p))},style:{height:ofPhotos.length===1?'220px':'140px',maxWidth:'100%',borderRadius:'6px',cursor:'zoom-in',border:'1px solid #334155',objectFit:'contain',background:'#000'}})}))),
+      ofZoom&&React.createElement('div',{onClick:function(){setOfZoom(null)},style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.92)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px',cursor:'zoom-out'}},
+        React.createElement('img',{src:ofZoom,style:{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}})),
       React.createElement('form',{onSubmit:sub,style:{padding:'16px'}},
         d.staff_name&&React.createElement('div',{style:{background:'#065f46',padding:'8px 12px',borderRadius:'6px',marginBottom:'12px',fontSize:'13px'}},'\ud83d\udc64 '+d.staff_name),
         dupWarn&&React.createElement('div',{style:{background:'#7f1d1d',border:'2px solid #ef4444',color:'#fecaca',padding:'12px',borderRadius:'8px',marginBottom:'12px',fontSize:'14px',fontWeight:'bold'}},'\u26a0\ufe0f '+dupWarn),
