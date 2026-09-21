@@ -265,6 +265,7 @@ async function initDB() {
     await client.query(`
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+      CREATE INDEX IF NOT EXISTS idx_orders_cleaner_created ON orders(cleaner_id, created_at DESC);
     `);
 
     // Order edit history
@@ -1021,6 +1022,61 @@ app.get('/api/orders/check-duplicate', authenticate, async (req, res) => {
 });
 
 // Check if order number is in sequence — finds nearest number in same sequence cluster
+// Reference numbers for the order form: last entries, plus numeric neighbors when editing
+app.get('/api/orders/recent-nums', authenticate, async (req, res) => {
+  const { cleaner_id, exclude_id, order_num } = req.query;
+  if (!cleaner_id) return res.json({ recent: [], before: null, after: null });
+  try {
+    const params = [cleaner_id];
+    let excl = '';
+    if (exclude_id) { params.push(exclude_id); excl = ' AND id <> $2'; }
+    const recent = await pool.query(
+      'SELECT order_num, pickup_date FROM orders WHERE cleaner_id = $1 AND deleted_at IS NULL' + excl +
+      ' ORDER BY created_at DESC LIMIT 3', params);
+
+    let before = null, after = null;
+    const n = parseInt(String(order_num || '').replace(/\D/g, ''));
+    if (!isNaN(n)) {
+      const nb = await pool.query(
+        "SELECT order_num, pickup_date FROM orders WHERE cleaner_id = $1 AND deleted_at IS NULL" + excl +
+        " AND order_num ~ '^[0-9]+$' AND CAST(order_num AS BIGINT) < " + n +
+        " ORDER BY CAST(order_num AS BIGINT) DESC LIMIT 1", params);
+      const na = await pool.query(
+        "SELECT order_num, pickup_date FROM orders WHERE cleaner_id = $1 AND deleted_at IS NULL" + excl +
+        " AND order_num ~ '^[0-9]+$' AND CAST(order_num AS BIGINT) > " + n +
+        " ORDER BY CAST(order_num AS BIGINT) ASC LIMIT 1", params);
+      before = nb.rows[0] || null; after = na.rows[0] || null;
+    }
+    // Same pickup date: last entered, plus nearest lower number when editing
+    let sameDay = null, sameDayCount = 0, sameDayList = [];
+    const pd = req.query.pickup_date;
+    if (pd && /^\d{4}-\d{2}-\d{2}$/.test(pd)) {
+      const dp = params.concat([pd]);
+      const di = '$' + dp.length;
+      const cnt = await pool.query(
+        'SELECT COUNT(*)::int AS n FROM orders WHERE cleaner_id = $1 AND deleted_at IS NULL' + excl + ' AND pickup_date = ' + di, dp);
+      sameDayCount = cnt.rows[0].n;
+      let sd;
+      if (exclude_id && !isNaN(n)) {
+        sd = await pool.query(
+          "SELECT order_num, pickup_date FROM orders WHERE cleaner_id = $1 AND deleted_at IS NULL" + excl +
+          " AND pickup_date = " + di + " AND order_num ~ '^[0-9]+$' AND CAST(order_num AS BIGINT) < " + n +
+          " ORDER BY CAST(order_num AS BIGINT) DESC LIMIT 1", dp);
+      } else {
+        sd = await pool.query(
+          'SELECT order_num, pickup_date FROM orders WHERE cleaner_id = $1 AND deleted_at IS NULL' + excl +
+          ' AND pickup_date = ' + di + ' ORDER BY created_at DESC LIMIT 1', dp);
+      }
+      sameDay = sd.rows[0] || null;
+      const lst = await pool.query(
+        'SELECT order_num FROM orders WHERE cleaner_id = $1 AND deleted_at IS NULL' + excl +
+        ' AND pickup_date = ' + di + ' ORDER BY created_at LIMIT 60', dp);
+      sameDayList = lst.rows.map(r => r.order_num);
+    }
+    res.json({ recent: recent.rows, before, after, sameDay, sameDayCount, sameDayList });
+  } catch (err) { console.error('recent-nums error:', err); res.json({ recent: [], before: null, after: null, sameDay: null, sameDayCount: 0, sameDayList: [] }); }
+});
+
 app.get('/api/orders/check-sequence', authenticate, async (req, res) => {
   const { order_num, cleaner_id } = req.query;
   try {
