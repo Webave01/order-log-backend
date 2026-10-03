@@ -413,7 +413,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
                 React.createElement('button',{onClick:function(){openPhotos(o)},style:{padding:o.photo_count>0?'4px 10px':'4px 6px',borderRadius:'6px',border:'none',background:o.photo_count>0?'rgba(139,92,246,0.2)':'transparent',color:o.photo_count>0?'#c4b5fd':'#475569',cursor:'pointer',fontSize:o.photo_count>0?'13px':'12px',fontWeight:o.photo_count>0?'600':'400'}},'\ud83d\udcf7'+(o.photo_count>0?' '+o.photo_count:''))))})),
     showForm&&React.createElement(OrderForm,{order:editing,cleaners,extras,cleanerExtras,staffName,isAdmin:isAdmin,onSave:save,onClose:()=>{setShowForm(false);setEditing(null)},lang,t}),
     rapidMode&&React.createElement(RapidEntry,{cleaners,staffName,notify,loadData,onClose:function(){setRapidMode(false)},t}),
-    scanMode&&React.createElement(ScanEntry,{cleaners,staffName,notify,loadData,onClose:function(){setScanMode(false)},t}),
+    scanMode&&React.createElement(ScanEntry,{cleaners,extras,cleanerExtras,staffName,notify,loadData,onClose:function(){setScanMode(false)},t}),
     showImport&&React.createElement(ImportModal,{cleaners,staffName,onClose:()=>setShowImport(false),onImport:loadData,notify,t}),
     photoModal&&React.createElement('div',{style:S.modal,onClick:function(e){if(e.target===e.currentTarget)setPhotoModal(null)}},
       React.createElement('div',{style:{background:'#1e293b',borderRadius:'12px',width:'100%',maxWidth:'700px',maxHeight:'90vh',overflow:'auto',border:'1px solid #334155'}},
@@ -460,7 +460,7 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
     );
 }
 
-function ScanEntry({cleaners,staffName,notify,loadData,onClose,t}){
+function ScanEntry({cleaners,extras,cleanerExtras,staffName,notify,loadData,onClose,t}){
   const getDefaultDate=()=>{const now=new Date();const hour=now.getHours();const target=hour>=6&&hour<9?new Date(now.setDate(now.getDate()-1)):now;
     const y=target.getFullYear();const m=String(target.getMonth()+1).padStart(2,'0');const dd=String(target.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd};
   const[pdate,setPdate]=useState(getDefaultDate());const[svc,setSvc]=useState('same-day');
@@ -539,15 +539,15 @@ function ScanEntry({cleaners,staffName,notify,loadData,onClose,t}){
   const saveOne=async()=>{
     if(!cid){setErr('Select the cleaner');return}
     if(!onum.trim()){setErr('Order # required');return}
-    if(!wt||parseFloat(wt)<=0){setErr('Weight required');return}
+    if((!wt||parseFloat(wt)<=0)&&scExtras.length===0){setErr(t.enterWeightOrExtras||'Weight or extras required');return}
     setBusy(true);setErr('');
     try{
-      var res=await api.post('/orders',{order_num:onum.trim(),weight:parseFloat(wt),service_type:svc,pickup_date:pdate,
-        bag_color:color,cleaner_id:cid,extras:[],notes:'',staff_name:staffName,price_adjustment:0});
+      var res=await api.post('/orders',{order_num:onum.trim(),weight:parseFloat(wt)||0,service_type:svc,pickup_date:pdate,
+        bag_color:color,cleaner_id:cid,extras:scExtras,notes:'',staff_name:staffName,price_adjustment:0});
       if(imgData){try{await api.post('/orders/'+res.id+'/photos',{image:imgData,label:'ticket'})}catch(e){}}
       var cn=(cleaners.find(function(c){return c.id===cid})||{}).name||'';
-      setEntered([{id:res.id,order_num:onum.trim(),weight:parseFloat(wt),cleaner:cn,color:color}].concat(entered));
-      setOnum('');setWt('');setPreview(null);setImgData(null);setConf('');setColorConf('');
+      setEntered([{id:res.id,order_num:onum.trim(),weight:parseFloat(wt)||0,cleaner:cn,color:color,nx:scExtras.length}].concat(entered));
+      setOnum('');setWt('');setPreview(null);setImgData(null);setConf('');setColorConf('');setScExtras([]);setShowExtras(false);
       loadData();
       if(manualMode){setTimeout(function(){if(onumRef.current)onumRef.current.focus()},50)}
       else if(isTouch||!hasWebcam){if(fileRef.current)fileRef.current.click()}else{openCam()}
@@ -622,6 +622,23 @@ function ScanEntry({cleaners,staffName,notify,loadData,onClose,t}){
             React.createElement('input',{value:wt,onChange:function(e){setWt(e.target.value)},
               onKeyDown:function(e){if(e.key==='Enter'){e.preventDefault();saveOne()}},
               inputMode:'decimal',style:{...S.inp,width:'100%',padding:'16px',fontSize:'24px',fontWeight:'bold',textAlign:'center'}}))),
+        React.createElement('div',{style:{marginTop:'10px'}},
+          React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            React.createElement('span',{style:{fontSize:'13px',color:'#94a3b8',fontWeight:'bold'}},t.extrasLabel+(scExtras.length?' ('+scExtras.length+')':'')),
+            React.createElement('button',{type:'button',onClick:function(){setShowExtras(!showExtras)},style:{padding:'6px 14px',borderRadius:'6px',border:'1px solid #8b5cf6',background:showExtras?'rgba(139,92,246,0.2)':'transparent',color:'#c4b5fd',cursor:'pointer',fontSize:'13px',fontWeight:'600'}},showExtras?t.done:'+ '+t.extrasLabel)),
+          scExtras.length>0&&!showExtras&&React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'6px'}},
+            Object.keys(scExtras.reduce(function(a,id){a[id]=(a[id]||0)+1;return a},{})).map(function(id){
+              var ex=(extras||[]).find(function(x){return String(x.id)===String(id)});var q=scExtras.filter(function(y){return String(y)===String(id)}).length;
+              return React.createElement('span',{key:id,style:{padding:'3px 9px',borderRadius:'5px',background:'rgba(139,92,246,0.15)',border:'1px solid #8b5cf6',color:'#c4b5fd',fontSize:'12px',fontWeight:'600'}},(ex?ex.name:id)+(q>1?' x'+q:''))})),
+          showExtras&&React.createElement('div',{style:{marginTop:'8px',maxHeight:'240px',overflowY:'auto',border:'1px solid #334155',borderRadius:'8px'}},
+            (extras||[]).map(function(ex){
+              var q=scExtras.filter(function(y){return String(y)===String(ex.id)}).length;
+              var pr=(cleanerExtras&&cid&&cleanerExtras[cid]&&cleanerExtras[cid][ex.id]!==undefined)?cleanerExtras[cid][ex.id]:ex.price;
+              return React.createElement('div',{key:ex.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',borderBottom:'1px solid #1e293b'}},
+                React.createElement('span',{style:{flex:1,fontSize:'14px',color:q>0?'#c4b5fd':'#e2e8f0'}},ex.name,React.createElement('span',{style:{color:'#64748b',fontSize:'12px'}},'  $'+Number(pr||0).toFixed(2))),
+                q>0&&React.createElement('button',{type:'button',onClick:function(){var i=scExtras.indexOf(ex.id);if(i<0)i=scExtras.findIndex(function(y){return String(y)===String(ex.id)});var n=scExtras.slice();n.splice(i,1);setScExtras(n)},style:{width:'34px',height:'34px',borderRadius:'6px',border:'1px solid #ef4444',background:'transparent',color:'#fca5a5',cursor:'pointer',fontSize:'18px',fontWeight:'bold'}},'\u2212'),
+                q>0&&React.createElement('span',{style:{minWidth:'20px',textAlign:'center',fontWeight:'bold',color:'#c4b5fd'}},q),
+                React.createElement('button',{type:'button',onClick:function(){setScExtras(scExtras.concat([ex.id]))},style:{width:'34px',height:'34px',borderRadius:'6px',border:'none',background:'#10b981',color:'#fff',cursor:'pointer',fontSize:'18px',fontWeight:'bold'}},'+'))}))),
         err&&React.createElement('div',{style:{color:'#fca5a5',fontSize:'13px',marginTop:'8px'}},err),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px'}},
           React.createElement('button',{onClick:saveOne,disabled:busy,style:{...S.btn,flex:2,padding:'16px',fontSize:'17px',fontWeight:'bold',opacity:busy?0.6:1}},busy?t.saving:t.confirmNext),
@@ -637,7 +654,7 @@ function ScanEntry({cleaners,staffName,notify,loadData,onClose,t}){
         entered.length>0&&React.createElement('button',{onClick:undoLast,style:{padding:'6px 14px',borderRadius:'6px',border:'1px solid #ef4444',background:'transparent',color:'#fca5a5',cursor:'pointer',fontSize:'12px'}},t.undoLast)),
       React.createElement('div',{style:{maxHeight:'200px',overflow:'auto'}},
         entered.map(function(e,i){return React.createElement('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:'8px 12px',background:i===0?'rgba(74,222,128,0.1)':'#0f172a',borderRadius:'6px',marginBottom:'4px',fontSize:'14px'}},
-          React.createElement('span',null,React.createElement('b',null,'#'+e.order_num),React.createElement('span',{style:{color:'#64748b',marginLeft:'8px',fontSize:'12px'}},e.cleaner),e.color&&React.createElement('span',{style:{color:'#64748b',marginLeft:'6px',fontSize:'11px'}},'\u2022 '+e.color)),
+          React.createElement('span',null,React.createElement('b',null,'#'+e.order_num),React.createElement('span',{style:{color:'#64748b',marginLeft:'8px',fontSize:'12px'}},e.cleaner),e.color&&React.createElement('span',{style:{color:'#64748b',marginLeft:'6px',fontSize:'11px'}},'\u2022 '+e.color),e.nx>0&&React.createElement('span',{style:{color:'#c4b5fd',marginLeft:'6px',fontSize:'11px'}},'+'+e.nx+' '+t.extrasLabel)),
           React.createElement('span',{style:{color:'#94a3b8'}},e.weight+' lbs'))}))));
 }
 
@@ -1246,6 +1263,7 @@ function VehicleLog({isAdmin,user,notify,drivers}){
   const[driverName,setDriverName]=useState('');
   const[photos,setPhotos]=useState([]);const[viewLog,setViewLog]=useState(null);const[editingLog,setEditingLog]=useState(null);
   const[gasStart,setGasStart]=useState('');const[gasEnd,setGasEnd]=useState('');
+  const[scExtras,setScExtras]=useState([]);const[showExtras,setShowExtras]=useState(false);
   const[summary,setSummary]=useState(null);const[showSummary,setShowSummary]=useState(false);
 
   const loadLogs=async()=>{setLd(true);try{var url='/vehicle-logs?';if(filterType)url+='log_type='+filterType;var r=await api.get(url);setLogs(r)}catch(e){}setLd(false)};
