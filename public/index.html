@@ -1582,9 +1582,9 @@ function TrendsPanel({t}){
 }
 
 function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
-  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);const[showDba,setShowDba]=useState(false);
+  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);const[showDba,setShowDba]=useState(false);
   const[showAddrs,setShowAddrs]=useState(null);const[addrList,setAddrList]=useState([]);const[newAddr,setNewAddr]=useState('');const[newApt,setNewApt]=useState('');const[editAddr,setEditAddr]=useState(null);
-  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
+  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,ticket_format:'',dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
   const del=async id=>{if(!confirm(t.delete+'?'))return;try{await api.del('/cleaners/'+id);notify('Deleted');await loadData()}catch(e){alert(e.message)}};
   const loadAddrs=async(cid)=>{try{const a=await api.get('/cleaner-addresses/'+cid);setAddrList(a)}catch(e){setAddrList([])}};
   const addAddr=async()=>{if(!newAddr.trim()){alert('Enter address');return}try{await api.post('/cleaner-addresses',{cleaner_id:showAddrs.id,address:newAddr.trim(),apt:newApt.trim()});setNewAddr('');setNewApt('');loadAddrs(showAddrs.id);notify('Address added')}catch(e){alert(e.message)}};
@@ -1592,17 +1592,17 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
   const saveAddr=async()=>{if(!editAddr)return;try{await api.put('/cleaner-addresses/'+editAddr.id,{address:editAddr.address,apt:editAddr.apt});setEditAddr(null);loadAddrs(showAddrs.id);notify('Updated')}catch(e){alert(e.message)}};
 
   return React.createElement('div',null,
-    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});setShowDba(false);setShow(true)},style:S.btn},t.addCleaner)),
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});setShowDba(false);setShow(true)},style:S.btn},t.addCleaner)),
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
       cleaners.map(c=>React.createElement('div',{key:c.id,style:S.card},
-        React.createElement('div',{style:{fontWeight:'bold',marginBottom:'4px'}},c.name,c.has_addresses&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),c.billing_cycle==='monthly'&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'11px',color:'#fbbf24',background:'rgba(245,158,11,0.15)',padding:'2px 6px',borderRadius:'4px'}},'\ud83d\udcc5 Monthly'),c.dba_name&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#f59e0b'}},'\ud83c\udfe2 '+c.dba_name)),
+        React.createElement('div',{style:{fontWeight:'bold',marginBottom:'4px'}},c.name,c.has_addresses&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),c.billing_cycle==='monthly'&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'11px',color:'#fbbf24',background:'rgba(245,158,11,0.15)',padding:'2px 6px',borderRadius:'4px'}},'\ud83d\udcc5 Calendar Month'),c.settles_monthly&&(c.billing_cycle||'weekly')==='weekly'&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'11px',color:'#93c5fd',background:'rgba(59,130,246,0.15)',padding:'2px 6px',borderRadius:'4px'}},'Weekly invoices \u2022 pays monthly'),c.dba_name&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#f59e0b'}},'\ud83c\udfe2 '+c.dba_name)),
         React.createElement('div',{style:{fontSize:'24px',color:'#4ade80',fontWeight:'bold'}},fmt$(c.rate)+'/lb'),
         React.createElement('div',{style:{color:'#94a3b8',fontSize:'12px',marginTop:'4px'}},'Min: '+(c.min_weight||10)+' lbs'),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'8px',flexWrap:'wrap'}},
           React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:c.route==='east'?'#3b82f6':'#f59e0b'}},c.route==='east'?'\ud83d\uddfd East':'\ud83c\udf06 West'),
           c.congestion_zone&&React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#dc2626'}},'\ud83d\ude97 Congestion $'+parseFloat(c.congestion_rate||5).toFixed(2)+'/day')),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',flexWrap:'wrap'}},
-          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,address:c.address||'',rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false,billing_cycle:c.billing_cycle||'weekly',ticket_format:c.ticket_format||'',dba_name:c.dba_name||'',dba_address:c.dba_address||'',dba_phone:c.dba_phone||''});setShowDba(!!c.dba_name);setShow(true)},style:S.edit},t.edit),
+          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,address:c.address||'',rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false,billing_cycle:c.billing_cycle||'weekly',settles_monthly:!!c.settles_monthly,ticket_format:c.ticket_format||'',dba_name:c.dba_name||'',dba_address:c.dba_address||'',dba_phone:c.dba_phone||''});setShowDba(!!c.dba_name);setShow(true)},style:S.edit},t.edit),
           React.createElement('button',{onClick:()=>setShowPrices(c),style:{...S.edit,borderColor:'#f59e0b',color:'#f59e0b'}},t.customPrices),
           c.has_addresses&&React.createElement('button',{onClick:()=>{setShowAddrs(c);loadAddrs(c.id)},style:{...S.edit,borderColor:'#8b5cf6',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),
           React.createElement('button',{onClick:()=>del(c.id),style:S.del},t.delete))))),
@@ -1626,7 +1626,19 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
           React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginTop:'8px'}},
               React.createElement('span',{style:{fontSize:'13px',color:'#94a3b8'}},'\ud83d\udcc5 Billing:'),
               React.createElement('button',{type:'button',onClick:function(){setF({...f,billing_cycle:'weekly'})},style:{padding:'4px 12px',borderRadius:'6px',border:'1px solid '+(f.billing_cycle==='weekly'?'#3b82f6':'#475569'),background:f.billing_cycle==='weekly'?'rgba(59,130,246,0.2)':'transparent',color:f.billing_cycle==='weekly'?'#60a5fa':'#94a3b8',cursor:'pointer',fontSize:'13px',fontWeight:'600'}},'Weekly'),
-              React.createElement('button',{type:'button',onClick:function(){setF({...f,billing_cycle:'monthly'})},style:{padding:'4px 12px',borderRadius:'6px',border:'1px solid '+(f.billing_cycle==='monthly'?'#f59e0b':'#475569'),background:f.billing_cycle==='monthly'?'rgba(245,158,11,0.2)':'transparent',color:f.billing_cycle==='monthly'?'#fbbf24':'#94a3b8',cursor:'pointer',fontSize:'13px',fontWeight:'600'}},'Monthly')),
+              React.createElement('button',{type:'button',onClick:function(){setF({...f,billing_cycle:'monthly',settles_monthly:false})},style:{padding:'4px 12px',borderRadius:'6px',border:'1px solid '+(f.billing_cycle==='monthly'?'#f59e0b':'#475569'),background:f.billing_cycle==='monthly'?'rgba(245,158,11,0.2)':'transparent',color:f.billing_cycle==='monthly'?'#fbbf24':'#94a3b8',cursor:'pointer',fontSize:'13px',fontWeight:'600'}},'Monthly')),
+          // These are two different questions and conflating them was the Golden Star bug.
+          // "Billing" = what the invoice covers. "Pays once a month" = how they remit.
+          React.createElement('div',{style:{marginTop:'6px',fontSize:'11px',color:'#64748b',lineHeight:'1.5'}},
+            f.billing_cycle==='monthly'
+              ? 'Monthly: the invoice covers the CALENDAR month, 1st to last day. Use this only for cleaners who are billed that way (Lincoln Plaza, Harlem).'
+              : 'Weekly: the invoice covers one Mon–Sat week. This is the right choice for almost everyone.'),
+          f.billing_cycle==='weekly'&&React.createElement('div',{style:{marginTop:'10px',padding:'10px',borderRadius:'8px',border:'1px solid '+(f.settles_monthly?'#f59e0b':'#475569'),background:f.settles_monthly?'rgba(245,158,11,0.05)':'transparent'}},
+            React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+              React.createElement('input',{type:'checkbox',id:'settlesMonthly',checked:!!f.settles_monthly,onChange:function(e){setF({...f,settles_monthly:e.target.checked})},style:{width:'20px',height:'20px'}}),
+              React.createElement('label',{htmlFor:'settlesMonthly',style:{color:f.settles_monthly?'#fbbf24':'#94a3b8',fontWeight:'bold',cursor:'pointer',fontSize:'13px'}},'Pays once a month (off the weekly invoices)')),
+            React.createElement('div',{style:{marginTop:'6px',fontSize:'11px',color:'#64748b',lineHeight:'1.5'}},
+              'Tick this for a cleaner who sends ONE check a month but calculates it from the weekly invoices you hand them — Golden Star, for example. You keep invoicing weekly; the Monthly tab groups those weeks so you can mark the whole month paid in one click.')),
           React.createElement('div',{style:{marginTop:'8px'}},React.createElement('label',{style:S.lbl},'Ticket Scan Hint (optional)'),React.createElement('input',{value:f.ticket_format,onChange:function(e){setF({...f,ticket_format:e.target.value})},style:S.inp,placeholder:'e.g. green ticket, number top-left, weight near WASH'})),
             f.has_addresses&&React.createElement('div',{style:{marginTop:'6px',color:'#94a3b8',fontSize:'11px'}},'Staff will pick customer address from a list when entering orders. Bag color auto-set to Black.')),
           React.createElement('div',{style:{marginTop:'12px',padding:'12px',borderRadius:'8px',border:showDba?'1px solid #f59e0b':'1px solid #475569',background:showDba?'rgba(245,158,11,0.05)':'transparent'}},
@@ -1793,34 +1805,108 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
   const[payView,setPayView]=useState('weekly');
   const[paySearch,setPaySearch]=useState('');
   const[showUnpaidOnly,setShowUnpaidOnly]=useState(false);
+  const[expanded,setExpanded]=useState({});
   const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   
-  const load=async(cycle)=>{var bc=cycle||payView;setLd(true);try{const[tracking,sum]=await Promise.all([api.get('/invoice-tracking?billing_cycle='+bc),api.get('/invoice-tracking/summary?billing_cycle='+bc)]);setData(tracking);setSummary(sum)}catch(e){console.error(e)}setLd(false)};
+  // Monthly tab reads the ROLL-UP endpoint, which returns two kinds of row together:
+  //  - true calendar-month invoices (Lincoln Plaza, Harlem) -> is_rollup false, has a real id
+  //  - weeks rolled up for cleaners who pay once a month (Golden Star) -> is_rollup true,
+  //    synthetic id, and a .weeks array you can expand
+  // The summary is the same figure on both tabs, so no cycle is passed.
+  const load=async(cycle)=>{var bc=cycle||payView;setLd(true);try{
+    const path=bc==='monthly'?'/invoice-tracking/monthly-rollup':'/invoice-tracking?billing_cycle=weekly';
+    const[tracking,sum]=await Promise.all([api.get(path),api.get('/invoice-tracking/summary')]);
+    setData(Array.isArray(tracking)?tracking:[]);setSummary(sum)}catch(e){console.error(e);notify&&notify('Could not load payments: '+e.message)}setLd(false)};
   useEffect(()=>{load()},[]);
-  const switchView=(v)=>{setPayView(v);setStart('');setEnd('');load(v)};
+  const switchView=(v)=>{setPayView(v);setStart('');setEnd('');setExpanded({});load(v)};
   
   const setLW=()=>{const n=new Date();const dow=n.getDay();const daysSinceSat=dow===0?1:dow+1;const sat=new Date(n);sat.setDate(n.getDate()-daysSinceSat);const mon=new Date(sat);mon.setDate(sat.getDate()-5);setStart(localDateStr(mon));setEnd(localDateStr(sat))};
   const setTW=()=>{const n=new Date();const dow=n.getDay();const daysToMon=dow===0?6:dow-1;const mon=new Date(n);mon.setDate(n.getDate()-daysToMon);setStart(localDateStr(mon));setEnd(localDateStr(n))};
   const setLM=()=>{const n=new Date();const lastDay=new Date(n.getFullYear(),n.getMonth(),0);const firstDay=new Date(lastDay.getFullYear(),lastDay.getMonth(),1);setStart(localDateStr(firstDay));setEnd(localDateStr(lastDay))};
   const setTM=()=>{const n=new Date();const firstDay=new Date(n.getFullYear(),n.getMonth(),1);setStart(localDateStr(firstDay));setEnd(localDateStr(n))};
   
+  // Every Monday between two dates, so a month can be filled in week by week.
+  const mondaysBetween=function(s,e){
+    var out=[],d=new Date(s+'T12:00:00'),end=new Date(e+'T12:00:00');
+    var dow=d.getDay();d.setDate(d.getDate()-(dow===0?6:dow-1)); // back up to Monday
+    while(d<=end){
+      var mon=new Date(d),sat=new Date(d);sat.setDate(sat.getDate()+5);
+      // Only weeks whose MONDAY falls inside the range - this is the same rule the
+      // roll-up uses, so each week belongs to exactly one month and nothing doubles up.
+      if(mon>=new Date(s+'T12:00:00'))out.push({start:localDateStr(mon),end:localDateStr(sat)});
+      d.setDate(d.getDate()+7);
+    }
+    return out;
+  };
+
   const generateWeek=async(cid)=>{if(!start||!end){alert('Select dates');return}setLd(true);
-    try{var body={week_start:start,week_end:end,billing_cycle:payView};if(cid)body.cleaner_id=parseInt(cid);
+    try{
+      // On the Monthly tab the two kinds of cleaner need different records:
+      //   true calendar-month cleaners -> ONE monthly row for the whole range
+      //   weekly cleaners who pay monthly -> the WEEKLY rows, which are their real invoices
+      if(payView==='monthly'){
+        var picked=cid?cleaners.filter(function(c){return c.id===parseInt(cid)}):cleaners;
+        var trueMonthly=picked.filter(function(c){return(c.billing_cycle||'weekly')==='monthly'});
+        var paysMonthly=picked.filter(function(c){return(c.billing_cycle||'weekly')==='weekly'&&c.settles_monthly});
+        var genTotal=0,noOrdersAll=[],blockedAll=[];
+
+        for(var i=0;i<trueMonthly.length;i++){
+          var rm=await api.post('/invoice-tracking/generate-week',{week_start:start,week_end:end,billing_cycle:'monthly',cleaner_id:trueMonthly[i].id});
+          genTotal+=rm.generated||0;
+          if(rm.noOrders)noOrdersAll=noOrdersAll.concat(rm.noOrders);
+          if(rm.blockedPaid)blockedAll=blockedAll.concat(rm.blockedPaid);
+        }
+        if(paysMonthly.length>0){
+          var wks=mondaysBetween(start,end);
+          for(var j=0;j<paysMonthly.length;j++){
+            for(var k=0;k<wks.length;k++){
+              var rw=await api.post('/invoice-tracking/generate-week',{week_start:wks[k].start,week_end:wks[k].end,billing_cycle:'weekly',cleaner_id:paysMonthly[j].id});
+              genTotal+=rw.generated||0;
+              if(rw.blockedPaid)blockedAll=blockedAll.concat(rw.blockedPaid);
+            }
+          }
+        }
+        await load();
+        var m2=genTotal+' invoice'+(genTotal===1?'':'s')+' generated';
+        if(paysMonthly.length>0)m2+='\n\nWeekly invoices were created for: '+paysMonthly.map(function(c){return c.name}).join(', ')+'\n(these cleaners pay once a month but off the WEEKLY amounts)';
+        if(blockedAll.length>0)m2+='\n\nBLOCKED by an existing PAID record:\n'+Array.from(new Set(blockedAll)).join(', ');
+        if(noOrdersAll.length>0)m2+='\n\nNo orders in range for:\n'+Array.from(new Set(noOrdersAll)).join(', ');
+        if(blockedAll.length||noOrdersAll.length||genTotal===0)alert(m2);else notify(m2);
+        setLd(false);return;
+      }
+
+      var body={week_start:start,week_end:end,billing_cycle:'weekly'};if(cid)body.cleaner_id=parseInt(cid);
       var r=await api.post('/invoice-tracking/generate-week',body);await load();
       var msg=r.generated+' invoice'+(r.generated===1?'':'s')+' generated';
-      if(r.blockedPaid&&r.blockedPaid.length>0)msg+='\n\nBLOCKED \u2014 a PAID '+(payView==='monthly'?'weekly':'monthly')+' record already exists on '+fmtD(start)+' for:\n'+r.blockedPaid.join(', ')+'\n\nDelete or unmark that record first.';
+      if(r.blockedPaid&&r.blockedPaid.length>0)msg+='\n\nBLOCKED \u2014 a PAID record already exists on '+fmtD(start)+' for:\n'+r.blockedPaid.join(', ')+'\n\nDelete or unmark that record first.';
       if(r.noOrders&&r.noOrders.length>0)msg+='\n\nNo orders found in this date range for:\n'+r.noOrders.join(', ');
       if((r.blockedPaid&&r.blockedPaid.length)||(r.noOrders&&r.noOrders.length)||r.generated===0)alert(msg);else notify(msg);
     }catch(e){alert(e.message)}setLd(false)};
   
-  const updatePayment=async(id,updates)=>{try{await api.put('/invoice-tracking/'+id,updates);await load();setEditing(null)}catch(e){alert(e.message)}};
-  
-  const deleteInvoice=async(id)=>{if(!confirm('Delete this invoice record?'))return;try{await api.del('/invoice-tracking/'+id);await load()}catch(e){alert(e.message)}};
+  // A rolled-up month is not a database row, so it can never be PUT or DELETEd by id.
+  // Paying one means paying the weekly invoices inside it, in a single transaction.
+  const markMonth=async(inv,body)=>{
+    try{var r=await api.post('/invoice-tracking/mark-month-paid',Object.assign({
+        cleaner_id:inv.cleaner_id,month_start:inv.week_start},body||{}));
+      await load();setEditing(null);
+      notify&&notify(r.weeks_updated+' weekly invoice'+(r.weeks_updated===1?'':'s')+' updated for '+inv.cleaner_name)
+    }catch(e){alert(e.message)}};
+
+  const updatePayment=async(id,updates,inv)=>{
+    if(inv&&inv.is_rollup)return markMonth(inv,updates);
+    try{await api.put('/invoice-tracking/'+id,updates);await load();setEditing(null)}catch(e){alert(e.message)}};
+
+  const deleteInvoice=async(id,inv)=>{
+    if(inv&&inv.is_rollup){alert('This month is calculated from the weekly invoices inside it, so there is no record to delete.\n\nOpen the month to delete an individual week.');return}
+    if(!confirm('Delete this invoice record?'))return;try{await api.del('/invoice-tracking/'+id);await load()}catch(e){alert(e.message)}};
+  // Only offered for cleaners whose billable unit really is the calendar month
+  // (Lincoln Plaza, Harlem). The server refuses to touch a cleaner who settles
+  // weekly, so this can no longer delete live receivables.
   const fixMismatched=async()=>{
     try{var m=await api.get('/invoice-tracking/mismatched');
-      if(m.length===0){alert('No mismatched records found. Weekly and monthly billing are clean.');return}
+      if(m.length===0){alert('Nothing to clean up. No duplicate weekly records exist for your calendar-month cleaners.');return}
       var list=m.slice(0,10).map(function(r){return r.cleaner_name+' \u2014 week of '+fmtD(r.week_start)+' \u2014 $'+parseFloat(r.invoice_amount).toFixed(2)}).join('\n');
-      if(!confirm('Found '+m.length+' WEEKLY invoice(s) for cleaners now set to MONTHLY billing.\n\nThese are duplicates of their monthly invoices:\n\n'+list+(m.length>10?'\n... and '+(m.length-10)+' more':'')+'\n\nDelete them? (Paid records are never touched.)'))return;
+      if(!confirm('Found '+m.length+' WEEKLY record(s) for cleaners billed on the CALENDAR MONTH.\n\nFor these cleaners the monthly invoice is the receivable, so these weeks are duplicates:\n\n'+list+(m.length>10?'\n... and '+(m.length-10)+' more':'')+'\n\nDelete them? Paid records are never touched, and cleaners who pay monthly off WEEKLY invoices are never included.'))return;
       var r=await api.del('/invoice-tracking/mismatched');alert('Deleted '+r.deleted+' duplicate records');await load()
     }catch(e){alert(e.message)}};
 
@@ -1829,7 +1915,18 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
     try{var r=await api.del('/invoice-tracking/bulk-unpaid?before_date='+dt+'&billing_cycle='+payView);
       alert('Deleted '+r.deleted+' records');await load()}catch(e){alert(e.message)}};
   
-  const quickPay=async(inv)=>{try{await api.put('/invoice-tracking/'+inv.id,{amount_paid:parseFloat(inv.invoice_amount),status:'paid',paid_date:new Date().toISOString().split('T')[0]});await load()}catch(e){alert(e.message)}};
+  // One click on a rolled-up month marks every weekly invoice inside it paid.
+  // This is the "stop making me click Paid four times" action.
+  const quickPay=async(inv)=>{
+    if(inv.is_rollup){
+      if(!confirm('Mark all '+(inv.week_count||0)+' weekly invoices in '+fmtD(inv.week_start)+' – '+fmtD(inv.week_end)+' as PAID for '+inv.cleaner_name+'?\n\nTotal: '+fmtC(inv.invoice_amount)))return;
+      return markMonth(inv,{status:'paid',paid_date:new Date().toISOString().split('T')[0]});
+    }
+    try{await api.put('/invoice-tracking/'+inv.id,{amount_paid:parseFloat(inv.invoice_amount),status:'paid',paid_date:new Date().toISOString().split('T')[0]});await load()}catch(e){alert(e.message)}};
+
+  // Edits one week nested inside an expanded month, then refreshes the roll-up
+  const updateNestedWeek=async(wk,updates)=>{
+    try{await api.put('/invoice-tracking/'+wk.id,updates);await load()}catch(e){alert(e.message)}};
   
   const startEdit=(inv)=>{setEditing(inv.id);setEditPay(inv.amount_paid||'');setEditNote(inv.notes||'');setEditStat(inv.status||'unpaid')};
   const handlePayChange=(val)=>{setEditPay(val);if(parseFloat(val)>0&&editStat==='unpaid')setEditStat('partial')};
@@ -1837,8 +1934,9 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
   
   const exportExcel=()=>{
     const wb=XLSX.utils.book_new();
-    const unpaidTotal=data.filter(d=>d.status==='unpaid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid||0),0);
-    const cleanerUnpaid={};data.forEach(d=>{if(d.status==='unpaid'){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=parseFloat(d.invoice_amount)-parseFloat(d.amount_paid||0)}});
+    const unpaidTotal=data.reduce((sum,d)=>sum+(d.is_rollup?parseFloat(d.balance_due||0):(d.status==='unpaid'?parseFloat(d.invoice_amount)-parseFloat(d.amount_paid||0):0)),0);
+    const bal_=function(d){if(d.is_rollup)return parseFloat(d.balance_due||0);if(d.status!=='unpaid')return 0;return parseFloat(d.invoice_amount||0)-parseFloat(d.amount_paid||0)};
+    const cleanerUnpaid={};data.forEach(d=>{const b=bal_(d);if(b>0){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=b}});
     if(summary&&summary.cleaners){const sumRows=[['Cleaner','Route','Total Invoiced','Total Paid','Balance Due (Unpaid Only)']];summary.cleaners.forEach(c=>sumRows.push([c.cleaner_name,c.route,parseFloat(c.total_invoiced),parseFloat(c.total_paid),cleanerUnpaid[c.cleaner_name]||0]));sumRows.push(['','','','','']);sumRows.push(['TOTAL','',summary.overall.total_invoiced,summary.overall.total_paid,unpaidTotal]);XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sumRows),'Summary')}
     if(data.length>0){const detRows=[['Cleaner','Week Start','Week End','Invoice Amount','Amount Paid','Balance','Status','Notes']];data.forEach(d=>detRows.push([d.cleaner_name,d.week_start?d.week_start.split('T')[0]:'',d.week_end?d.week_end.split('T')[0]:'',parseFloat(d.invoice_amount),parseFloat(d.amount_paid),parseFloat(d.invoice_amount)-parseFloat(d.amount_paid),d.status,d.notes||'']));XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(detRows),'Details')}
     XLSX.writeFile(wb,'payment_tracking_'+new Date().toISOString().split('T')[0]+'.xlsx')};
@@ -1849,10 +1947,13 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
     const cleaner=cleaners.find(c=>c.id===inv.cleaner_id);
     const weekNum=Math.ceil((new Date(wkStart).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);
     const clnIdx=cleaners.findIndex(c=>c.id===inv.cleaner_id)+1;
-    const invoiceId=payView==='monthly'?20000+(new Date(wkStart).getMonth()+1)*100+clnIdx:10000+(weekNum*100)+clnIdx;
+    // force_weekly is set when opening ONE week nested inside an expanded month,
+    // so it gets a plain weekly invoice rather than a month-style breakdown.
+    const asMonth=payView==='monthly'&&!inv.force_weekly;
+    const invoiceId=asMonth?20000+(new Date(wkStart).getMonth()+1)*100+clnIdx:10000+(weekNum*100)+clnIdx;
     // Group orders by week for monthly view
     var weeklyBreakdown=null;
-    if(payView==='monthly'&&d.orders&&d.orders.length>0){
+    if(asMonth&&d.orders&&d.orders.length>0){
       weeklyBreakdown={};
       d.orders.forEach(function(o){
         var dateStr=o.pickup_date?o.pickup_date.split('T')[0]:null;
@@ -1864,7 +1965,7 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
         weeklyBreakdown[wk].orders.push(o);weeklyBreakdown[wk].total+=parseFloat(o.total||0);weeklyBreakdown[wk].weight+=parseFloat(o.weight||0);
       });
     }
-    setViewInv({cleaner:cleaner||{name:inv.cleaner_name},displayName:invoiceName(cleaner?.name||inv.cleaner_name),start:wkStart,end:wkEnd,orders:d.orders,ordersTotal:d.ordersTotal,congestionZone:d.congestionZone,congestionDays:d.congestionDays,congestionSurcharge:d.congestionSurcharge,total:d.grandTotal,invoiceId,weeklyBreakdown,isMonthly:payView==='monthly'});
+    setViewInv({cleaner:cleaner||{name:inv.cleaner_name},displayName:invoiceName(cleaner?.name||inv.cleaner_name),start:wkStart,end:wkEnd,orders:d.orders,ordersTotal:d.ordersTotal,congestionZone:d.congestionZone,congestionDays:d.congestionDays,congestionSurcharge:d.congestionSurcharge,total:d.grandTotal,invoiceId,weeklyBreakdown,isMonthly:asMonth});
     }catch(e){alert('Error loading invoice: '+e.message)}setLd(false)};
   
   const exportViewPDF=()=>{if(!viewInv)return;
@@ -1896,7 +1997,14 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
   const groupedByWeek={};filteredData.forEach(d=>{const wk=d.week_start?d.week_start.split('T')[0]:'unknown';if(!groupedByWeek[wk])groupedByWeek[wk]=[];groupedByWeek[wk].push(d)});
   
   const unpaidTotal=filteredData.filter(d=>d.status==='unpaid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid||0),0);
-  const cleanerUnpaid={};filteredData.forEach(d=>{if(d.status==='unpaid'){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=parseFloat(d.invoice_amount)-parseFloat(d.amount_paid||0)}});
+  const rowBalance=function(d){
+    // A rolled-up month carries balance_due from the server (unpaid weeks only).
+    // Every other row keeps the existing rule: a 'partial' record is closed business.
+    if(d.is_rollup)return parseFloat(d.balance_due||0);
+    if(d.status!=='unpaid')return 0;
+    return parseFloat(d.invoice_amount||0)-parseFloat(d.amount_paid||0);
+  };
+  const cleanerUnpaid={};filteredData.forEach(d=>{const b=rowBalance(d);if(b>0){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=b}});
 
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
@@ -1928,7 +2036,12 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
       React.createElement('div',{style:{display:'flex',gap:'8px'}},
         React.createElement('select',{id:'genCleanerId',style:{...S.inp,flex:1,padding:'8px'}},
           React.createElement('option',{value:''},'All '+payView+' clients'),
-          cleaners.filter(function(c){return(c.billing_cycle||'weekly')===payView}).map(function(c){return React.createElement('option',{key:c.id,value:c.id},c.name)})),
+          cleaners.filter(function(c){
+            var cyc=c.billing_cycle||'weekly';
+            // The Monthly tab covers BOTH true calendar-month cleaners and weekly
+            // cleaners who settle once a month; the Weekly tab lists every weekly cleaner.
+            return payView==='monthly'?(cyc==='monthly'||c.settles_monthly):cyc==='weekly';
+          }).map(function(c){return React.createElement('option',{key:c.id,value:c.id},c.name+(c.settles_monthly&&(c.billing_cycle||'weekly')==='weekly'?' (pays monthly)':''))})),
         React.createElement('button',{onClick:function(){var sel=document.getElementById('genCleanerId');generateWeek(sel?sel.value:'')},disabled:ld,style:{...S.btn,flex:1,opacity:ld?0.6:1}},ld?t.loading:'Generate from Orders'))),
     
     summary&&summary.cleaners&&React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
@@ -1949,7 +2062,7 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
       React.createElement('h3',{style:{marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}},
         React.createElement('span',null,(function(){var wkRecs=data.filter(function(d){return d.week_start&&d.week_start.split('T')[0]===week});var wkEndDate=wkRecs.length>0&&wkRecs[0].week_end?wkRecs[0].week_end.split('T')[0]:null;return(payView==='monthly'?'Month: ':'Week: ')+fmtD(week)+(wkEndDate?' - '+fmtD(wkEndDate):'')})()),
         (function(){var wkInvs=data.filter(function(d){if(!d.week_start||d.week_start.split('T')[0]!==week)return false;if(paySearch&&!(d.cleaner_name||'').toLowerCase().includes(paySearch.toLowerCase()))return false;return true});var wkTotal=wkInvs.reduce(function(s,d){return s+parseFloat(d.invoice_amount||0)},0);var wkPaid=wkInvs.reduce(function(s,d){return s+parseFloat(d.amount_paid||0)},0);
-          var wkUnpaid=wkInvs.filter(function(d){return d.status==='unpaid'}).reduce(function(s,d){return s+parseFloat(d.invoice_amount||0)-parseFloat(d.amount_paid||0)},0);
+          var wkUnpaid=wkInvs.reduce(function(s,d){return s+rowBalance(d)},0);
           return React.createElement('span',{style:{fontSize:'14px',fontWeight:'normal'}},
             React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold'}},fmtC(wkTotal)),
             React.createElement('span',{style:{color:'#64748b'}},' invoiced | '),
@@ -1975,23 +2088,63 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
               React.createElement('td',{style:{padding:'8px'}},React.createElement('input',{type:'text',value:editNote,onChange:e=>setEditNote(e.target.value),placeholder:'Notes',style:{...S.inp,width:'80px',padding:'4px'}})),
               React.createElement('td',{style:{padding:'8px',textAlign:'center'}},React.createElement('select',{value:editStat,onChange:function(e){handleStatChange(e.target.value,inv)},style:{...S.inp,padding:'4px'}},React.createElement('option',{value:'unpaid'},'Unpaid'),React.createElement('option',{value:'partial'},'Partial'),React.createElement('option',{value:'paid'},'Paid'))),
               React.createElement('td',{style:{padding:'8px',textAlign:'center'}},
-                React.createElement('button',{onClick:function(){var amt=parseFloat(editPay)||0;if(editStat==='paid'&&amt===0)amt=parseFloat(inv.invoice_amount);updatePayment(inv.id,{amount_paid:amt,notes:editNote,status:editStat,paid_date:new Date().toISOString().split('T')[0]});},style:{...S.btn,padding:'4px 8px',fontSize:'12px',marginRight:'4px'}},'Save'),
+                React.createElement('button',{onClick:function(){var amt=parseFloat(editPay)||0;if(editStat==='paid'&&amt===0)amt=parseFloat(inv.invoice_amount);updatePayment(inv.id,{amount_paid:amt,notes:editNote,status:editStat,paid_date:new Date().toISOString().split('T')[0]},inv);},style:{...S.btn,padding:'4px 8px',fontSize:'12px',marginRight:'4px'}},'Save'),
                 React.createElement('button',{onClick:function(){setEditing(null);},style:{...S.cancel,padding:'4px 8px',fontSize:'12px'}},'X')));
           }
-          return React.createElement('tr',{key:inv.id,style:{borderBottom:'1px solid #334155'}},
-            React.createElement('td',{style:{padding:'8px'}},inv.cleaner_name),
+          // A rolled-up month shows a chevron and the week count, and expands to its weeks.
+          const isUp=!!inv.is_rollup, isOpen=!!expanded[inv.id];
+          const nameCell=isUp?React.createElement('td',{style:{padding:'8px'}},
+              React.createElement('span',{onClick:function(){setExpanded(Object.assign({},expanded,{[inv.id]:!isOpen}))},
+                style:{cursor:'pointer',userSelect:'none'},title:'Show the weekly invoices in this month'},
+                React.createElement('span',{style:{display:'inline-block',width:'14px',color:'#60a5fa',fontWeight:'bold'}},isOpen?'▾':'▸'),
+                inv.cleaner_name,
+                React.createElement('span',{style:{marginLeft:'8px',fontSize:'11px',color:'#94a3b8',background:'rgba(96,165,250,0.12)',padding:'2px 6px',borderRadius:'4px'}},
+                  (inv.week_count||0)+' wk'+((inv.week_count||0)===1?'':'s'))))
+            :React.createElement('td',{style:{padding:'8px'}},inv.cleaner_name,
+              payView==='monthly'?React.createElement('span',{style:{marginLeft:'8px',fontSize:'11px',color:'#fbbf24'}},'calendar month'):null);
+          const mainRow=React.createElement('tr',{key:inv.id,style:{borderBottom:'1px solid #334155'}},
+            nameCell,
             React.createElement('td',{style:{padding:'8px',textAlign:'right'}},fmtC(inv.invoice_amount)),
             React.createElement('td',{style:{padding:'8px',textAlign:'right',color:parseFloat(inv.amount_paid)>0?'#4ade80':'#64748b'}},parseFloat(inv.amount_paid)>0?fmtC(inv.amount_paid):'—'),
-            React.createElement('td',{style:{padding:'8px',textAlign:'right',color:(bal>0&&inv.status==='unpaid')?'#ef4444':'#4ade80',fontWeight:'bold'}},(inv.status==='partial'||bal<=0)?'$0.00':fmtC(bal)),
+            // For a rolled-up month the server sends balance_due, which counts only the
+            // weeks still unpaid. Weeks settled as 'partial' are closed and count zero.
+            React.createElement('td',{style:{padding:'8px',textAlign:'right',color:(isUp?parseFloat(inv.balance_due||0)>0:(bal>0&&inv.status==='unpaid'))?'#ef4444':'#4ade80',fontWeight:'bold'}},
+              isUp?fmtC(inv.balance_due||0):((inv.status==='partial'||bal<=0)?'$0.00':fmtC(bal))),
+            // A part-paid MONTH keeps its one-click action - the whole point is not having
+            // to open it and tick the remaining weeks one at a time.
             React.createElement('td',{style:{padding:'8px',textAlign:'center'}},inv.status==='paid'?
               React.createElement('span',{style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#065f46',color:'#4ade80',cursor:'default'}},'✓ Paid'):
-              inv.status==='partial'?
-              React.createElement('span',{style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#065f46',color:'#4ade80',cursor:'default'}},'✓ Partial'):
-              React.createElement('button',{onClick:function(){quickPay(inv)},style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',border:'2px solid #ef4444',background:'rgba(127,29,29,0.5)',color:'#fecaca',cursor:'pointer'}},'Mark Paid')),
+              (isUp?
+                React.createElement('button',{onClick:function(){quickPay(inv)},style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',border:'2px solid '+(inv.status==='partial'?'#f59e0b':'#ef4444'),background:inv.status==='partial'?'rgba(120,53,15,0.5)':'rgba(127,29,29,0.5)',color:inv.status==='partial'?'#fde68a':'#fecaca',cursor:'pointer'}},inv.status==='partial'?'Pay Rest':'Mark Paid')
+                :inv.status==='partial'?
+                React.createElement('span',{style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#065f46',color:'#4ade80',cursor:'default'}},'✓ Partial'):
+                React.createElement('button',{onClick:function(){quickPay(inv)},style:{padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',border:'2px solid #ef4444',background:'rgba(127,29,29,0.5)',color:'#fecaca',cursor:'pointer'}},'Mark Paid'))),
             React.createElement('td',{style:{padding:'8px',textAlign:'center'}},
               React.createElement('button',{onClick:function(){viewInvoice(inv);},style:{...S.btn,padding:'4px 8px',fontSize:'11px',marginRight:'4px',background:'#0ea5e9'}},'View'),
               React.createElement('button',{onClick:function(){startEdit(inv);},style:{...S.edit,padding:'4px 8px',fontSize:'11px',marginRight:'4px'}},'Edit'),
-              React.createElement('button',{onClick:function(){deleteInvoice(inv.id);},style:{...S.del,padding:'4px 8px',fontSize:'11px'}},'X')));
+              inv.is_rollup?null:React.createElement('button',{onClick:function(){deleteInvoice(inv.id,inv);},style:{...S.del,padding:'4px 8px',fontSize:'11px'}},'X')));
+
+          if(!(isUp&&isOpen))return mainRow;
+          // Nested weekly invoices - the actual billable records behind this month.
+          // Each stays individually editable, so a single short week can be fixed
+          // without touching the rest of the month.
+          const weekRows=(inv.weeks||[]).map(function(w){
+            const wbal=parseFloat(w.invoice_amount||0)-parseFloat(w.amount_paid||0);
+            return React.createElement('tr',{key:inv.id+'-w'+w.id,style:{borderBottom:'1px solid #1e293b',background:'rgba(15,23,42,0.5)'}},
+              React.createElement('td',{style:{padding:'6px 8px 6px 28px',fontSize:'12px',color:'#94a3b8'}},
+                fmtD(w.week_start)+' – '+fmtD(w.week_end)),
+              React.createElement('td',{style:{padding:'6px 8px',textAlign:'right',fontSize:'12px'}},fmtC(w.invoice_amount)),
+              React.createElement('td',{style:{padding:'6px 8px',textAlign:'right',fontSize:'12px',color:parseFloat(w.amount_paid||0)>0?'#4ade80':'#64748b'}},parseFloat(w.amount_paid||0)>0?fmtC(w.amount_paid):'—'),
+              React.createElement('td',{style:{padding:'6px 8px',textAlign:'right',fontSize:'12px',color:(wbal>0&&w.status==='unpaid')?'#ef4444':'#4ade80'}},(w.status==='partial'||wbal<=0)?'$0.00':fmtC(wbal)),
+              React.createElement('td',{style:{padding:'6px 8px',textAlign:'center'}},
+                w.status==='paid'||w.status==='partial'?
+                  React.createElement('span',{style:{padding:'2px 8px',borderRadius:'5px',fontSize:'11px',fontWeight:'bold',background:'#065f46',color:'#4ade80'}},w.status==='paid'?'✓ Paid':'✓ Partial'):
+                  React.createElement('button',{onClick:function(){updateNestedWeek(w,{amount_paid:parseFloat(w.invoice_amount),status:'paid',paid_date:new Date().toISOString().split('T')[0]})},style:{padding:'2px 8px',borderRadius:'5px',fontSize:'11px',fontWeight:'bold',border:'1px solid #ef4444',background:'rgba(127,29,29,0.5)',color:'#fecaca',cursor:'pointer'}},'Mark Paid')),
+              React.createElement('td',{style:{padding:'6px 8px',textAlign:'center'}},
+                React.createElement('button',{onClick:function(){viewInvoice({cleaner_id:inv.cleaner_id,cleaner_name:inv.cleaner_name,week_start:w.week_start,week_end:w.week_end,force_weekly:true})},style:{...S.btn,padding:'2px 6px',fontSize:'10px',marginRight:'4px',background:'#0ea5e9'}},'View'),
+                w.status==='unpaid'?null:React.createElement('button',{onClick:function(){updateNestedWeek(w,{amount_paid:0,status:'unpaid',paid_date:null})},style:{...S.cancel,padding:'2px 6px',fontSize:'10px'}},'Unpay')));
+          });
+          return [mainRow].concat(weekRows);
         }))))),
     viewInv&&React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'20px',overflow:'auto'}},
       React.createElement('div',{style:{background:'#fff',borderRadius:'12px',maxWidth:'800px',width:'100%',maxHeight:'90vh',overflow:'auto',color:'#000'}},
@@ -2282,6 +2435,55 @@ function StaffNameManager({notify}){
         React.createElement('button',{onClick:()=>del(s.id,s.name),style:{background:'#ef4444',border:'none',color:'#fff',width:'20px',height:'20px',borderRadius:'4px',cursor:'pointer',fontSize:'12px',lineHeight:'1'}},'\u2715')))));
 }
 
+// Admin-only. Retires the stored monthly roll-up rows for cleaners who actually
+// settle off their weekly invoices, so a month can never be counted twice and can
+// never sit permanently unpaid. Dry run writes nothing.
+function BillingMigration({notify}){
+  const[busy,setBusy]=useState(false);const[res,setRes]=useState(null);const[err,setErr]=useState('');
+  const[trueMonthly,setTrueMonthly]=useState('Lincoln Plaza, Harlem');
+  const run=async(apply)=>{
+    var names=trueMonthly.split(',').map(function(s){return s.trim()}).filter(Boolean);
+    if(apply&&!confirm('Apply the change?\n\nEvery cleaner currently set to Monthly EXCEPT ['+names.join(', ')+'] becomes:\n  Billing = Weekly + "pays once a month"\n\nAny payment recorded on their monthly row is moved onto that month\'s weekly invoices, oldest first, then the monthly row is deleted.\n\nRun the Dry Run first and read it.'))return;
+    setBusy(true);setErr('');setRes(null);
+    try{var r=await api.post('/invoice-tracking/migrate-monthly',{dry_run:!apply,true_monthly:names});setRes(r);
+      if(apply)notify&&notify('Billing migration applied')}catch(e){setErr(e.message)}
+    setBusy(false)};
+  const money=function(n){return '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})};
+  return React.createElement('div',{style:{...S.card,marginBottom:'20px',border:'1px solid #475569'}},
+    React.createElement('h4',{style:{color:'#fbbf24',marginBottom:'8px'}},'🧮 Billing Cycle Cleanup'),
+    React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',lineHeight:'1.6',marginBottom:'12px'}},
+      'Some cleaners were set to Monthly but actually pay off the WEEKLY invoices you hand them. That left a monthly record that could never be marked paid, and made Reports count their revenue twice. This converts those cleaners to Weekly + "pays once a month" and moves any recorded payment onto the real weekly invoices.',
+      React.createElement('div',{style:{marginTop:'8px',color:'#cbd5e1'}},'Cleaners whose invoice really does cover the calendar month (1st to last day) are listed below and left alone.')),
+    React.createElement('label',{style:S.lbl},'Keep these as true CALENDAR MONTH billing (comma separated, partial names match)'),
+    React.createElement('input',{value:trueMonthly,onChange:function(e){setTrueMonthly(e.target.value)},style:{...S.inp,marginBottom:'12px'}}),
+    React.createElement('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+      React.createElement('button',{onClick:function(){run(false)},disabled:busy,style:{...S.btn,background:'#0ea5e9',opacity:busy?0.6:1}},busy?'Working...':'1. Dry Run (changes nothing)'),
+      React.createElement('button',{onClick:function(){run(true)},disabled:busy||!res||res.dry_run===false,style:{...S.btn,background:'#f59e0b',opacity:(busy||!res||res.dry_run===false)?0.5:1}},'2. Apply')),
+    !res&&!err&&React.createElement('div',{style:{marginTop:'10px',fontSize:'11px',color:'#64748b'}},'Run the Dry Run first — Apply stays locked until you have.'),
+    err&&React.createElement('div',{style:{marginTop:'12px',padding:'10px',borderRadius:'6px',background:'rgba(127,29,29,0.4)',color:'#fecaca',fontSize:'12px'}},err),
+    res&&React.createElement('div',{style:{marginTop:'12px',padding:'12px',borderRadius:'8px',background:'#0f172a',fontSize:'12px'}},
+      React.createElement('div',{style:{fontWeight:'bold',color:res.dry_run?'#60a5fa':'#4ade80',marginBottom:'8px'}},
+        res.dry_run?'DRY RUN — nothing was changed':'APPLIED'),
+      React.createElement('div',{style:{color:'#cbd5e1',lineHeight:'1.7'}},
+        React.createElement('div',null,'Kept as calendar month: ',React.createElement('b',null,(res.kept_as_true_monthly||[]).join(', ')||'none')),
+        React.createElement('div',null,'Converted to weekly + pays monthly: ',React.createElement('b',null,(res.converted_to_weekly_pays_monthly||[]).join(', ')||'none')),
+        React.createElement('div',null,'Monthly rows removed: ',React.createElement('b',null,res.monthly_rows_deleted)),
+        React.createElement('div',null,'Kept because no weekly invoices exist for that month: ',React.createElement('b',null,res.monthly_rows_kept_no_weeks)),
+        React.createElement('div',null,'Payments moved onto weekly invoices: ',React.createElement('b',null,money(res.payments_reallocated)))),
+      (res.log||[]).length>0&&React.createElement('div',{style:{marginTop:'10px',maxHeight:'260px',overflow:'auto',borderTop:'1px solid #334155',paddingTop:'8px'}},
+        (res.log||[]).map(function(e,i){
+          var mismatch=Math.abs((e.monthly_amount||0)-(e.weekly_total||0))>0.01;
+          return React.createElement('div',{key:i,style:{padding:'6px 0',borderBottom:'1px solid #1e293b'}},
+            React.createElement('div',{style:{color:'#e2e8f0'}},React.createElement('b',null,e.cleaner),' — ',e.month),
+            React.createElement('div',{style:{color:'#94a3b8'}},'monthly '+money(e.monthly_amount)+' (paid '+money(e.monthly_paid)+')  vs  '+e.weekly_rows_found+' weekly invoices totalling '+money(e.weekly_total)),
+            mismatch&&React.createElement('div',{style:{color:'#fbbf24'}},'⚠ the weeks do not add up to the monthly figure — check this one before applying'),
+            React.createElement('div',{style:{color:e.action&&e.action.indexOf('KEPT')===0?'#fbbf24':'#4ade80'}},e.action),
+            (e.applied||[]).length>0&&React.createElement('div',{style:{color:'#64748b',fontSize:'11px'}},
+              (e.applied||[]).map(function(a){return a.week_start+': '+money(a.amount)+' → '+a.new_status}).join('  |  ')),
+            (e.unapplied||0)>0.01&&React.createElement('div',{style:{color:'#f87171'}},'⚠ '+money(e.unapplied)+' could not be placed — the weeks were already fully paid'));
+        }))));
+}
+
 function R2Migration(){
   const[st,setSt]=useState(null);const[busy,setBusy]=useState(false);const[log,setLog]=useState('');
   const[testing,setTesting]=useState(false);const[test,setTest]=useState(null);
@@ -2392,6 +2594,7 @@ function Settings({settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})
         React.createElement('h4',{style:{color:'#60a5fa',marginBottom:'8px'}},'\ud83d\udcbe Photo Storage'),
         React.createElement(R2Migration,null)),
       React.createElement('button',{type:'submit',disabled:sav,style:{...S.btn,width:'100%',opacity:sav?0.6:1,marginTop:'16px'}},sav?'...':t.saveSettings)),
+    React.createElement(BillingMigration,{notify}),
     React.createElement('div',{style:{...S.card,maxWidth:'500px',marginBottom:'20px',border:'1px solid #6366f1'}},
       React.createElement(StaffNameManager,{notify})),
     React.createElement('div',{style:{...S.card,maxWidth:'500px',marginBottom:'20px',border:'1px solid #059669'}},
