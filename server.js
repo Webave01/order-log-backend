@@ -242,6 +242,14 @@ async function initDB() {
     await client.query(`
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS has_addresses BOOLEAN DEFAULT false;
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20) DEFAULT 'weekly';
+      -- settles_monthly is SEPARATE from billing_cycle and solves the Golden Star case.
+      --   billing_cycle = which record is the billable document of truth:
+      --     'weekly'  -> Mon-Sat week rows (the normal case)
+      --     'monthly' -> calendar-month rows, 1st to last day (Lincoln Plaza, Harlem)
+      --   settles_monthly = the cleaner batches ONE payment per month but the amount is
+      --     the sum of the WEEKLY invoices, not a 1st-to-31st figure. Display/collection
+      --     convenience only - it never changes which rows are billable.
+      ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS settles_monthly BOOLEAN DEFAULT false;
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS ticket_format TEXT;
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_name VARCHAR(255);
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_address VARCHAR(255);
@@ -345,6 +353,32 @@ async function initDB() {
         active BOOLEAN DEFAULT true,
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // 'drivers' must exist BEFORE shift_assignments, which has an FK to it.
+    // The full definition (with its ALTER TABLE column additions) appears further
+    // down in the DRIVER SCHEDULING section; this is the identical CREATE hoisted up
+    // so the FK below can resolve. Both are IF NOT EXISTS, so whichever runs first
+    // wins and the other is a no-op.
+    //
+    // Without this, initDB aborts here on a FRESH database - the drivers table, the
+    // seeded admin user and every table after this point are never created. It was
+    // invisible on the live database only because those tables already existed.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS drivers (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        name VARCHAR(100) NOT NULL,
+        phone VARCHAR(20),
+        email VARCHAR(100),
+        hourly_rate DECIMAL(10,2) NOT NULL DEFAULT 16.50,
+        overtime_rate DECIMAL(10,2),
+        status VARCHAR(20) DEFAULT 'active',
+        hired_date DATE DEFAULT CURRENT_DATE,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
 
@@ -518,6 +552,13 @@ async function initDB() {
       CREATE INDEX IF NOT EXISTS idx_exceptions_date ON schedule_exceptions(exception_date);
     `);
 
+    // These two columns must be added BEFORE the branch below, not inside the else.
+    // On a fresh database 'routes' is empty, so the if-branch runs and its INSERT
+    // names has_shifts - a column that only got added in the else-branch. initDB
+    // aborted here on any empty database.
+    try { await client.query("ALTER TABLE routes ADD COLUMN IF NOT EXISTS has_shifts BOOLEAN DEFAULT false"); } catch (e) {}
+    try { await client.query("ALTER TABLE routes ADD COLUMN IF NOT EXISTS requires_clock_in BOOLEAN DEFAULT false"); } catch (e) {}
+
     // Seed routes and shifts if empty
     const routeCheck = await client.query('SELECT COUNT(*) FROM routes');
     if (parseInt(routeCheck.rows[0].count) === 0) {
@@ -531,10 +572,7 @@ async function initDB() {
           ('Panda', 'Panda route', '{1,5}', false)
       `);
     } else {
-      // Migration: add has_shifts column
-      try { await client.query("ALTER TABLE routes ADD COLUMN IF NOT EXISTS has_shifts BOOLEAN DEFAULT false"); } catch(e) {}
-      // Migration: add requires_clock_in column
-      try { await client.query("ALTER TABLE routes ADD COLUMN IF NOT EXISTS requires_clock_in BOOLEAN DEFAULT false"); } catch(e) {}
+      // (has_shifts / requires_clock_in are added above, before this branch)
       // Migration: update existing East/West and add missing routes
       await client.query("UPDATE routes SET has_shifts = true WHERE name ILIKE '%east%' OR name ILIKE '%west%'");
       await client.query("UPDATE routes SET requires_clock_in = true WHERE name ILIKE '%panda%' OR name ILIKE '%school%' OR name ILIKE '%sleepy%'");
@@ -1117,11 +1155,11 @@ app.get('/api/cleaners', authenticate, async (req, res) => {
 });
 
 app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, ticket_format, dba_name, dba_address, dba_phone } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, settles_monthly, ticket_format, dba_name, dba_address, dba_phone } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, ticket_format, dba_name, dba_address, dba_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *',
-      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', ticket_format || null, dba_name || null, dba_address || null, dba_phone || null]
+      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, settles_monthly, ticket_format, dba_name, dba_address, dba_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *',
+      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', settles_monthly || false, ticket_format || null, dba_name || null, dba_address || null, dba_phone || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -1131,11 +1169,11 @@ app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res
 
 app.put('/api/cleaners/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { id } = req.params;
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, ticket_format, dba_name, dba_address, dba_phone } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, settles_monthly, ticket_format, dba_name, dba_address, dba_phone } = req.body;
   try {
     const result = await pool.query(
-      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, has_addresses=$8, billing_cycle=$9, ticket_format=$10, dba_name=$11, dba_address=$12, dba_phone=$13 WHERE id=$14 RETURNING *',
-      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', ticket_format || null, dba_name || null, dba_address || null, dba_phone || null, id]
+      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, has_addresses=$8, billing_cycle=$9, settles_monthly=$10, ticket_format=$11, dba_name=$12, dba_address=$13, dba_phone=$14 WHERE id=$15 RETURNING *',
+      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', settles_monthly || false, ticket_format || null, dba_name || null, dba_address || null, dba_phone || null, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Cleaner not found' });
     res.json(result.rows[0]);
@@ -1675,23 +1713,32 @@ app.get('/api/reports/daily', authenticate, requirePerm('reports'), async (req, 
 app.get('/api/reports/invoice-revenue', authenticate, requirePerm('reports'), async (req, res) => {
   const { start_date, end_date } = req.query;
   try {
+    // DOUBLE-COUNT GUARD: a cleaner contributes exactly ONE row type - the one that
+    // matches its own billing_cycle. Weekly cleaners contribute their weekly rows;
+    // true monthly cleaners (Lincoln Plaza, Harlem) contribute their calendar-month
+    // rows. Without this, a cleaner holding both is counted twice; filtering to
+    // weekly-only instead would drop the true monthly cleaners out of revenue entirely.
+    const CYCLE_MATCH = "AND COALESCE(it.billing_cycle,'weekly') = COALESCE(c.billing_cycle,'weekly')";
+
     const totals = await pool.query(`
-      SELECT COUNT(*) as invoice_count, COALESCE(SUM(invoice_amount),0) as total_invoiced,
-        COALESCE(SUM(amount_paid),0) as total_paid, COALESCE(SUM(invoice_amount - amount_paid),0) as total_due
-      FROM invoice_tracking WHERE week_start >= $1 AND week_end <= $2`, [start_date, end_date]);
+      SELECT COUNT(*) as invoice_count, COALESCE(SUM(it.invoice_amount),0) as total_invoiced,
+        COALESCE(SUM(it.amount_paid),0) as total_paid, COALESCE(SUM(it.invoice_amount - it.amount_paid),0) as total_due
+      FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id
+      WHERE it.week_start >= $1 AND it.week_end <= $2 ${CYCLE_MATCH}`, [start_date, end_date]);
 
     const byCleaner = await pool.query(`
       SELECT c.name, c.route, COUNT(*) as invoices, COALESCE(SUM(it.invoice_amount),0) as invoiced,
         COALESCE(SUM(it.amount_paid),0) as paid, COALESCE(SUM(it.invoice_amount - it.amount_paid),0) as due
       FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id
-      WHERE it.week_start >= $1 AND it.week_end <= $2
+      WHERE it.week_start >= $1 AND it.week_end <= $2 ${CYCLE_MATCH}
       GROUP BY c.id, c.name, c.route ORDER BY invoiced DESC`, [start_date, end_date]);
 
     const byMonth = await pool.query(`
-      SELECT TO_CHAR(week_start, 'YYYY-MM') as month, COUNT(*) as invoices,
-        COALESCE(SUM(invoice_amount),0) as invoiced, COALESCE(SUM(amount_paid),0) as paid
-      FROM invoice_tracking WHERE week_start >= $1 AND week_end <= $2
-      GROUP BY TO_CHAR(week_start, 'YYYY-MM') ORDER BY month`, [start_date, end_date]);
+      SELECT TO_CHAR(it.week_start, 'YYYY-MM') as month, COUNT(*) as invoices,
+        COALESCE(SUM(it.invoice_amount),0) as invoiced, COALESCE(SUM(it.amount_paid),0) as paid
+      FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id
+      WHERE it.week_start >= $1 AND it.week_end <= $2 ${CYCLE_MATCH}
+      GROUP BY TO_CHAR(it.week_start, 'YYYY-MM') ORDER BY month`, [start_date, end_date]);
 
     res.json({ totals: totals.rows[0], byCleaner: byCleaner.rows, byMonth: byMonth.rows });
   } catch (err) { console.error('Invoice revenue error:', err); res.status(500).json({ error: err.message }); }
@@ -1926,9 +1973,12 @@ app.get('/api/invoice-tracking', authenticate, requirePerm('invoices'), async (r
 
 app.get('/api/invoice-tracking/summary', authenticate, requirePerm('invoices'), async (req, res) => {
   try {
-    const { billing_cycle } = req.query;
-    const bcFilter = billing_cycle ? " WHERE COALESCE(it.billing_cycle, 'weekly') = $1" : "";
-    const params = billing_cycle ? [billing_cycle] : [];
+    // Same double-count guard as /reports/invoice-revenue: each cleaner contributes only
+    // the row type matching its own billing_cycle. These are all-time per-cleaner totals,
+    // so the figure is identical on the Weekly and Monthly tabs - the billing_cycle query
+    // param is accepted and ignored for backward compatibility.
+    const bcFilter = " WHERE COALESCE(it.billing_cycle,'weekly') = COALESCE(c.billing_cycle,'weekly')";
+    const params = [];
     const result = await pool.query(`
       SELECT c.name as cleaner_name, c.route,
         SUM(it.invoice_amount) as total_invoiced,
@@ -1938,11 +1988,13 @@ app.get('/api/invoice-tracking/summary', authenticate, requirePerm('invoices'), 
       GROUP BY c.id, c.name, c.route ORDER BY c.name
     `, params);
     const overall = await pool.query(`
-      SELECT SUM(invoice_amount) as total_invoiced, SUM(amount_paid) as total_paid, SUM(invoice_amount - amount_paid) as total_due
-      FROM invoice_tracking it${bcFilter}
+      SELECT SUM(it.invoice_amount) as total_invoiced, SUM(it.amount_paid) as total_paid,
+        SUM(it.invoice_amount - it.amount_paid) as total_due
+      FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id${bcFilter}
     `, params);
     res.json({ cleaners: result.rows, overall: overall.rows[0] });
   } catch (err) {
+    console.error('Invoice summary error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2053,6 +2105,286 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
   }
 });
 
+// ---------------------------------------------------------------------------
+// MONTHLY VIEW
+//
+// Two genuinely different things are served here:
+//
+//   A) TRUE MONTHLY cleaners (cleaners.billing_cycle='monthly').
+//      Lincoln Plaza and Harlem. The billable document IS the calendar month,
+//      1st to last day. Those stored monthly rows are the record of truth and
+//      are returned as-is. Their weekly rows (if any) are NOT the receivable.
+//
+//   B) WEEKLY cleaners who batch one payment per month (settles_monthly=true).
+//      Golden Star. The billable documents are the WEEKLY invoices - they just
+//      write one check covering several. So the month here is COMPUTED from the
+//      weekly rows and is never stored. Marking the month paid marks its weeks.
+//
+// Keeping these separate is what stops the double counting: group B has no
+// monthly row to collide with its weeks, and group A has no weeks counted.
+//
+// Month assignment for group B is by week_start, so a week straddling a month
+// boundary (Mon Mar 30 - Sat Apr 4) belongs wholly to March. Every week lands in
+// exactly one month, so nothing is split and nothing is counted twice.
+// ---------------------------------------------------------------------------
+app.get('/api/invoice-tracking/monthly-rollup', authenticate, requirePerm('invoices'), async (req, res) => {
+  const { cleaner_id } = req.query;
+  try {
+    const params = [];
+    let cidFilter = '';
+    if (cleaner_id) { params.push(parseInt(cleaner_id)); cidFilter = ' AND it.cleaner_id = $' + params.length; }
+
+    // GROUP A - stored calendar-month rows for true monthly cleaners
+    const stored = await pool.query(`
+      SELECT it.id, it.cleaner_id, c.name AS cleaner_name, c.route,
+             TO_CHAR(it.week_start,'YYYY-MM-DD') AS week_start,
+             TO_CHAR(it.week_end,'YYYY-MM-DD')   AS week_end,
+             it.invoice_amount, it.amount_paid, it.status, it.notes,
+             TO_CHAR(it.paid_date,'YYYY-MM-DD')  AS paid_date
+      FROM invoice_tracking it JOIN cleaners c ON c.id = it.cleaner_id
+      WHERE COALESCE(c.billing_cycle,'weekly') = 'monthly'
+        AND COALESCE(it.billing_cycle,'weekly') = 'monthly'${cidFilter}
+      ORDER BY it.week_start DESC, c.name`, params);
+
+    // GROUP B - computed roll-up of weekly rows for cleaners who pay monthly
+    const rolled = await pool.query(`
+      SELECT it.cleaner_id, c.name AS cleaner_name, c.route,
+             TO_CHAR(DATE_TRUNC('month', it.week_start),'YYYY-MM-DD') AS week_start,
+             TO_CHAR(DATE_TRUNC('month', it.week_start) + INTERVAL '1 month - 1 day','YYYY-MM-DD') AS week_end,
+             COUNT(*)::int                                   AS week_count,
+             COUNT(*) FILTER (WHERE it.status = 'paid')::int  AS weeks_paid,
+             COUNT(*) FILTER (WHERE it.status = 'partial')::int AS weeks_partial,
+             SUM(it.invoice_amount) AS invoice_amount,
+             SUM(it.amount_paid)    AS amount_paid,
+             -- Balance counts ONLY weeks still marked unpaid. A week settled as
+             -- 'partial' is closed business - the cleaner paid what they paid and no
+             -- more is expected - so it contributes zero. Without this a month showed
+             -- $0.00 due the moment any week was paid, hiding real outstanding weeks.
+             SUM(CASE WHEN it.status = 'unpaid' THEN it.invoice_amount - it.amount_paid ELSE 0 END) AS balance_due,
+             TO_CHAR(MAX(it.paid_date),'YYYY-MM-DD') AS paid_date,
+             JSON_AGG(JSON_BUILD_OBJECT(
+               'id', it.id,
+               'week_start', TO_CHAR(it.week_start,'YYYY-MM-DD'),
+               'week_end',   TO_CHAR(it.week_end,'YYYY-MM-DD'),
+               'invoice_amount', it.invoice_amount,
+               'amount_paid',    it.amount_paid,
+               'status', it.status,
+               'notes',  it.notes
+             ) ORDER BY it.week_start) AS weeks
+      FROM invoice_tracking it JOIN cleaners c ON c.id = it.cleaner_id
+      WHERE COALESCE(c.billing_cycle,'weekly') = 'weekly'
+        AND c.settles_monthly = true
+        AND COALESCE(it.billing_cycle,'weekly') = 'weekly'${cidFilter}
+      GROUP BY it.cleaner_id, c.name, c.route, DATE_TRUNC('month', it.week_start)
+      ORDER BY DATE_TRUNC('month', it.week_start) DESC, c.name`, params);
+
+    const out = [];
+    stored.rows.forEach(r => out.push(Object.assign({}, r, {
+      is_rollup: false, week_count: 1, weeks: null, source: 'calendar-month'
+    })));
+    rolled.rows.forEach(r => {
+      let status = 'unpaid';
+      if (r.week_count > 0 && r.weeks_paid === r.week_count) status = 'paid';
+      else if (r.weeks_paid > 0 || r.weeks_partial > 0 || parseFloat(r.amount_paid || 0) > 0) status = 'partial';
+      out.push(Object.assign({}, r, {
+        // Synthetic id: these rows do not exist in the table, so they can never be
+        // PUT or DELETEd by id. The frontend routes them to /mark-month-paid instead.
+        id: 'rollup-' + r.cleaner_id + '-' + r.week_start,
+        is_rollup: true, status, notes: null, source: 'weeks-rolled-up'
+      }));
+    });
+    out.sort((a, b) => (b.week_start || '').localeCompare(a.week_start || '') ||
+                       (a.cleaner_name || '').localeCompare(b.cleaner_name || ''));
+    res.json(out);
+  } catch (err) {
+    console.error('Monthly rollup error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark every WEEKLY row inside one calendar month paid/unpaid in a single transaction.
+// This is the "don't make me click Paid four times" action. An explicit amount_paid is
+// distributed oldest week first so a short check lands as partial on the last week.
+app.post('/api/invoice-tracking/mark-month-paid', authenticate, requirePerm('invoices'), async (req, res) => {
+  const { cleaner_id, month_start, status, paid_date, amount_paid, notes } = req.body;
+  if (!cleaner_id || !month_start) return res.status(400).json({ error: 'cleaner_id and month_start are required' });
+  const payDate = paid_date || new Date().toISOString().split('T')[0];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const weeks = await client.query(
+      `SELECT id, invoice_amount, amount_paid FROM invoice_tracking
+       WHERE cleaner_id = $1 AND COALESCE(billing_cycle,'weekly') = 'weekly'
+         AND DATE_TRUNC('month', week_start) = DATE_TRUNC('month', $2::date)
+       ORDER BY week_start`, [cleaner_id, month_start]);
+
+    if (weeks.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'No weekly invoices found in that month for this cleaner' });
+    }
+
+    let updated = 0, applied = 0;
+
+    if (status === 'unpaid') {
+      for (const w of weeks.rows) {
+        await client.query(
+          `UPDATE invoice_tracking SET amount_paid = 0, paid_date = NULL, status = 'unpaid' WHERE id = $1`, [w.id]);
+        updated++;
+      }
+    } else if (amount_paid !== undefined && amount_paid !== null && amount_paid !== '') {
+      // Partial / explicit amount: fill oldest weeks first until the money runs out.
+      let remaining = parseFloat(amount_paid) || 0;
+      for (const w of weeks.rows) {
+        const amt = parseFloat(w.invoice_amount) || 0;
+        const take = Math.min(amt, Math.max(remaining, 0));
+        const st = take + 0.005 >= amt && amt > 0 ? 'paid' : (take > 0 ? 'partial' : 'unpaid');
+        // paid_date is resolved here rather than in a SQL CASE. Reusing $2 both as the
+        // status value and inside a CASE comparison made Postgres fail with
+        // "inconsistent types deduced for parameter $2".
+        const pd = st === 'unpaid' ? null : payDate;
+        await client.query(
+          `UPDATE invoice_tracking SET amount_paid = $1, status = $2, paid_date = $3,
+             notes = COALESCE($4, notes) WHERE id = $5`,
+          [take.toFixed(2), st, pd, notes || null, w.id]);
+        remaining -= take; applied += take; updated++;
+      }
+    } else {
+      // Plain "mark the month paid in full"
+      for (const w of weeks.rows) {
+        await client.query(
+          `UPDATE invoice_tracking SET amount_paid = invoice_amount, paid_date = $1,
+             status = 'paid', notes = COALESCE($2, notes) WHERE id = $3`,
+          [payDate, notes || null, w.id]);
+        applied += parseFloat(w.invoice_amount) || 0;
+        updated++;
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, weeks_updated: updated, amount_applied: Math.round(applied * 100) / 100 });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Mark month paid error:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// MIGRATION - retire stored monthly rows for cleaners who actually settle weekly.
+//
+// Every cleaner currently flagged billing_cycle='monthly' EXCEPT the true monthly
+// ones is converted to: billing_cycle='weekly' + settles_monthly=true. Any payment
+// sitting on their monthly row is reallocated across that month's weekly rows,
+// oldest first, then the monthly row is deleted.
+//
+// dry_run (the default) performs NO writes - it reports exactly what would happen.
+// Send {"dry_run": false} to apply.
+// ---------------------------------------------------------------------------
+app.post('/api/invoice-tracking/migrate-monthly', authenticate, adminOnly, async (req, res) => {
+  const dryRun = req.body.dry_run !== false;
+  // Cleaners whose billable unit really is the 1st-to-last-day calendar month.
+  const trueMonthly = Array.isArray(req.body.true_monthly) && req.body.true_monthly.length
+    ? req.body.true_monthly : ['Lincoln Plaza', 'Harlem'];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const cleaners = await client.query(
+      `SELECT id, name, COALESCE(billing_cycle,'weekly') AS billing_cycle, COALESCE(settles_monthly,false) AS settles_monthly
+       FROM cleaners WHERE COALESCE(billing_cycle,'weekly') = 'monthly' ORDER BY name`);
+
+    const isTrueMonthly = (nm) => trueMonthly.some(t =>
+      String(nm || '').toLowerCase().includes(String(t).toLowerCase()));
+
+    const keep = [], convert = [];
+    cleaners.rows.forEach(c => (isTrueMonthly(c.name) ? keep : convert).push(c));
+
+    const log = [];
+    let rowsDeleted = 0, reallocated = 0, orphansKept = 0;
+
+    for (const c of convert) {
+      const monthlies = await client.query(
+        `SELECT id, TO_CHAR(week_start,'YYYY-MM-DD') AS month_start, invoice_amount, amount_paid,
+                TO_CHAR(paid_date,'YYYY-MM-DD') AS paid_date, status
+         FROM invoice_tracking
+         WHERE cleaner_id = $1 AND billing_cycle = 'monthly' ORDER BY week_start`, [c.id]);
+
+      for (const m of monthlies.rows) {
+        const weeks = await client.query(
+          `SELECT id, TO_CHAR(week_start,'YYYY-MM-DD') AS week_start, invoice_amount, amount_paid, status
+           FROM invoice_tracking
+           WHERE cleaner_id = $1 AND COALESCE(billing_cycle,'weekly') = 'weekly'
+             AND DATE_TRUNC('month', week_start) = DATE_TRUNC('month', $2::date)
+           ORDER BY week_start`, [c.id, m.month_start]);
+
+        const monthPaid = parseFloat(m.amount_paid || 0);
+        const entry = {
+          cleaner: c.name, month: m.month_start,
+          monthly_amount: parseFloat(m.invoice_amount || 0),
+          monthly_paid: monthPaid,
+          weekly_rows_found: weeks.rows.length,
+          weekly_total: weeks.rows.reduce((s, w) => s + parseFloat(w.invoice_amount || 0), 0),
+          applied: [], action: ''
+        };
+
+        if (weeks.rows.length === 0) {
+          // No weeks to carry the money or the amount - deleting would lose the record.
+          entry.action = 'KEPT - no weekly invoices exist for this month';
+          orphansKept++; log.push(entry); continue;
+        }
+
+        let remaining = monthPaid;
+        for (const w of weeks.rows) {
+          if (remaining <= 0.005) break;
+          const owed = parseFloat(w.invoice_amount || 0) - parseFloat(w.amount_paid || 0);
+          if (owed <= 0.005) continue;
+          const apply = Math.min(owed, remaining);
+          const newPaid = parseFloat(w.amount_paid || 0) + apply;
+          const newStatus = newPaid + 0.005 >= parseFloat(w.invoice_amount || 0) ? 'paid' : 'partial';
+          if (!dryRun) {
+            await client.query(
+              `UPDATE invoice_tracking SET amount_paid = $1, status = $2,
+                 paid_date = COALESCE(paid_date, $3::date) WHERE id = $4`,
+              [newPaid.toFixed(2), newStatus, m.paid_date || new Date().toISOString().split('T')[0], w.id]);
+          }
+          entry.applied.push({ week_start: w.week_start, amount: Math.round(apply * 100) / 100, new_status: newStatus });
+          remaining -= apply; reallocated += apply;
+        }
+        entry.unapplied = Math.round(remaining * 100) / 100;
+        entry.action = 'DELETED monthly row, payments moved onto the weeks';
+        if (!dryRun) await client.query('DELETE FROM invoice_tracking WHERE id = $1', [m.id]);
+        rowsDeleted++; log.push(entry);
+      }
+
+      if (!dryRun) {
+        await client.query(
+          `UPDATE cleaners SET billing_cycle = 'weekly', settles_monthly = true WHERE id = $1`, [c.id]);
+      }
+    }
+
+    const result = {
+      dry_run: dryRun,
+      kept_as_true_monthly: keep.map(c => c.name),
+      converted_to_weekly_pays_monthly: convert.map(c => c.name),
+      monthly_rows_deleted: rowsDeleted,
+      monthly_rows_kept_no_weeks: orphansKept,
+      payments_reallocated: Math.round(reallocated * 100) / 100,
+      log
+    };
+
+    if (dryRun) await client.query('ROLLBACK'); else await client.query('COMMIT');
+    res.json(result);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Migrate monthly error:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 app.put('/api/invoice-tracking/:id', authenticate, requirePerm('invoices'), async (req, res) => {
   const { amount_paid, paid_date, status, notes } = req.body;
   try {
@@ -2066,13 +2398,21 @@ app.put('/api/invoice-tracking/:id', authenticate, requirePerm('invoices'), asyn
   }
 });
 
-// Find/remove weekly records belonging to cleaners now set to monthly billing
+// Find/remove weekly records belonging to cleaners whose billable unit is the
+// calendar month (Lincoln Plaza, Harlem). For those, a weekly row IS a duplicate.
+//
+// SAFETY GUARD - settles_monthly cleaners are excluded. For a cleaner like Golden Star
+// the weekly rows are the actual receivable and the "month" is only a payment batch,
+// so deleting their unpaid weeks would wipe out live money owed. Before this guard
+// existed, flagging such a cleaner 'monthly' put their receivables one click from
+// deletion. Do not remove it.
 app.get('/api/invoice-tracking/mismatched', authenticate, adminOnly, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT it.id, it.week_start, it.week_end, it.invoice_amount, it.status, c.name as cleaner_name
       FROM invoice_tracking it JOIN cleaners c ON it.cleaner_id = c.id
       WHERE COALESCE(c.billing_cycle,'weekly') = 'monthly'
+        AND COALESCE(c.settles_monthly,false) = false
         AND COALESCE(it.billing_cycle,'weekly') = 'weekly'
         AND it.status != 'paid'
       ORDER BY c.name, it.week_start`);
@@ -2086,6 +2426,7 @@ app.delete('/api/invoice-tracking/mismatched', authenticate, adminOnly, async (r
       DELETE FROM invoice_tracking it USING cleaners c
       WHERE it.cleaner_id = c.id
         AND COALESCE(c.billing_cycle,'weekly') = 'monthly'
+        AND COALESCE(c.settles_monthly,false) = false
         AND COALESCE(it.billing_cycle,'weekly') = 'weekly'
         AND it.status != 'paid'
       RETURNING it.id`);
