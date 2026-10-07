@@ -1806,6 +1806,8 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
   const[paySearch,setPaySearch]=useState('');
   const[showUnpaidOnly,setShowUnpaidOnly]=useState(false);
   const[expanded,setExpanded]=useState({});
+  // Open/closed state of the Balance by Cleaner panel, remembered per browser.
+  const[balOpen,setBalOpen]=useState(function(){try{return localStorage.getItem('kp_balance_open')!=='0'}catch(e){return true}});
   const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   
   // Monthly tab reads the ROLL-UP endpoint, which returns two kinds of row together:
@@ -2009,14 +2011,16 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
       React.createElement('h2',{style:{margin:0}},t.payments+' Tracking',React.createElement('span',{style:{fontSize:'14px',marginLeft:'8px',color:payView==='weekly'?'#60a5fa':'#fbbf24'}},payView==='weekly'?'(Weekly)':'(Monthly)')),
-      React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
-        React.createElement('input',{value:paySearch,onChange:function(e){setPaySearch(e.target.value)},placeholder:'Filter by cleaner...',style:{...S.inp,width:'200px',padding:'8px 12px',fontSize:'13px'}}),
+      React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
+        React.createElement('input',{value:paySearch,onChange:function(e){setPaySearch(e.target.value)},placeholder:'Filter by cleaner...',style:{...S.inp,width:'200px',maxWidth:'100%',padding:'8px 12px',fontSize:'13px'}}),
         React.createElement('button',{onClick:function(){setShowUnpaidOnly(!showUnpaidOnly)},style:{padding:'8px 12px',borderRadius:'6px',border:'1px solid '+(showUnpaidOnly?'#ef4444':'#475569'),background:showUnpaidOnly?'rgba(239,68,68,0.2)':'transparent',color:showUnpaidOnly?'#fca5a5':'#94a3b8',cursor:'pointer',fontSize:'12px',fontWeight:'600',whiteSpace:'nowrap'}},showUnpaidOnly?'🔴 Unpaid':'Unpaid'),
         (paySearch||showUnpaidOnly)&&React.createElement('button',{onClick:function(){setPaySearch('');setShowUnpaidOnly(false)},style:{background:'none',border:'1px solid #475569',color:'#94a3b8',borderRadius:'6px',padding:'6px 10px',cursor:'pointer',fontSize:'12px'}},'Clear'),
         React.createElement('button',{onClick:exportExcel,style:{...S.btn,background:'#059669'}},'Export Excel'),
         isAdmin&&React.createElement('button',{onClick:fixMismatched,style:{...S.btn,background:'#8b5cf6',fontSize:'12px'}},'Fix Duplicates'),isAdmin&&React.createElement('button',{onClick:clearOldUnpaid,style:{...S.btn,background:'#dc2626',fontSize:'12px'}},'\ud83d\uddd1 Clear Old Unpaid'))),
     
-    summary&&React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'16px',marginBottom:'24px'}},
+    // auto-fit instead of a hard 3 columns: on a phone these stack rather than forcing
+    // the whole page to scroll sideways.
+    summary&&React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:'12px',marginBottom:'24px'}},
       React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#60a5fa'}},fmtC(summary.overall.total_invoiced)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Invoiced')),
       React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:parseFloat(summary.overall.total_paid)>0?'#4ade80':'#64748b'}},parseFloat(summary.overall.total_paid)>0?fmtC(summary.overall.total_paid):'—'),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Paid')),
       React.createElement('div',{style:{...S.card,textAlign:'center'}},React.createElement('div',{style:{fontSize:'28px',fontWeight:'bold',color:'#ef4444'}},fmtC(unpaidTotal)),React.createElement('div',{style:{color:'#94a3b8',fontSize:'14px'}},'Total Past Due (Unpaid)'))),
@@ -2026,9 +2030,11 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
         React.createElement('button',{onClick:function(){switchView('weekly')},style:{flex:1,padding:'12px',borderRadius:'8px',border:'none',cursor:'pointer',fontWeight:'bold',fontSize:'15px',fontFamily:'inherit',background:payView==='weekly'?'linear-gradient(90deg,#3b82f6,#8b5cf6)':'#0f172a',color:payView==='weekly'?'#fff':'#64748b'}},'Weekly Clients'),
         React.createElement('button',{onClick:function(){switchView('monthly')},style:{flex:1,padding:'12px',borderRadius:'8px',border:'none',cursor:'pointer',fontWeight:'bold',fontSize:'15px',fontFamily:'inherit',background:payView==='monthly'?'linear-gradient(90deg,#f59e0b,#ef4444)':'#0f172a',color:payView==='monthly'?'#fff':'#64748b'}},'Monthly Clients')),
       React.createElement('h3',{style:{marginBottom:'12px'}},payView==='weekly'?'Generate Weekly Invoices':'Generate Monthly Invoices'),
-      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr auto auto',gap:'12px',marginBottom:'12px'}},
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},payView==='weekly'?'Week Start':'Month Start'),React.createElement('input',{type:'date',value:start,onChange:e=>setStart(e.target.value),style:S.inp})),
-        React.createElement('div',null,React.createElement('label',{style:S.lbl},payView==='weekly'?'Week End':'Month End'),React.createElement('input',{type:'date',value:end,onChange:e=>setEnd(e.target.value),style:S.inp})),
+      // flex-wrap instead of a rigid 4-column grid: the shortcut buttons drop to a
+      // second line on a phone rather than pushing the page sideways.
+      React.createElement('div',{style:{display:'flex',flexWrap:'wrap',alignItems:'flex-end',gap:'12px',marginBottom:'12px'}},
+        React.createElement('div',{style:{flex:'1 1 150px',minWidth:0}},React.createElement('label',{style:S.lbl},payView==='weekly'?'Week Start':'Month Start'),React.createElement('input',{type:'date',value:start,onChange:e=>setStart(e.target.value),style:{...S.inp,width:'100%'}})),
+        React.createElement('div',{style:{flex:'1 1 150px',minWidth:0}},React.createElement('label',{style:S.lbl},payView==='weekly'?'Week End':'Month End'),React.createElement('input',{type:'date',value:end,onChange:e=>setEnd(e.target.value),style:{...S.inp,width:'100%'}})),
         payView==='weekly'&&React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setTW,style:{...S.inp,cursor:'pointer'}},t.thisWeek)),
         payView==='weekly'&&React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setLW,style:{...S.inp,cursor:'pointer'}},t.lastWeek)),
         payView==='monthly'&&React.createElement('div',null,React.createElement('label',{style:{...S.lbl,visibility:'hidden'}},'-'),React.createElement('button',{onClick:setTM,style:{...S.inp,cursor:'pointer'}},'This Month')),
@@ -2044,19 +2050,59 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
           }).map(function(c){return React.createElement('option',{key:c.id,value:c.id},c.name+(c.settles_monthly&&(c.billing_cycle||'weekly')==='weekly'?' (pays monthly)':''))})),
         React.createElement('button',{onClick:function(){var sel=document.getElementById('genCleanerId');generateWeek(sel?sel.value:'')},disabled:ld,style:{...S.btn,flex:1,opacity:ld?0.6:1}},ld?t.loading:'Generate from Orders'))),
     
-    summary&&summary.cleaners&&React.createElement('div',{style:{...S.card,marginBottom:'20px'}},
-      React.createElement('h3',{style:{marginBottom:'12px'}},'Balance by Cleaner'),
-      React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
-        React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
-          React.createElement('th',{style:{padding:'10px',textAlign:'left'}},'Cleaner'),
-          React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Invoiced'),
-          React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Paid'),
-          React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Balance Due'))),
-        React.createElement('tbody',null,summary.cleaners.slice().sort(function(a,b){return(a.cleaner_name||'').localeCompare(b.cleaner_name||'')}).map((c,i)=>React.createElement('tr',{key:i,style:{borderBottom:'1px solid #334155'}},
-          React.createElement('td',{style:{padding:'10px'}},c.cleaner_name),
-          React.createElement('td',{style:{padding:'10px',textAlign:'right'}},fmtC(c.total_invoiced)),
-          React.createElement('td',{style:{padding:'10px',textAlign:'right',color:parseFloat(c.total_paid)>0?'#4ade80':'#64748b'}},parseFloat(c.total_paid)>0?fmtC(c.total_paid):'—'),
-          React.createElement('td',{style:{padding:'10px',textAlign:'right',color:(cleanerUnpaid[c.cleaner_name]||0)>0?'#ef4444':'#4ade80',fontWeight:'bold'}},fmtC(cleanerUnpaid[c.cleaner_name]||0))))))),
+    // BALANCE BY CLEANER
+    // Obeys the same filter box as the invoices below, so searching one cleaner shows
+    // one row instead of all 24. Collapsible, height-capped so it can never push the
+    // invoices off screen, and clicking a row filters everything below to that cleaner.
+    summary&&summary.cleaners&&(function(){
+      var allRows=summary.cleaners.slice().sort(function(a,b){return(a.cleaner_name||'').localeCompare(b.cleaner_name||'')});
+      var shown=paySearch?allRows.filter(function(c){return(c.cleaner_name||'').toLowerCase().includes(paySearch.toLowerCase())}):allRows;
+      if(showUnpaidOnly)shown=shown.filter(function(c){return(cleanerUnpaid[c.cleaner_name]||0)>0});
+      var sInv=shown.reduce(function(s,c){return s+parseFloat(c.total_invoiced||0)},0);
+      var sPaid=shown.reduce(function(s,c){return s+parseFloat(c.total_paid||0)},0);
+      var sDue=shown.reduce(function(s,c){return s+(cleanerUnpaid[c.cleaner_name]||0)},0);
+      var owing=allRows.filter(function(c){return(cleanerUnpaid[c.cleaner_name]||0)>0}).length;
+      // NOTE: the tighter padding is merged in only when collapsed. Writing
+      // padding:undefined instead would delete S.card's own padding, because the key
+      // is still present and React then applies nothing - the card rendered edge to edge.
+      return React.createElement('div',{style:Object.assign({},S.card,{marginBottom:'20px'},balOpen?{}:{padding:'12px 16px'})},
+        // Header stays visible whether open or closed, so the totals are always one glance away
+        React.createElement('div',{onClick:function(){var v=!balOpen;setBalOpen(v);try{localStorage.setItem('kp_balance_open',v?'1':'0')}catch(e){}},
+          style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px',cursor:'pointer',userSelect:'none',marginBottom:balOpen?'12px':'0'}},
+          React.createElement('h3',{style:{margin:0,display:'flex',alignItems:'center',gap:'8px',fontSize:'16px'}},
+            React.createElement('span',{style:{color:'#60a5fa',fontWeight:'bold',width:'14px',display:'inline-block'}},balOpen?'▾':'▸'),
+            'Balance by Cleaner',
+            React.createElement('span',{style:{fontSize:'12px',fontWeight:'normal',color:'#64748b'}},
+              paySearch?'('+shown.length+' of '+allRows.length+')':'('+allRows.length+')')),
+          React.createElement('span',{style:{fontSize:'13px',fontWeight:'normal'}},
+            React.createElement('span',{style:{color:'#4ade80',fontWeight:'bold'}},fmtC(sInv)),
+            React.createElement('span',{style:{color:'#64748b'}},' invoiced | '),
+            React.createElement('span',{style:{color:'#60a5fa',fontWeight:'bold'}},fmtC(sPaid)),
+            React.createElement('span',{style:{color:'#64748b'}},' paid | '),
+            React.createElement('span',{style:{color:sDue>0?'#f87171':'#4ade80',fontWeight:'bold'}},fmtC(sDue)),
+            React.createElement('span',{style:{color:'#64748b'}},' due'),
+            owing>0&&!balOpen?React.createElement('span',{style:{marginLeft:'8px',fontSize:'11px',color:'#fbbf24',background:'rgba(245,158,11,0.15)',padding:'2px 6px',borderRadius:'4px'}},owing+' owing'):null)),
+        // Capped height: a long list scrolls inside its own box instead of pushing the
+        // invoice tables down the page.
+        balOpen&&React.createElement('div',{style:{maxHeight:'300px',overflowY:'auto',overflowX:'auto'}},
+          React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
+            React.createElement('thead',{style:{position:'sticky',top:0,zIndex:1}},React.createElement('tr',{style:{background:'#0f172a'}},
+              React.createElement('th',{style:{padding:'10px',textAlign:'left'}},'Cleaner'),
+              React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Invoiced'),
+              React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Paid'),
+              React.createElement('th',{style:{padding:'10px',textAlign:'right'}},'Balance Due'))),
+            React.createElement('tbody',null,
+              shown.length===0?React.createElement('tr',null,React.createElement('td',{colSpan:4,style:{padding:'14px',textAlign:'center',color:'#64748b'}},'No cleaner matches "'+paySearch+'"')):
+              shown.map((c,i)=>React.createElement('tr',{key:i,
+                // Click a cleaner to filter the invoices below; click again to clear.
+                onClick:function(){setPaySearch(paySearch===c.cleaner_name?'':c.cleaner_name)},
+                title:'Click to filter the invoices below to '+c.cleaner_name,
+                style:{borderBottom:'1px solid #334155',cursor:'pointer',background:paySearch===c.cleaner_name?'rgba(59,130,246,0.12)':'transparent'}},
+                React.createElement('td',{style:{padding:'10px'}},c.cleaner_name),
+                React.createElement('td',{style:{padding:'10px',textAlign:'right'}},fmtC(c.total_invoiced)),
+                React.createElement('td',{style:{padding:'10px',textAlign:'right',color:parseFloat(c.total_paid)>0?'#4ade80':'#64748b'}},parseFloat(c.total_paid)>0?fmtC(c.total_paid):'—'),
+                React.createElement('td',{style:{padding:'10px',textAlign:'right',color:(cleanerUnpaid[c.cleaner_name]||0)>0?'#ef4444':'#4ade80',fontWeight:'bold'}},fmtC(cleanerUnpaid[c.cleaner_name]||0))))))));
+    })(),
     
     Object.keys(groupedByWeek).sort().reverse().map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
       React.createElement('h3',{style:{marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}},
@@ -2070,7 +2116,10 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
             React.createElement('span',{style:{color:'#64748b'}},' paid | '),
             React.createElement('span',{style:{color:wkUnpaid>0?'#f87171':'#4ade80',fontWeight:'bold'}},fmtC(wkUnpaid)),
             React.createElement('span',{style:{color:'#64748b'}},' unpaid'))})()),
-      React.createElement('table',{style:{width:'100%',borderCollapse:'collapse'}},
+      // Six columns do not fit a phone. Scrolling happens INSIDE this box so the whole
+      // page no longer slides sideways while you are reading it.
+      React.createElement('div',{style:{overflowX:'auto',WebkitOverflowScrolling:'touch'}},
+      React.createElement('table',{style:{width:'100%',minWidth:'520px',borderCollapse:'collapse'}},
         React.createElement('thead',null,React.createElement('tr',{style:{background:'#0f172a'}},
           React.createElement('th',{style:{padding:'8px',textAlign:'left',fontSize:'12px'}},'Cleaner'),
           React.createElement('th',{style:{padding:'8px',textAlign:'right',fontSize:'12px'}},'Invoice'),
@@ -2145,7 +2194,7 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
                 w.status==='unpaid'?null:React.createElement('button',{onClick:function(){updateNestedWeek(w,{amount_paid:0,status:'unpaid',paid_date:null})},style:{...S.cancel,padding:'2px 6px',fontSize:'10px'}},'Unpay')));
           });
           return [mainRow].concat(weekRows);
-        }))))),
+        })))))),
     viewInv&&React.createElement('div',{style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'20px',overflow:'auto'}},
       React.createElement('div',{style:{background:'#fff',borderRadius:'12px',maxWidth:'800px',width:'100%',maxHeight:'90vh',overflow:'auto',color:'#000'}},
         React.createElement('div',{style:{padding:'20px',borderBottom:'1px solid #ddd',display:'flex',justifyContent:'space-between',alignItems:'center'}},
