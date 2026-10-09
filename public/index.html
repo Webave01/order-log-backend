@@ -54,9 +54,19 @@ input[type=number]{-moz-appearance:textfield}
 // cross-origin. The scripts now carry crossorigin="anonymous" so real text arrives,
 // and this records WHICH library is missing - that is the part that identifies the
 // fault. Nearly every occurrence is a CDN file arriving truncated on a weak signal.
+window.__errors=[];
+// Do NOT judge on the first error event. The app may still be mounting, and a stray
+// error - from the browser, a content blocker, an extension - must never blank a
+// screen that is about to work. Record it, wait, then check whether the app actually
+// rendered. Only a page that is still empty after the wait is a real failure.
 window.__crash=function(msg,src,line){
+  window.__errors.push((msg||'?')+(src?(' @'+src+':'+(line||'?')):''));
+  clearTimeout(window.__crashTimer);
+  window.__crashTimer=setTimeout(function(){window.__showCrash(msg,src,line)},2500);
+};
+window.__showCrash=function(msg,src,line){
   var r=document.getElementById('root');
-  if(!r||r.innerHTML.trim()!=='')return;          // app rendered fine - not a startup crash
+  if(!r||r.innerHTML.trim()!=='')return;          // app rendered fine - not a crash
   r.style.display='none';
   var missing=[];
   if(!window.React)missing.push('React');
@@ -71,7 +81,9 @@ window.__crash=function(msg,src,line){
   }else if(!window.React||!window.ReactDOM){
     advice='The app files did not finish downloading — usually a weak signal. Move to a better signal and tap Try Again. Your saved orders are safe on the server.';
   }else{
-    advice='Something went wrong starting the app. Tap Try Again. If it keeps happening, send the details below.';
+    // Every library is present, so this is the app's own code failing - not the
+    // network. Say so, rather than blaming the connection.
+    advice='The app hit an error in its own code, not your connection. Tap Try Again. Please send the details below — they name the exact fault.';
   }
   var m=document.getElementById('crash-msg');
   var a=document.getElementById('crash-advice');
@@ -81,6 +93,7 @@ window.__crash=function(msg,src,line){
   if(d)d.textContent=
      'Error: '+(msg||'unknown')
     +'\nSource: '+(src||'(cross-origin script)')+' line '+(line||'?')
+    +'\nAll errors: '+((window.__errors&&window.__errors.length)?window.__errors.slice(0,5).join(' | '):'none')
     +'\nMissing: '+(missing.length?missing.join(', '):'none')
     +'\nFailed to load: '+((window.__libs&&window.__libs.failed.length)?window.__libs.failed.join(', '):'none')
     +'\nOnline: '+online
@@ -579,6 +592,11 @@ function ScanEntry({cleaners,extras,cleanerExtras,staffName,notify,loadData,onCl
     const y=target.getFullYear();const m=String(target.getMonth()+1).padStart(2,'0');const dd=String(target.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd};
   const[pdate,setPdate]=useState(getDefaultDate());const[svc,setSvc]=useState('same-day');
   const[scanning,setScanning]=useState(false);const[busy,setBusy]=useState(false);
+  // Extras picker on the photo screen. These MUST be declared here - they are used
+  // twelve times in this component. They were previously declared inside VehicleLog,
+  // so every render of this screen threw "scExtras is not defined", React tore the
+  // whole app down, and the user saw "App failed to start" right after taking a photo.
+  const[scExtras,setScExtras]=useState([]);const[showExtras,setShowExtras]=useState(false);
   const[preview,setPreview]=useState(null);const[imgData,setImgData]=useState(null);
   const[cid,setCid]=useState('');const[onum,setOnum]=useState('');const[wt,setWt]=useState('');
   const[color,setColor]=useState('Blue');const[conf,setConf]=useState('');const[colorConf,setColorConf]=useState('');
@@ -1401,7 +1419,8 @@ function VehicleLog({isAdmin,user,notify,drivers}){
   const[driverName,setDriverName]=useState('');
   const[photos,setPhotos]=useState([]);const[viewLog,setViewLog]=useState(null);const[editingLog,setEditingLog]=useState(null);
   const[gasStart,setGasStart]=useState('');const[gasEnd,setGasEnd]=useState('');
-  const[scExtras,setScExtras]=useState([]);const[showExtras,setShowExtras]=useState(false);
+  // (scExtras / showExtras were declared here by mistake. VehicleLog never used them -
+  //  they belong to ScanEntry, where all twelve references live. Moved there.)
   const[summary,setSummary]=useState(null);const[showSummary,setShowSummary]=useState(false);
 
   const loadLogs=async()=>{setLd(true);try{var url='/vehicle-logs?';if(filterType)url+='log_type='+filterType;var r=await api.get(url);setLogs(r)}catch(e){}setLd(false)};
@@ -4010,7 +4029,59 @@ document.addEventListener('click',function(e){
   }
 },true);
 
-try{ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App))}catch(e){var _r=document.getElementById('root');var _m=document.getElementById('crash-msg');var _d=document.getElementById('crash-detail');if(_r)_r.style.display='none';if(_m)_m.style.display='block';if(_d)_d.textContent='Startup error: '+(e&&e.message?e.message:e)+'\n'+(e&&e.stack?e.stack.split('\n').slice(0,4).join('\n'):'');console.error(e)}
+// ---------------------------------------------------------------------------
+// ERROR BOUNDARY
+//
+// React 18 renders asynchronously, so the try/catch that used to sit around
+// render() could never catch a component error - render() returns before the work
+// happens. When a component then threw, React unmounted the ENTIRE tree, leaving a
+// blank page, and the browser reported it as a bare "Script error." because it
+// surfaced from inside React's own (cross-origin) code.
+//
+// That is exactly what one undefined variable in the photo screen did to the whole
+// app. A boundary keeps the failure contained and, crucially, SHOWS the real error
+// text and which component threw, instead of a blank screen.
+// ---------------------------------------------------------------------------
+class AppErrorBoundary extends React.Component{
+  constructor(props){super(props);this.state={err:null,info:null}}
+  static getDerivedStateFromError(err){return{err:err}}
+  componentDidCatch(err,info){
+    this.setState({info:info});
+    try{console.error('Component error:',err,info&&info.componentStack)}catch(e){}
+  }
+  render(){
+    if(!this.state.err)return this.props.children;
+    var err=this.state.err;
+    var stack=(this.state.info&&this.state.info.componentStack)||'';
+    var where=(stack.trim().split('\n')[0]||'').trim().replace(/^at\s+/,'');
+    return React.createElement('div',{style:{padding:'24px 18px',maxWidth:'700px',margin:'30px auto',background:'#1e293b',border:'2px solid #ef4444',borderRadius:'12px'}},
+      React.createElement('h2',{style:{color:'#fca5a5',margin:'0 0 10px',fontSize:'19px'}},'This screen hit a problem'),
+      React.createElement('p',{style:{color:'#cbd5e1',margin:'0 0 16px',lineHeight:'1.6'}},
+        'Nothing you entered was lost from the server. Go back to Orders and carry on — if this keeps happening on the same screen, send the details below.'),
+      React.createElement('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'16px'}},
+        React.createElement('button',{onClick:function(){try{location.replace(location.pathname)}catch(e){location.reload()}},
+          style:{padding:'13px 22px',border:'none',borderRadius:'8px',background:'#3b82f6',color:'#fff',fontSize:'15px',fontWeight:'bold',cursor:'pointer'}},'Back to Orders'),
+        React.createElement('button',{onClick:function(){try{location.reload()}catch(e){}},
+          style:{padding:'13px 22px',borderRadius:'8px',border:'1px solid #475569',background:'transparent',color:'#94a3b8',fontSize:'15px',cursor:'pointer'}},'Reload')),
+      React.createElement('details',null,
+        React.createElement('summary',{style:{color:'#64748b',cursor:'pointer',fontSize:'13px'}},'Technical details for support'),
+        React.createElement('pre',{style:{background:'#0f172a',padding:'14px',borderRadius:'8px',color:'#fbbf24',whiteSpace:'pre-wrap',wordBreak:'break-word',fontSize:'12px',margin:'10px 0 0'}},
+          (err&&err.message?err.message:String(err))
+          +(where?('\nComponent: '+where):'')
+          +'\n'+((err&&err.stack)?err.stack.split('\n').slice(0,5).join('\n'):'')
+          +(stack?('\n'+stack.trim().split('\n').slice(0,6).join('\n')):''))));
+  }
+}
+
+try{
+  ReactDOM.createRoot(document.getElementById('root'))
+    .render(React.createElement(AppErrorBoundary,null,React.createElement(App)));
+}catch(e){
+  var _r=document.getElementById('root');
+  if(_r)_r.style.display='none';
+  if(window.__crash)window.__crash('Startup error: '+((e&&e.message)||e),'','');
+  console.error(e);
+}
 </script>
 </body>
 </html>
