@@ -111,7 +111,10 @@ async function r2Delete(url) {
 }
 
 app.use(cors());
-app.use(express.json({ limit: '3mb' }));
+// 3mb was too tight: a scan payload is a base64 image (~33% larger than the file)
+// plus the request JSON, and a high-resolution phone photo clears it. Oversize is
+// now also reported properly by the global error handler at the bottom of this file.
+app.use(express.json({ limit: '12mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // === Schedule Routes (Driver Scheduling & Pay) ===
@@ -2790,7 +2793,14 @@ app.post('/api/scan-ticket', authenticate, async (req, res) => {
       if (ms.rows.length > 0 && ms.rows[0].value) scanModel = ms.rows[0].value;
     } catch (e) {}
 
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+    // Fail fast rather than holding the request (and its base64 image) in memory until
+    // the host kills it at its own timeout, which returns an HTML gateway page.
+    const scanAbort = new AbortController();
+    const scanTimer = setTimeout(() => scanAbort.abort(), 45000);
+    let anthropicRes;
+    try {
+      anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+      signal: scanAbort.signal,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2808,7 +2818,15 @@ app.post('/api/scan-ticket', authenticate, async (req, res) => {
           ]
         }]
       })
-    });
+      });
+    } catch (fetchErr) {
+      clearTimeout(scanTimer);
+      if (fetchErr && fetchErr.name === 'AbortError') {
+        return res.status(504).json({ error: 'Reading the ticket timed out. Enter it manually.', code: 'SCAN_TIMEOUT' });
+      }
+      return res.status(502).json({ error: 'Could not reach the ticket reader. Enter it manually.', code: 'SCAN_UNREACHABLE' });
+    }
+    clearTimeout(scanTimer);
 
     const data = await anthropicRes.json();
     if (data.error) return res.status(502).json({ error: data.error.message || 'Vision service error' });
@@ -2950,9 +2968,57 @@ app.get('*', (req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// GLOBAL ERROR HANDLER - must be registered last, after every route.
+//
+// Without this, Express answers a rejected upload (body over the json limit) with
+// an HTML error page. The browser then tries to read that as JSON, throws a parse
+// error, and the real cause - "your photo was too big" - never reaches the user.
+// What they saw instead was the app appearing to throw them out.
+//
+// Everything from here returns JSON with a usable message.
+// ---------------------------------------------------------------------------
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+    console.error('Payload too large on', req.method, req.originalUrl, '-', err.length || '?', 'bytes');
+    return res.status(413).json({
+      error: 'That photo is too large to upload. Take it again at a lower resolution, or pick a smaller file.',
+      code: 'PAYLOAD_TOO_LARGE'
+    });
+  }
+  if (err && (err.type === 'entity.parse.failed' || err instanceof SyntaxError)) {
+    return res.status(400).json({ error: 'The request could not be read.', code: 'BAD_REQUEST' });
+  }
+
+  console.error('Unhandled error on', req.method, req.originalUrl, '-', err && err.message);
+  res.status(err && err.status ? err.status : 500).json({
+    error: (err && err.message) || 'Server error',
+    code: 'SERVER_ERROR'
+  });
+});
+
+// A crash here takes the whole process down. Render restarts it, and if JWT_SECRET
+// is not set every signed-in user is thrown back to the login screen. Log loudly
+// rather than dying silently.
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason && (reason.stack || reason.message || reason));
+});
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err && (err.stack || err.message || err));
+});
+
 initDB().then(() => {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    if (!process.env.JWT_SECRET) {
+      console.warn('=============================================================');
+      console.warn(' JWT_SECRET IS NOT SET IN THE ENVIRONMENT.');
+      console.warn(' Every restart of this server will sign out every user.');
+      console.warn(' Set JWT_SECRET in Render -> Environment to fix this.');
+      console.warn('=============================================================');
+    }
     cleanupOldOrders();
     cleanupOldPhotos();
     cleanupOrderHistory();
