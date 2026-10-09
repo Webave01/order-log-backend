@@ -75,8 +75,23 @@ const api={
     const o={method:m,headers:{'Content-Type':'application/json'}};
     if(this.token)o.headers['Authorization']='Bearer '+this.token;
     if(b)o.body=JSON.stringify(b);
-    const r=await fetch(API+p,o);
-    const d=await r.json();
+
+    // Network-level failure (offline, server restarting, request cut off).
+    // This is NOT an auth problem, so it must never sign the user out.
+    let r;
+    try{ r=await fetch(API+p,o); }
+    catch(netErr){
+      throw new Error('Could not reach the server. Check your connection and try again.');
+    }
+
+    // Read as TEXT first. An oversized upload, a gateway timeout or a server restart
+    // returns HTML, not JSON. Calling r.json() straight away threw a parse error that
+    // buried the real cause and made the app look like it had thrown the user out.
+    const raw=await r.text();
+    let d={};
+    if(raw){ try{ d=JSON.parse(raw); }catch(parseErr){ d={}; } }
+
+    // Only a genuine 401 carrying an auth code signs the user out.
     if(r.status===401&&(d.code==='TOKEN_EXPIRED'||d.code==='TOKEN_INVALID'||d.error==='Invalid token')){
       this.clearToken();
       if(typeof window!=='undefined'&&!window.__authRedirecting){
@@ -86,7 +101,14 @@ const api={
       }
       throw new Error('Session ended');
     }
-    if(!r.ok)throw new Error(d.error||'Error');
+
+    if(!r.ok){
+      if(d.error)throw new Error(d.error);
+      // Non-JSON error body: say what actually happened instead of a parse error.
+      if(r.status===413)throw new Error('That photo is too large to upload. Try taking it again.');
+      if(r.status===502||r.status===503||r.status===504)throw new Error('The server is restarting. Wait a few seconds and try again — you are still signed in.');
+      throw new Error('Server error '+r.status+(raw?(' — '+raw.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,120)):''));
+    }
     return d;
   },
   get(p){return this.req('GET',p)},
@@ -297,15 +319,34 @@ function Orders({orders,cleaners,extras,settings,cleanerExtras,notify,loadData,i
   const uploadPhoto=async(orderId,file)=>{
     setPhotoUploading(true);
     try{
-      const img=await new Promise(function(resolve){
-        var reader=new FileReader();reader.onload=function(e){
-          var imgEl=new Image();imgEl.onload=function(){
-            var canvas=document.createElement('canvas');var maxW=1200;var scale=Math.min(1,maxW/imgEl.width);
-            canvas.width=imgEl.width*scale;canvas.height=imgEl.height*scale;
-            var ctx=canvas.getContext('2d');ctx.drawImage(imgEl,0,0,canvas.width,canvas.height);
-            resolve(canvas.toDataURL('image/jpeg',0.6));
-          };imgEl.src=e.target.result;
-        };reader.readAsDataURL(file);
+      // Every branch here must settle. The original had no reject path, so a photo
+      // the browser cannot decode (an iPhone HEIC, a corrupt file) left this promise
+      // pending forever and the upload just hung with no message.
+      const img=await new Promise(function(resolve,reject){
+        var settled=false;
+        var done=function(v){if(!settled){settled=true;resolve(v)}};
+        var fail=function(msg){if(!settled){settled=true;reject(new Error(msg))}};
+        var timer=setTimeout(function(){fail('That photo took too long to process. Try taking it again.')},20000);
+        var reader=new FileReader();
+        reader.onerror=function(){clearTimeout(timer);fail('Could not read that photo file.')};
+        reader.onload=function(e){
+          var imgEl=new Image();
+          imgEl.onerror=function(){clearTimeout(timer);fail('That image format is not supported. Set your camera to "Most Compatible" (JPEG) and try again.')};
+          imgEl.onload=function(){
+            clearTimeout(timer);
+            try{
+              var canvas=document.createElement('canvas');var maxW=1200;var scale=Math.min(1,maxW/imgEl.width);
+              canvas.width=Math.round(imgEl.width*scale);canvas.height=Math.round(imgEl.height*scale);
+              var ctx=canvas.getContext('2d');ctx.drawImage(imgEl,0,0,canvas.width,canvas.height);
+              var out=canvas.toDataURL('image/jpeg',0.6);
+              // Guard before sending: a rejected upload used to surface as a confusing error.
+              if(out.length>9000000)return fail('That photo is too large even after shrinking. Take it again from further back.');
+              done(out);
+            }catch(drawErr){fail('Could not process that photo.')}
+          };
+          imgEl.src=e.target.result;
+        };
+        reader.readAsDataURL(file);
       });
       await api.post('/orders/'+orderId+'/photos',{image:img,label:''});
       var photos=await api.get('/orders/'+orderId+'/photos');
@@ -474,17 +515,33 @@ function ScanEntry({cleaners,extras,cleanerExtras,staffName,notify,loadData,onCl
   const isTouch=(typeof window!=='undefined')&&('ontouchstart' in window||navigator.maxTouchPoints>0);
   const hasWebcam=(typeof navigator!=='undefined')&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia;
 
-  const compress=(file)=>new Promise(function(resolve){
+  // Every path must settle or reject. The original had no error or timeout branch,
+  // so a photo the browser could not decode (iPhone HEIC, a corrupt capture) left
+  // this pending forever - the scan simply stopped with nothing on screen.
+  const compress=(file)=>new Promise(function(resolve,reject){
+    var settled=false;
+    var done=function(v){if(!settled){settled=true;resolve(v)}};
+    var fail=function(msg){if(!settled){settled=true;reject(new Error(msg))}};
+    var timer=setTimeout(function(){fail('That photo took too long to process. Try taking it again.')},20000);
     var reader=new FileReader();
+    reader.onerror=function(){clearTimeout(timer);fail('Could not read that photo.')};
     reader.onload=function(e){
       var img=new Image();
+      img.onerror=function(){clearTimeout(timer);fail('That image format is not supported. Set the camera to "Most Compatible" (JPEG) and try again.')};
       img.onload=function(){
-        var canvas=document.createElement('canvas');var maxW=1400;var scale=Math.min(1,maxW/img.width);
-        canvas.width=img.width*scale;canvas.height=img.height*scale;
-        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
-        resolve(canvas.toDataURL('image/jpeg',0.75));
-      };img.src=e.target.result;
-    };reader.readAsDataURL(file);
+        clearTimeout(timer);
+        try{
+          var canvas=document.createElement('canvas');var maxW=1400;var scale=Math.min(1,maxW/img.width);
+          canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);
+          canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+          var out=canvas.toDataURL('image/jpeg',0.75);
+          if(out.length>9000000)return fail('That photo is too large even after shrinking. Take it again from further back.');
+          done(out);
+        }catch(drawErr){fail('Could not process that photo.')}
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
   });
 
   const openCam=async()=>{
@@ -532,8 +589,16 @@ function ScanEntry({cleaners,extras,cleanerExtras,staffName,notify,loadData,onCl
   const handlePhoto=async(e)=>{
     var file=e.target.files[0];if(!file)return;
     e.target.value='';
-    var img=await compress(file);
-    await processImage(img);
+    // compress() and processImage() can both fail. Unhandled here, the rejection
+    // escaped the event handler and the screen just went dead with no explanation.
+    try{
+      setErr('');
+      var img=await compress(file);
+      await processImage(img);
+    }catch(ex){
+      setScanning(false);
+      setErr(ex.message||'Could not read that photo. Try again, or enter it manually.');
+    }
   };
 
   const saveOne=async()=>{
