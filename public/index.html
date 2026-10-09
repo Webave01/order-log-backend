@@ -4,11 +4,29 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Webster Orders</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<!--
+  LIBRARY LOADING
+  Every one of these comes off a CDN, so on a phone with a weak signal any of them
+  can arrive truncated. A truncated script throws while running, and without
+  crossorigin="anonymous" the browser hides the reason and reports only
+  "Script error." with no line number - which is what the crash screen was showing.
+
+  Two rules now:
+    1. crossorigin="anonymous" everywhere, so real error text comes through.
+    2. React and ReactDOM are REQUIRED and fall back to a second CDN.
+       XLSX and jsPDF are OPTIONAL - used only inside export buttons - so a failure
+       there disables that button instead of stopping the app from starting.
+-->
+<script>window.__libs={failed:[]};</script>
+
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script>if(!window.React){document.write('<scr'+'ipt crossorigin="anonymous" src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"><\/scr'+'ipt>')}</script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script>if(!window.ReactDOM){document.write('<scr'+'ipt crossorigin="anonymous" src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"><\/scr'+'ipt>')}</script>
+
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" onerror="window.__libs.failed.push('Excel export')"></script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" onerror="window.__libs.failed.push('PDF export')"></script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" onerror="window.__libs.failed.push('PDF tables')"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
@@ -22,26 +40,81 @@ input[type=number]{-moz-appearance:textfield}
 </head>
 <body>
 <div id="root"></div>
-<div id="crash-msg" style="display:none;padding:40px;max-width:700px;margin:40px auto;background:#1e293b;border:2px solid #ef4444;border-radius:12px;color:#e2e8f0;font-family:system-ui,sans-serif">
-  <h2 style="color:#fca5a5;margin:0 0 12px">App failed to start</h2>
-  <p style="color:#94a3b8;margin:0 0 16px">Send this message to support:</p>
-  <pre id="crash-detail" style="background:#0f172a;padding:16px;border-radius:8px;color:#fbbf24;white-space:pre-wrap;word-break:break-word;font-size:13px;margin:0 0 16px"></pre>
-  <button onclick="location.reload()" style="padding:12px 24px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:15px;font-weight:bold;cursor:pointer">Reload</button>
+<div id="crash-msg" style="display:none;padding:28px 20px;max-width:700px;margin:40px auto;background:#1e293b;border:2px solid #ef4444;border-radius:12px;color:#e2e8f0;font-family:system-ui,sans-serif">
+  <h2 id="crash-title" style="color:#fca5a5;margin:0 0 12px;font-size:20px">App failed to start</h2>
+  <p id="crash-advice" style="color:#cbd5e1;margin:0 0 16px;line-height:1.6"></p>
+  <button onclick="try{location.replace(location.pathname+'?r='+Date.now())}catch(e){location.reload()}" style="padding:14px 28px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:16px;font-weight:bold;cursor:pointer;width:100%;max-width:280px">Try Again</button>
+  <details style="margin-top:18px">
+    <summary style="color:#64748b;cursor:pointer;font-size:13px">Technical details for support</summary>
+    <pre id="crash-detail" style="background:#0f172a;padding:14px;border-radius:8px;color:#fbbf24;white-space:pre-wrap;word-break:break-word;font-size:12px;margin:10px 0 0"></pre>
+  </details>
 </div>
 <script>
-window.addEventListener('error',function(ev){
+// The old handler printed "Script error. line ?" because the failing script was
+// cross-origin. The scripts now carry crossorigin="anonymous" so real text arrives,
+// and this records WHICH library is missing - that is the part that identifies the
+// fault. Nearly every occurrence is a CDN file arriving truncated on a weak signal.
+window.__crash=function(msg,src,line){
   var r=document.getElementById('root');
-  if(r&&r.innerHTML.trim()===''){
-    r.style.display='none';
-    var m=document.getElementById('crash-msg');
-    var d=document.getElementById('crash-detail');
-    if(m)m.style.display='block';
-    if(d)d.textContent=(ev.message||'Unknown error')+'\n'+(ev.filename||'')+' line '+(ev.lineno||'?');
+  if(!r||r.innerHTML.trim()!=='')return;          // app rendered fine - not a startup crash
+  r.style.display='none';
+  var missing=[];
+  if(!window.React)missing.push('React');
+  if(!window.ReactDOM)missing.push('ReactDOM');
+  if(!window.XLSX)missing.push('XLSX (Excel export)');
+  if(!window.jspdf)missing.push('jsPDF (PDF export)');
+  var online=(typeof navigator!=='undefined'&&'onLine' in navigator)?navigator.onLine:true;
+
+  var advice;
+  if(!online){
+    advice='Your phone is offline. Reconnect to wifi or cell data, then tap Try Again.';
+  }else if(!window.React||!window.ReactDOM){
+    advice='The app files did not finish downloading — usually a weak signal. Move to a better signal and tap Try Again. Your saved orders are safe on the server.';
+  }else{
+    advice='Something went wrong starting the app. Tap Try Again. If it keeps happening, send the details below.';
   }
+  var m=document.getElementById('crash-msg');
+  var a=document.getElementById('crash-advice');
+  var d=document.getElementById('crash-detail');
+  if(m)m.style.display='block';
+  if(a)a.textContent=advice;
+  if(d)d.textContent=
+     'Error: '+(msg||'unknown')
+    +'\nSource: '+(src||'(cross-origin script)')+' line '+(line||'?')
+    +'\nMissing: '+(missing.length?missing.join(', '):'none')
+    +'\nFailed to load: '+((window.__libs&&window.__libs.failed.length)?window.__libs.failed.join(', '):'none')
+    +'\nOnline: '+online
+    +'\nURL: '+location.href
+    +'\nAgent: '+navigator.userAgent;
+};
+window.addEventListener('error',function(ev){window.__crash(ev.message,ev.filename,ev.lineno)});
+window.addEventListener('unhandledrejection',function(ev){
+  var rsn=ev&&ev.reason;window.__crash('Unhandled: '+((rsn&&(rsn.message||rsn))||'promise rejection'),'','');
+});
+// React missing but no error event fired (script 404'd rather than throwing).
+window.addEventListener('DOMContentLoaded',function(){
+  setTimeout(function(){
+    if(!window.React||!window.ReactDOM)window.__crash('App files did not load','','');
+  },0);
 });
 </script>
 <script>
 const{useState,useEffect,useRef}=React;
+
+// If an optional export library failed to download, replace it with a stub that says
+// so plainly. Without this the button threw "XLSX is not defined" and, depending on
+// where it landed, could blank the screen. Order entry never touches these.
+(function(){
+  var gone=function(what){return function(){
+    alert(what+' is unavailable right now — the file that powers it did not finish downloading.\n\nEverything else works. Reload the page on a better signal to restore it.');
+    throw new Error(what+' unavailable');
+  }};
+  if(!window.XLSX){
+    var x=gone('Excel export');
+    window.XLSX={utils:{json_to_sheet:x,book_new:x,aoa_to_sheet:x,book_append_sheet:x,sheet_to_json:x,decode_range:x},read:x,writeFile:x,__stub:true};
+  }
+  if(!window.jspdf){ window.jspdf={jsPDF:gone('PDF export'),__stub:true}; }
+})();
 const API=location.hostname==='localhost'?'http://localhost:3001/api':'https://order-log-backend.onrender.com/api';
 const COLORS=['Army','Beige','Black','Blue','Brown','Cream','Flowers','Fresh Direct','Green','Grey','Ikea','Indigo','Maroon','Marshalls','Orange','Other','Pink','Plastic','Purple','Rainbow','Red','Shopping bag','Tan','Teal','Violet','White','Yellow'];
 const COLOR_ES={'Army':'Militar','Beige':'Beige','Black':'Negro','Blue':'Azul','Brown':'Marrón','Cream':'Cream','Flowers':'Flores','Fresh Direct':'Fresh Direct','Green':'Verde','Grey':'Gris','Ikea':'Ikea','Indigo':'Índigo','Maroon':'Maroon','Marshalls':'Marshalls','Orange':'Naranja','Other':'Otro','Pink':'Rosa','Plastic':'Plástico','Purple':'Morado','Rainbow':'Arcoíris','Red':'Rojo','Shopping bag':'Bolsa Compras','Tan':'Canela','Teal':'Verde Azulado','Violet':'Violeta','White':'Blanco','Yellow':'Amarillo'};
