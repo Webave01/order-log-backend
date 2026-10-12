@@ -924,24 +924,63 @@ app.get('/api/order-history', authenticate, async (req, res) => {
 });
 
 // Order photos - upload (accepts base64 image, compresses on client)
+// Attaching a photo, optionally billing the item it shows.
+//
+// add_extra_id makes the photo and the charge land TOGETHER, in one transaction.
+// Doing it as two calls from the browser meant a dropped connection between them
+// could leave a photographed comforter unbilled, or a charge with no proof behind it.
 app.post('/api/orders/:id/photos', authenticate, async (req, res) => {
-  const { image, label } = req.body;
+  const { image, label, add_extra_id } = req.body;
   if (!image) return res.status(400).json({ error: 'image required' });
+  const client = await pool.connect();
   try {
-    const order = await pool.query('SELECT photos FROM orders WHERE id = $1', [req.params.id]);
-    if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    const photos = order.rows[0].photos || [];
+    // Upload to cloud storage BEFORE opening the transaction - it is the slow part and
+    // should not hold a database lock.
     const entry = { label: label || '', uploaded_at: new Date().toISOString(), uploaded_by: req.user.username };
     if (R2.enabled) {
       try { entry.url = await r2Upload(image, 'orders/' + req.params.id); }
       catch (e) { r2Fail(e); entry.data = image; entry.fallback = true; }
     } else { entry.data = image; }
+
+    await client.query('BEGIN');
+    const order = await client.query(
+      'SELECT id, order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt, created_at, photos FROM orders WHERE id = $1 FOR UPDATE',
+      [req.params.id]);
+    if (order.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
+
+    const row = order.rows[0];
+    const photos = row.photos || [];
     photos.push(entry);
-    await pool.query('UPDATE orders SET photos = $1::jsonb WHERE id = $2', [JSON.stringify(photos), req.params.id]);
-    res.json({ success: true, count: photos.length, storedIn: entry.url ? 'r2' : 'database', warning: entry.fallback ? 'Cloud storage unavailable - photo saved to database instead. Tell your admin.' : undefined });
+
+    let extras = row.extras || [];
+    const extraId = parseInt(add_extra_id);
+    if (!isNaN(extraId)) {
+      const ok = await client.query('SELECT id FROM extras WHERE id = $1', [extraId]);
+      if (ok.rows.length) {
+        // Audit it exactly like a normal edit, so Undo and the history trail include
+        // charges added this way.
+        const prevData = Object.assign({}, row); delete prevData.photos;
+        await client.query(
+          'INSERT INTO order_history (order_id, action, previous_data, changed_by) VALUES ($1, $2, $3, $4)',
+          [req.params.id, 'edit', JSON.stringify(prevData), req.user.username]);
+        extras = extras.concat([extraId]);
+      }
+    }
+
+    const upd = await client.query(
+      'UPDATE orders SET photos = $1::jsonb, extras = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING extras',
+      [JSON.stringify(photos), extras, req.params.id]);
+    await client.query('COMMIT');
+
+    res.json({ success: true, count: photos.length, extras: upd.rows[0].extras,
+      storedIn: entry.url ? 'r2' : 'database',
+      warning: entry.fallback ? 'Cloud storage unavailable - photo saved to database instead. Tell your admin.' : undefined });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Photo upload error:', err);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -955,18 +994,52 @@ app.get('/api/orders/:id/photos', authenticate, async (req, res) => {
 });
 
 // Order photos - delete one by index
+// Removing a photo, optionally taking its charge back off in the same transaction.
+// ?remove_extra_id=<id> drops ONE occurrence of that extra.
 app.delete('/api/orders/:id/photos/:index', authenticate, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const order = await pool.query('SELECT photos FROM orders WHERE id = $1', [req.params.id]);
-    if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    const photos = order.rows[0].photos || [];
+    await client.query('BEGIN');
+    const order = await client.query(
+      'SELECT id, order_num, cleaner_id, weight, service_type, pickup_date, bag_color, extras, notes, staff_name, price_adjustment, customer_address, customer_apt, created_at, photos FROM orders WHERE id = $1 FOR UPDATE',
+      [req.params.id]);
+    if (order.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Order not found' }); }
+
+    const row = order.rows[0];
+    const photos = row.photos || [];
     const idx = parseInt(req.params.index);
-    if (isNaN(idx) || idx < 0 || idx >= photos.length) return res.status(400).json({ error: 'Invalid photo index' });
+    if (isNaN(idx) || idx < 0 || idx >= photos.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Invalid photo index' }); }
     const removed = photos.splice(idx, 1)[0];
-    await pool.query('UPDATE orders SET photos = $1::jsonb WHERE id = $2', [JSON.stringify(photos), req.params.id]);
+
+    let extras = row.extras || [];
+    const extraId = parseInt(req.query.remove_extra_id);
+    if (!isNaN(extraId)) {
+      const at = extras.indexOf(extraId);
+      if (at > -1) {
+        const prevData = Object.assign({}, row); delete prevData.photos;
+        await client.query(
+          'INSERT INTO order_history (order_id, action, previous_data, changed_by) VALUES ($1, $2, $3, $4)',
+          [req.params.id, 'edit', JSON.stringify(prevData), req.user.username]);
+        extras = extras.slice(); extras.splice(at, 1);
+      }
+    }
+
+    const upd = await client.query(
+      'UPDATE orders SET photos = $1::jsonb, extras = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING extras',
+      [JSON.stringify(photos), extras, req.params.id]);
+    await client.query('COMMIT');
+
+    // Only after the row is safely committed - a failed cloud delete must not roll
+    // back a change the database has already accepted.
     if (removed && removed.url) r2Delete(removed.url);
-    res.json({ success: true, count: photos.length });
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+    res.json({ success: true, count: photos.length, extras: upd.rows[0].extras });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Photo delete error:', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
 });
 
 // Photo cleanup - purge photos older than retention days
