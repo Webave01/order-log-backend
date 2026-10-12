@@ -966,6 +966,11 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
   const[ofUploading,setOfUploading]=useState(false);
   const[ofTag,setOfTag]=useState('');
   const ofFileRef=useRef(null);
+  const ofStreamRef=useRef(null);
+  // On a phone the native camera is better than anything in the page - full quality,
+  // flash and autofocus - so the capture input is used there. On a laptop that input
+  // would only open a file browser, so the webcam overlay is used instead.
+  const ofIsTouch=(typeof window!=='undefined')&&('ontouchstart' in window||navigator.maxTouchPoints>0);
 
   // Same shrink-and-guard pipeline as the scan screen: every path settles, so an
   // undecodable photo reports itself instead of hanging.
@@ -995,13 +1000,12 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
     reader.readAsDataURL(file);
   });
 
-  const ofAddPhoto=async(e)=>{
-    var file=e.target.files&&e.target.files[0];if(!file)return;
-    e.target.value='';
+  // Shared tail end of both capture routes: shrink, upload, refresh the strip.
+  const ofSend=async(fileOrBlob)=>{
     if(!order||!order.id){alert('Save the order first, then add photos to it.');return}
     setOfUploading(true);
     try{
-      var img=await ofShrink(file);
+      var img=await ofShrink(fileOrBlob);
       await api.post('/orders/'+order.id+'/photos',{image:img,label:ofTag||''});
       var fresh=await api.get('/orders/'+order.id+'/photos');
       setOfPhotos(fresh);
@@ -1009,6 +1013,59 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
     }catch(ex){alert(ex.message||'Could not add that photo.')}
     setOfUploading(false);
   };
+
+  const ofAddPhoto=async(e)=>{
+    var file=e.target.files&&e.target.files[0];if(!file)return;
+    e.target.value='';
+    await ofSend(file);
+  };
+
+  // Laptop camera. Built imperatively rather than as React state - the same approach
+  // already used by the photo modal in Orders - so this adds no new component state
+  // and cannot interfere with the edit form's own rendering.
+  const ofOpenCamera=()=>{
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+      if(ofFileRef.current)ofFileRef.current.click();return;
+    }
+    var wrap=document.createElement('div');
+    wrap.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:14px';
+    var video=document.createElement('video');video.autoplay=true;video.playsInline=true;video.muted=true;
+    video.style.cssText='width:100%;max-width:640px;max-height:66vh;border-radius:10px;background:#000';
+    var caption=document.createElement('div');
+    caption.textContent=ofTag?('Photographing: '+ofTag):'Hold the item steady in frame';
+    caption.style.cssText='color:#e2e8f0;font-size:15px;font-weight:600;text-align:center';
+    var row=document.createElement('div');row.style.cssText='display:flex;gap:12px;flex-wrap:wrap;justify-content:center';
+    var snap=document.createElement('button');snap.textContent='📸 Capture';
+    snap.style.cssText='padding:16px 40px;border-radius:10px;border:none;background:#8b5cf6;color:#fff;font-size:18px;font-weight:bold;cursor:pointer';
+    var cancel=document.createElement('button');cancel.textContent='✕ Cancel';
+    cancel.style.cssText='padding:16px 32px;border-radius:10px;border:1px solid #ef4444;background:transparent;color:#fca5a5;font-size:16px;cursor:pointer';
+    row.appendChild(snap);row.appendChild(cancel);
+    wrap.appendChild(caption);wrap.appendChild(video);wrap.appendChild(row);
+    document.body.appendChild(wrap);
+
+    var close=function(){
+      try{if(ofStreamRef.current){ofStreamRef.current.getTracks().forEach(function(t){t.stop()});ofStreamRef.current=null}}catch(e){}
+      if(wrap.parentNode)wrap.parentNode.removeChild(wrap);
+    };
+    cancel.onclick=close;
+    snap.onclick=function(){
+      try{
+        var cv=document.createElement('canvas');
+        cv.width=video.videoWidth||1280;cv.height=video.videoHeight||720;
+        cv.getContext('2d').drawImage(video,0,0,cv.width,cv.height);
+        cv.toBlob(function(blob){close();if(blob)ofSend(blob)},'image/jpeg',0.8);
+      }catch(e){close();alert('Could not capture from the camera.')}
+    };
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}})
+      .then(function(s){ofStreamRef.current=s;video.srcObject=s})
+      .catch(function(){close();alert('Camera not available. Use "choose a file" instead.')});
+  };
+
+  // If the edit form closes while the camera overlay is open, shut the camera off and
+  // remove the overlay - otherwise the webcam light stays on over a dead screen.
+  useEffect(function(){return function(){
+    try{if(ofStreamRef.current){ofStreamRef.current.getTracks().forEach(function(t){t.stop()});ofStreamRef.current=null}}catch(e){}
+  }},[]);
   useEffect(function(){
     if(!order||!order.id)return;
     setOfPhotoLd(true);
@@ -1105,14 +1162,19 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
             (extras||[]).map(function(ex){return React.createElement('option',{key:ex.id,value:ex.name},ex.name)}),
             React.createElement('option',{value:'Damage'},'Damage'),
             React.createElement('option',{value:'Stain'},'Stain')),
+          // capture="environment" makes a phone open the camera straight away rather
+          // than a file browser. Kept hidden; it is also the fallback on a laptop
+          // without a working webcam.
           React.createElement('input',{ref:ofFileRef,type:'file',accept:'image/*',capture:'environment',
             onChange:ofAddPhoto,style:{display:'none'}}),
           React.createElement('button',{type:'button',disabled:ofUploading,
-            onClick:function(){if(ofFileRef.current)ofFileRef.current.click()},
-            style:{padding:'11px 18px',borderRadius:'8px',border:'2px dashed #8b5cf6',background:'rgba(139,92,246,0.12)',color:'#c4b5fd',cursor:ofUploading?'wait':'pointer',fontWeight:'bold',fontSize:'14px',whiteSpace:'nowrap',opacity:ofUploading?0.6:1}},
-            ofUploading?'\u231b Adding...':'\ud83d\udcf7 Add Photo')),
+            onClick:function(){ if(ofIsTouch){ if(ofFileRef.current)ofFileRef.current.click(); } else { ofOpenCamera(); } },
+            style:{padding:'14px 22px',borderRadius:'8px',border:'none',background:'linear-gradient(90deg,#8b5cf6,#6366f1)',color:'#fff',cursor:ofUploading?'wait':'pointer',fontWeight:'bold',fontSize:'15px',whiteSpace:'nowrap',opacity:ofUploading?0.6:1}},
+            ofUploading?'\u231b Saving...':'\ud83d\udcf7 Take Photo')),
         React.createElement('div',{style:{fontSize:'11px',color:'#64748b',marginTop:'6px'}},
-          'Photograph a blanket, comforter or any extra and it is saved against order #'+(order.order_num||'')+'. Pick what it is first so the photo is labelled.')),
+          'Photograph a blanket, comforter or any extra and it is saved against order #'+(order.order_num||'')+'. Pick what it is first so the photo is labelled.',
+          React.createElement('span',{onClick:function(){if(!ofUploading&&ofFileRef.current)ofFileRef.current.click()},
+            style:{marginLeft:'6px',color:'#64748b',textDecoration:'underline',cursor:'pointer'}},'or choose a file'))),
       ofZoom&&React.createElement('div',{onClick:function(){setOfZoom(null)},style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.92)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px',cursor:'zoom-out'}},
         React.createElement('img',{src:ofZoom,style:{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}})),
       React.createElement('form',{onSubmit:sub,style:{padding:'16px'}},
