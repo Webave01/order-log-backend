@@ -967,6 +967,8 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
   const[ofTag,setOfTag]=useState('');
   const ofFileRef=useRef(null);
   const ofStreamRef=useRef(null);
+  // Brief confirmation that photographing an item also added it to the bill.
+  const[ofAdded,setOfAdded]=useState(null);
   // On a phone the native camera is better than anything in the page - full quality,
   // flash and autofocus - so the capture input is used there. On a laptop that input
   // would only open a file browser, so the webcam overlay is used instead.
@@ -1000,17 +1002,32 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
     reader.readAsDataURL(file);
   });
 
-  // Shared tail end of both capture routes: shrink, upload, refresh the strip.
+  // Does this tag name a real billable extra? 'Damage' and 'Stain' deliberately do
+  // not - they are records of a problem, not something to charge for.
+  const ofExtraFor=(tag)=>(extras||[]).find(function(x){return String(x.name).toLowerCase()===String(tag||'').toLowerCase()});
+
+  // Shared tail end of both capture routes: shrink, upload, refresh the strip, and
+  // bill the item. Photographing a comforter IS the comforter arriving, so the extra
+  // is added here rather than making staff remember a second step.
   const ofSend=async(fileOrBlob)=>{
     if(!order||!order.id){alert('Save the order first, then add photos to it.');return}
+    const tag=ofTag;
     setOfUploading(true);
     try{
       var img=await ofShrink(fileOrBlob);
-      await api.post('/orders/'+order.id+'/photos',{image:img,label:ofTag||''});
+      var ex=ofExtraFor(tag);
+      // The extra is sent WITH the photo so the server commits both in one
+      // transaction - the charge is stored the moment the picture is taken.
+      var r=await api.post('/orders/'+order.id+'/photos',
+        Object.assign({image:img,label:tag||''}, ex?{add_extra_id:ex.id}:{}));
       var fresh=await api.get('/orders/'+order.id+'/photos');
       setOfPhotos(fresh);
+      // Mirror the server's authoritative extras into the open form, so the screen
+      // matches what is stored even though the form has not been saved.
+      if(r&&r.extras)setD(function(prev){return{...prev,extras:r.extras}});
+      if(ex)setOfAdded({name:ex.name,at:Date.now()});
       setOfTag('');
-    }catch(ex){alert(ex.message||'Could not add that photo.')}
+    }catch(ex2){alert(ex2.message||'Could not add that photo.')}
     setOfUploading(false);
   };
 
@@ -1018,6 +1035,39 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
     var file=e.target.files&&e.target.files[0];if(!file)return;
     e.target.value='';
     await ofSend(file);
+  };
+
+  // Who may remove a photo.
+  //   Admin  - any photo, at any time.
+  //   Staff  - only one taken in the last 30 minutes, so a blurred or wrong shot can
+  //            be retaken on the spot, but proof of an extra cannot quietly disappear
+  //            days later when a cleaner disputes the charge.
+  const ofCanDelete=(p)=>{
+    if(isAdmin)return true;
+    if(!p||!p.uploaded_at)return false;
+    var age=Date.now()-new Date(p.uploaded_at).getTime();
+    return age>=0&&age<30*60*1000;
+  };
+
+  const ofDeletePhoto=async(idx,p)=>{
+    if(!order||!order.id)return;
+    if(!confirm('Delete this photo'+(p&&p.label?(' of the '+p.label):'')+' from order #'+(order.order_num||'')+'?\n\nThis cannot be undone.'))return;
+    setOfUploading(true);
+    try{
+      // Decide about the charge BEFORE the call, so the server removes the photo and
+      // the charge in one transaction rather than leaving them briefly mismatched.
+      // Asked, not assumed: the item may be genuinely here and only the picture bad.
+      var ex=ofExtraFor(p&&p.label);
+      var alsoDrop=false;
+      if(ex&&(d.extras||[]).indexOf(ex.id)>-1){
+        alsoDrop=confirm('Also remove 1 × '+ex.name+' from this order?\n\nChoose Cancel if the '+ex.name.toLowerCase()+' is still here and only the photo was bad.');
+      }
+      var r=await api.del('/orders/'+order.id+'/photos/'+idx+(alsoDrop?('?remove_extra_id='+ex.id):''));
+      var fresh=await api.get('/orders/'+order.id+'/photos');
+      setOfPhotos(fresh);
+      if(r&&r.extras)setD(function(prev){return{...prev,extras:r.extras}});
+    }catch(ex2){alert(ex2.message||'Could not delete that photo.')}
+    setOfUploading(false);
   };
 
   // Laptop camera. Built imperatively rather than as React state - the same approach
@@ -1151,9 +1201,16 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
       order&&order.id&&React.createElement('div',{style:{padding:'12px 16px',borderBottom:'1px solid #334155',background:'#0f172a'}},
         React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',fontWeight:'bold',marginBottom:'8px'}},ofPhotoLd?'Loading photos...':'\ud83d\udcf7 Photos'+(ofPhotos.length>0?' ('+ofPhotos.length+')':'')+(ofPhotos.length>0?' \u2014 tap to enlarge':'')),
         ofPhotos.length>0&&React.createElement('div',{style:{display:'flex',gap:'8px',overflowX:'auto',marginBottom:'10px'}},
-          ofPhotos.map(function(p,i){return React.createElement('div',{key:i,style:{flexShrink:0,textAlign:'center'}},
+          ofPhotos.map(function(p,i){return React.createElement('div',{key:i,style:{flexShrink:0,textAlign:'center',position:'relative'}},
             React.createElement('img',{src:photoSrc(p),onClick:function(){setOfZoom(photoSrc(p))},style:{height:ofPhotos.length===1?'200px':'130px',maxWidth:'100%',borderRadius:'6px',cursor:'zoom-in',border:'1px solid #334155',objectFit:'contain',background:'#000',display:'block'}}),
-            p.label?React.createElement('div',{style:{fontSize:'11px',color:'#c4b5fd',marginTop:'3px',fontWeight:'600'}},p.label):null)})),
+            ofCanDelete(p)?React.createElement('button',{type:'button',disabled:ofUploading,
+              onClick:function(ev){ev.stopPropagation();ofDeletePhoto(i,p)},
+              title:isAdmin?'Delete this photo':'Delete (you can remove a photo within 30 minutes of taking it)',
+              style:{position:'absolute',top:'4px',right:'4px',width:'30px',height:'30px',borderRadius:'50%',border:'none',background:'rgba(127,29,29,0.92)',color:'#fff',fontSize:'15px',fontWeight:'bold',cursor:ofUploading?'wait':'pointer',lineHeight:'30px',padding:0}},'✕'):null,
+            p.label?React.createElement('div',{style:{fontSize:'11px',color:'#c4b5fd',marginTop:'3px',fontWeight:'600'}},p.label):null,
+            React.createElement('div',{style:{fontSize:'10px',color:'#64748b'}},
+              (p.uploaded_at?fmtD(p.uploaded_at)+' '+fmtTime(p.uploaded_at):''),
+              p.uploaded_by?(' • '+p.uploaded_by):''))})),
         // Photograph an extra item and attach it to this order number.
         React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
           React.createElement('select',{value:ofTag,onChange:function(e){setOfTag(e.target.value)},disabled:ofUploading,
@@ -1171,8 +1228,10 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
             onClick:function(){ if(ofIsTouch){ if(ofFileRef.current)ofFileRef.current.click(); } else { ofOpenCamera(); } },
             style:{padding:'14px 22px',borderRadius:'8px',border:'none',background:'linear-gradient(90deg,#8b5cf6,#6366f1)',color:'#fff',cursor:ofUploading?'wait':'pointer',fontWeight:'bold',fontSize:'15px',whiteSpace:'nowrap',opacity:ofUploading?0.6:1}},
             ofUploading?'\u231b Saving...':'\ud83d\udcf7 Take Photo')),
+        ofAdded&&React.createElement('div',{style:{marginTop:'8px',padding:'8px 10px',borderRadius:'6px',background:'rgba(16,185,129,0.12)',border:'1px solid #10b981',color:'#6ee7b7',fontSize:'13px',fontWeight:'600'}},
+          '✓ 1 × '+ofAdded.name+' added and saved to order #'+(order.order_num||'')+'.'),
         React.createElement('div',{style:{fontSize:'11px',color:'#64748b',marginTop:'6px'}},
-          'Photograph a blanket, comforter or any extra and it is saved against order #'+(order.order_num||'')+'. Pick what it is first so the photo is labelled.',
+          'Photograph a blanket, comforter or any extra and it is saved against order #'+(order.order_num||'')+'. Picking the item also adds it to the bill.',
           React.createElement('span',{onClick:function(){if(!ofUploading&&ofFileRef.current)ofFileRef.current.click()},
             style:{marginLeft:'6px',color:'#64748b',textDecoration:'underline',cursor:'pointer'}},'or choose a file'))),
       ofZoom&&React.createElement('div',{onClick:function(){setOfZoom(null)},style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.92)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px',cursor:'zoom-out'}},
