@@ -959,6 +959,56 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
   const[saving,setSaving]=useState(false);const[dupWarn,setDupWarn]=useState(null);const[seqWarn,setSeqWarn]=useState(null);const[addrDupWarn,setAddrDupWarn]=useState(null);const[cleanerSearch,setCleanerSearch]=useState('');const[highlightIdx,setHighlightIdx]=useState(0);
   const[confirmPopup,setConfirmPopup]=useState(null);
   const[ofPhotos,setOfPhotos]=useState([]);const[ofPhotoLd,setOfPhotoLd]=useState(false);const[ofZoom,setOfZoom]=useState(null);
+  // Photographing an extra item on an existing order. Declared HERE, with the rest of
+  // this component's state - the last photo feature broke because its state landed in
+  // another component. Nothing new on the server: /orders/:id/photos already accepts
+  // {image, label}, so the extra's name is simply stored as the photo's label.
+  const[ofUploading,setOfUploading]=useState(false);
+  const[ofTag,setOfTag]=useState('');
+  const ofFileRef=useRef(null);
+
+  // Same shrink-and-guard pipeline as the scan screen: every path settles, so an
+  // undecodable photo reports itself instead of hanging.
+  const ofShrink=(file)=>new Promise(function(resolve,reject){
+    var settled=false;
+    var done=function(v){if(!settled){settled=true;resolve(v)}};
+    var fail=function(m){if(!settled){settled=true;reject(new Error(m))}};
+    var timer=setTimeout(function(){fail('That photo took too long to process. Try again.')},20000);
+    var reader=new FileReader();
+    reader.onerror=function(){clearTimeout(timer);fail('Could not read that photo.')};
+    reader.onload=function(e){
+      var img=new Image();
+      img.onerror=function(){clearTimeout(timer);fail('That image format is not supported. Set the camera to "Most Compatible" (JPEG).')};
+      img.onload=function(){
+        clearTimeout(timer);
+        try{
+          var cv=document.createElement('canvas');var maxW=1200;var sc=Math.min(1,maxW/img.width);
+          cv.width=Math.round(img.width*sc);cv.height=Math.round(img.height*sc);
+          cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+          var out=cv.toDataURL('image/jpeg',0.6);
+          if(out.length>9000000)return fail('That photo is too large even after shrinking. Take it again from further back.');
+          done(out);
+        }catch(err){fail('Could not process that photo.')}
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  const ofAddPhoto=async(e)=>{
+    var file=e.target.files&&e.target.files[0];if(!file)return;
+    e.target.value='';
+    if(!order||!order.id){alert('Save the order first, then add photos to it.');return}
+    setOfUploading(true);
+    try{
+      var img=await ofShrink(file);
+      await api.post('/orders/'+order.id+'/photos',{image:img,label:ofTag||''});
+      var fresh=await api.get('/orders/'+order.id+'/photos');
+      setOfPhotos(fresh);
+      setOfTag('');
+    }catch(ex){alert(ex.message||'Could not add that photo.')}
+    setOfUploading(false);
+  };
   useEffect(function(){
     if(!order||!order.id)return;
     setOfPhotoLd(true);
@@ -1039,10 +1089,30 @@ function OrderForm({order,cleaners,extras,cleanerExtras,staffName,isAdmin,onSave
       React.createElement('div',{style:{display:'flex',justifyContent:'space-between',padding:'16px',borderBottom:'1px solid #334155'}},
         React.createElement('h3',{style:{margin:0}},(order?t.edit:t.add)+' '+t.orders),
         React.createElement('button',{onClick:onClose,style:{background:'#ef4444',border:'none',color:'#fff',fontSize:'28px',cursor:'pointer',width:'44px',height:'44px',borderRadius:'8px',fontWeight:'bold'}},'\u2715')),
-      order&&order.id&&(ofPhotoLd||ofPhotos.length>0)&&React.createElement('div',{style:{padding:'12px 16px',borderBottom:'1px solid #334155',background:'#0f172a'}},
-        React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',fontWeight:'bold',marginBottom:'8px'}},ofPhotoLd?'Loading photos...':'\ud83d\udcf7 Ticket photo'+(ofPhotos.length>1?'s ('+ofPhotos.length+')':'')+' \u2014 tap to enlarge'),
-        React.createElement('div',{style:{display:'flex',gap:'8px',overflowX:'auto'}},
-          ofPhotos.map(function(p,i){return React.createElement('img',{key:i,src:photoSrc(p),onClick:function(){setOfZoom(photoSrc(p))},style:{height:ofPhotos.length===1?'220px':'140px',maxWidth:'100%',borderRadius:'6px',cursor:'zoom-in',border:'1px solid #334155',objectFit:'contain',background:'#000'}})}))),
+      // Shown whenever an existing order is open, so the camera button is always there
+      // (it used to appear only once a photo already existed).
+      order&&order.id&&React.createElement('div',{style:{padding:'12px 16px',borderBottom:'1px solid #334155',background:'#0f172a'}},
+        React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',fontWeight:'bold',marginBottom:'8px'}},ofPhotoLd?'Loading photos...':'\ud83d\udcf7 Photos'+(ofPhotos.length>0?' ('+ofPhotos.length+')':'')+(ofPhotos.length>0?' \u2014 tap to enlarge':'')),
+        ofPhotos.length>0&&React.createElement('div',{style:{display:'flex',gap:'8px',overflowX:'auto',marginBottom:'10px'}},
+          ofPhotos.map(function(p,i){return React.createElement('div',{key:i,style:{flexShrink:0,textAlign:'center'}},
+            React.createElement('img',{src:photoSrc(p),onClick:function(){setOfZoom(photoSrc(p))},style:{height:ofPhotos.length===1?'200px':'130px',maxWidth:'100%',borderRadius:'6px',cursor:'zoom-in',border:'1px solid #334155',objectFit:'contain',background:'#000',display:'block'}}),
+            p.label?React.createElement('div',{style:{fontSize:'11px',color:'#c4b5fd',marginTop:'3px',fontWeight:'600'}},p.label):null)})),
+        // Photograph an extra item and attach it to this order number.
+        React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
+          React.createElement('select',{value:ofTag,onChange:function(e){setOfTag(e.target.value)},disabled:ofUploading,
+            style:{...S.inp,flex:'1 1 150px',padding:'10px',fontSize:'14px'}},
+            React.createElement('option',{value:''},'What is it? (optional)'),
+            (extras||[]).map(function(ex){return React.createElement('option',{key:ex.id,value:ex.name},ex.name)}),
+            React.createElement('option',{value:'Damage'},'Damage'),
+            React.createElement('option',{value:'Stain'},'Stain')),
+          React.createElement('input',{ref:ofFileRef,type:'file',accept:'image/*',capture:'environment',
+            onChange:ofAddPhoto,style:{display:'none'}}),
+          React.createElement('button',{type:'button',disabled:ofUploading,
+            onClick:function(){if(ofFileRef.current)ofFileRef.current.click()},
+            style:{padding:'11px 18px',borderRadius:'8px',border:'2px dashed #8b5cf6',background:'rgba(139,92,246,0.12)',color:'#c4b5fd',cursor:ofUploading?'wait':'pointer',fontWeight:'bold',fontSize:'14px',whiteSpace:'nowrap',opacity:ofUploading?0.6:1}},
+            ofUploading?'\u231b Adding...':'\ud83d\udcf7 Add Photo')),
+        React.createElement('div',{style:{fontSize:'11px',color:'#64748b',marginTop:'6px'}},
+          'Photograph a blanket, comforter or any extra and it is saved against order #'+(order.order_num||'')+'. Pick what it is first so the photo is labelled.')),
       ofZoom&&React.createElement('div',{onClick:function(){setOfZoom(null)},style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.92)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center',padding:'12px',cursor:'zoom-out'}},
         React.createElement('img',{src:ofZoom,style:{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}})),
       React.createElement('form',{onSubmit:sub,style:{padding:'16px'}},
@@ -1751,9 +1821,9 @@ function TrendsPanel({t}){
 }
 
 function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
-  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);const[showDba,setShowDba]=useState(false);
+  const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,cycle_weeks:4,cycle_anchor:'',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);const[showDba,setShowDba]=useState(false);
   const[showAddrs,setShowAddrs]=useState(null);const[addrList,setAddrList]=useState([]);const[newAddr,setNewAddr]=useState('');const[newApt,setNewApt]=useState('');const[editAddr,setEditAddr]=useState(null);
-  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,ticket_format:'',dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
+  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,cycle_weeks:4,cycle_anchor:'',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
   const del=async id=>{if(!confirm(t.delete+'?'))return;try{await api.del('/cleaners/'+id);notify('Deleted');await loadData()}catch(e){alert(e.message)}};
   const loadAddrs=async(cid)=>{try{const a=await api.get('/cleaner-addresses/'+cid);setAddrList(a)}catch(e){setAddrList([])}};
   const addAddr=async()=>{if(!newAddr.trim()){alert('Enter address');return}try{await api.post('/cleaner-addresses',{cleaner_id:showAddrs.id,address:newAddr.trim(),apt:newApt.trim()});setNewAddr('');setNewApt('');loadAddrs(showAddrs.id);notify('Address added')}catch(e){alert(e.message)}};
@@ -1761,7 +1831,7 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
   const saveAddr=async()=>{if(!editAddr)return;try{await api.put('/cleaner-addresses/'+editAddr.id,{address:editAddr.address,apt:editAddr.apt});setEditAddr(null);loadAddrs(showAddrs.id);notify('Updated')}catch(e){alert(e.message)}};
 
   return React.createElement('div',null,
-    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});setShowDba(false);setShow(true)},style:S.btn},t.addCleaner)),
+    React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'20px'}},React.createElement('h2',{style:{margin:0}},t.cleanerLocations),React.createElement('button',{onClick:()=>{setEd(null);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,cycle_weeks:4,cycle_anchor:'',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});setShowDba(false);setShow(true)},style:S.btn},t.addCleaner)),
     React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}},
       cleaners.map(c=>React.createElement('div',{key:c.id,style:S.card},
         React.createElement('div',{style:{fontWeight:'bold',marginBottom:'4px'}},c.name,c.has_addresses&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),c.billing_cycle==='monthly'&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'11px',color:'#fbbf24',background:'rgba(245,158,11,0.15)',padding:'2px 6px',borderRadius:'4px'}},'\ud83d\udcc5 Calendar Month'),c.settles_monthly&&(c.billing_cycle||'weekly')==='weekly'&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'11px',color:'#93c5fd',background:'rgba(59,130,246,0.15)',padding:'2px 6px',borderRadius:'4px'}},'Weekly invoices \u2022 pays monthly'),c.dba_name&&React.createElement('span',{style:{marginLeft:'6px',fontSize:'12px',color:'#f59e0b'}},'\ud83c\udfe2 '+c.dba_name)),
@@ -1771,7 +1841,7 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
           React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:c.route==='east'?'#3b82f6':'#f59e0b'}},c.route==='east'?'\ud83d\uddfd East':'\ud83c\udf06 West'),
           c.congestion_zone&&React.createElement('div',{style:{display:'inline-block',padding:'4px 12px',borderRadius:'6px',fontSize:'12px',fontWeight:'bold',background:'#dc2626'}},'\ud83d\ude97 Congestion $'+parseFloat(c.congestion_rate||5).toFixed(2)+'/day')),
         React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'12px',flexWrap:'wrap'}},
-          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,address:c.address||'',rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false,billing_cycle:c.billing_cycle||'weekly',settles_monthly:!!c.settles_monthly,ticket_format:c.ticket_format||'',dba_name:c.dba_name||'',dba_address:c.dba_address||'',dba_phone:c.dba_phone||''});setShowDba(!!c.dba_name);setShow(true)},style:S.edit},t.edit),
+          React.createElement('button',{onClick:()=>{setEd(c);setF({name:c.name,address:c.address||'',rate:c.rate,route:c.route,min_weight:c.min_weight||10,congestion_zone:c.congestion_zone||false,congestion_rate:c.congestion_rate||5,has_addresses:c.has_addresses||false,billing_cycle:c.billing_cycle||'weekly',settles_monthly:!!c.settles_monthly,cycle_weeks:(c.cycle_weeks===0?0:(c.cycle_weeks||4)),cycle_anchor:(c.cycle_anchor?String(c.cycle_anchor).split('T')[0]:''),ticket_format:c.ticket_format||'',dba_name:c.dba_name||'',dba_address:c.dba_address||'',dba_phone:c.dba_phone||''});setShowDba(!!c.dba_name);setShow(true)},style:S.edit},t.edit),
           React.createElement('button',{onClick:()=>setShowPrices(c),style:{...S.edit,borderColor:'#f59e0b',color:'#f59e0b'}},t.customPrices),
           c.has_addresses&&React.createElement('button',{onClick:()=>{setShowAddrs(c);loadAddrs(c.id)},style:{...S.edit,borderColor:'#8b5cf6',color:'#a78bfa'}},'\ud83c\udfe0 Addresses'),
           React.createElement('button',{onClick:()=>del(c.id),style:S.del},t.delete))))),
@@ -1807,7 +1877,26 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
               React.createElement('input',{type:'checkbox',id:'settlesMonthly',checked:!!f.settles_monthly,onChange:function(e){setF({...f,settles_monthly:e.target.checked})},style:{width:'20px',height:'20px'}}),
               React.createElement('label',{htmlFor:'settlesMonthly',style:{color:f.settles_monthly?'#fbbf24':'#94a3b8',fontWeight:'bold',cursor:'pointer',fontSize:'13px'}},'Pays once a month (off the weekly invoices)')),
             React.createElement('div',{style:{marginTop:'6px',fontSize:'11px',color:'#64748b',lineHeight:'1.5'}},
-              'Tick this for a cleaner who sends ONE check a month but calculates it from the weekly invoices you hand them — Golden Star, for example. You keep invoicing weekly; the Monthly tab groups those weeks so you can mark the whole month paid in one click.')),
+              'Tick this for a cleaner who pays in batches but calculates the amount from the weekly invoices you hand them — Golden Star, for example. You keep invoicing weekly; the Monthly tab groups those weeks so you can settle a whole batch in one click.'),
+            // A rolling 4-week cycle is NOT a calendar month: a month holds 4 or 5
+            // Mondays, so the two drift apart. 4 weeks = 13 cycles a year.
+            f.settles_monthly&&React.createElement('div',{style:{marginTop:'10px',paddingTop:'10px',borderTop:'1px solid #334155'}},
+              React.createElement('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
+                React.createElement('div',{style:{flex:'1 1 130px'}},
+                  React.createElement('label',{style:S.lbl},'Batch length'),
+                  React.createElement('select',{value:f.cycle_weeks===0?'0':String(f.cycle_weeks||4),
+                    onChange:function(e){setF({...f,cycle_weeks:parseInt(e.target.value)})},style:{...S.inp,width:'100%'}},
+                    React.createElement('option',{value:'4'},'Every 4 weeks (rolling)'),
+                    React.createElement('option',{value:'2'},'Every 2 weeks'),
+                    React.createElement('option',{value:'0'},'Calendar month (1st–end)'))),
+                parseInt(f.cycle_weeks)!==0&&React.createElement('div',{style:{flex:'1 1 150px'}},
+                  React.createElement('label',{style:S.lbl},'Cycle starts (a Monday)'),
+                  React.createElement('input',{type:'date',value:f.cycle_anchor||'',
+                    onChange:function(e){setF({...f,cycle_anchor:e.target.value})},style:{...S.inp,width:'100%'}}))),
+              React.createElement('div',{style:{marginTop:'6px',fontSize:'11px',color:'#64748b',lineHeight:'1.5'}},
+                parseInt(f.cycle_weeks)===0
+                  ? 'Weeks are grouped by calendar month. Use this only if the cleaner really pays on the 1st-to-end-of-month.'
+                  : 'Batches run in fixed blocks of weeks from the start date above, so they cross month boundaries — 4 weeks gives 13 batches a year, not 12. Set the date to the Monday a real billing cycle began; leave it blank and it uses their earliest invoiced week, which may not line up with what you actually bill.'))),
           React.createElement('div',{style:{marginTop:'8px'}},React.createElement('label',{style:S.lbl},'Ticket Scan Hint (optional)'),React.createElement('input',{value:f.ticket_format,onChange:function(e){setF({...f,ticket_format:e.target.value})},style:S.inp,placeholder:'e.g. green ticket, number top-left, weight near WASH'})),
             f.has_addresses&&React.createElement('div',{style:{marginTop:'6px',color:'#94a3b8',fontSize:'11px'}},'Staff will pick customer address from a list when entering orders. Bag color auto-set to Black.')),
           React.createElement('div',{style:{marginTop:'12px',padding:'12px',borderRadius:'8px',border:showDba?'1px solid #f59e0b':'1px solid #475569',background:showDba?'rgba(245,158,11,0.05)':'transparent'}},
@@ -1891,11 +1980,11 @@ function Invoices({cleaners,extras,cleanerExtras,settings,t}){
   const setLW=()=>{const n=new Date();const dow=n.getDay();const daysSinceSat=dow===0?1:dow+1;const sat=new Date(n);sat.setDate(n.getDate()-daysSinceSat);const mon=new Date(sat);mon.setDate(sat.getDate()-5);setStart(localDateStr(mon));setEnd(localDateStr(sat))};
   const setLM=()=>{const n=new Date();const firstPrev=new Date(n.getFullYear(),n.getMonth()-1,1);const lastPrev=new Date(n.getFullYear(),n.getMonth(),0);setStart(localDateStr(firstPrev));setEnd(localDateStr(lastPrev))};
 
-  const exportPDF=()=>{if(!inv)return;const{jsPDF}=window.jspdf;const doc=new jsPDF();const weekNum=Math.ceil((new Date(inv.start).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);const clnIdx=cleaners.findIndex(c=>c.id===inv.cleaner.id)+1;const invoiceId=10000+(weekNum*100)+clnIdx;const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});const cleanerName=invoiceName(inv.cleaner.name);const coName=inv.cleaner.dba_name||settings.companyName||'WEBSTER AVE LAUNDROMAT';const coAddr=inv.cleaner.dba_address||settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456';const coPhone=inv.cleaner.dba_phone||settings.storePhone||'929-263-1560';let isFirstPage=true;doc.setFontSize(8);doc.text(coName+' \u2022 '+coAddr,14,12);doc.text(coPhone+(inv.cleaner.dba_name?'':' \u2022 Manager: '+(settings.managerPhone||'347-632-2024')),14,16);doc.setFontSize(9);doc.text('Invoice #: '+invoiceId,160,12);doc.setFontSize(16);doc.setFont(undefined,'bold');doc.text(cleanerName,14,26);doc.setFont(undefined,'normal');doc.setFontSize(9);doc.text('Period: '+fmtD(inv.start)+' - '+fmtD(inv.end),14,31);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(inv.total),150,26);doc.setFont(undefined,'normal');var hasAddr=inv.cleaner.has_addresses;var rows=inv.orders.map((o,i)=>{var r=[i+1,fmtD(o.pickup_date),fmtC(o.total),o.order_num,o.weight];if(hasAddr){r.push(o.customer_address||'');r.push(o.customer_apt||'')}r.push(o.extras_formatted||'');r.push(o.notes||'');return r});var head=hasAddr?[['#','Date','Amount','Order #','Wt','Address','Apt','Extras','Notes']]:[['#','Date','Amount','Order #','Weight','Extras','Notes']];var colStyles=hasAddr?{0:{cellWidth:10},1:{cellWidth:16},2:{cellWidth:18},3:{cellWidth:16},4:{cellWidth:12},5:{cellWidth:42},6:{cellWidth:14},7:{cellWidth:28},8:{cellWidth:26}}:{0:{cellWidth:14},1:{cellWidth:22},2:{cellWidth:22},3:{cellWidth:22},4:{cellWidth:18},5:{cellWidth:44},6:{cellWidth:44}};doc.autoTable({startY:35,head:head,body:rows,columnStyles:colStyles,styles:{fontSize:fontTierFor(cleanerName)==='xl'?15:((rows.length<=27&&!hasAddr)||fontTierFor(cleanerName)==='big'?10:(hasAddr?6:7)),cellPadding:fontTierFor(cleanerName)==='xl'?4.5:((rows.length<=27&&!hasAddr)||fontTierFor(cleanerName)==='big'?3:1),textColor:[0,0,0],lineColor:[200,200,200],lineWidth:0.1,overflow:'linebreak'},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold',lineWidth:0.5,lineColor:[0,0,0]},alternateRowStyles:{fillColor:[255,255,255]},bodyStyles:{fillColor:[255,255,255]},margin:{top:10,bottom:8},didDrawPage:function(){if(!isFirstPage){doc.setFontSize(9);doc.setFont(undefined,'normal');doc.text(cleanerName+' (cont.)',14,12)}isFirstPage=false}});let fy=doc.lastAutoTable.finalY;doc.setFontSize(11);if(inv.congestionZone&&inv.congestionSurcharge>0){doc.text('Congestion Charge = '+fmtC(inv.congestionSurcharge)+' ('+inv.congestionDays+' days)',14,fy+8);fy+=6}fy+=2;doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(inv.total),14,fy+8);doc.setFont(undefined,'normal');doc.setFontSize(11);doc.setFont(undefined,'italic');doc.text('Thank you for your business!',14,fy+18);doc.save(cleanerName.replace(/\s/g,'_')+'_'+inv.start+'_to_'+inv.end+'.pdf')};
+  const exportPDF=()=>{if(!inv)return;const{jsPDF}=window.jspdf;const doc=new jsPDF();const invoiceId=inv.invoice_no||null;const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});const cleanerName=invoiceName(inv.cleaner.name);const coName=inv.cleaner.dba_name||settings.companyName||'WEBSTER AVE LAUNDROMAT';const coAddr=inv.cleaner.dba_address||settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456';const coPhone=inv.cleaner.dba_phone||settings.storePhone||'929-263-1560';let isFirstPage=true;doc.setFontSize(8);doc.text(coName+' \u2022 '+coAddr,14,12);doc.text(coPhone+(inv.cleaner.dba_name?'':' \u2022 Manager: '+(settings.managerPhone||'347-632-2024')),14,16);doc.setFontSize(9);if(invoiceId)doc.text('Invoice #: '+invoiceId,160,12);doc.setFontSize(16);doc.setFont(undefined,'bold');doc.text(cleanerName,14,26);doc.setFont(undefined,'normal');doc.setFontSize(9);doc.text('Period: '+fmtD(inv.start)+' - '+fmtD(inv.end),14,31);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(inv.total),150,26);doc.setFont(undefined,'normal');var hasAddr=inv.cleaner.has_addresses;var rows=inv.orders.map((o,i)=>{var r=[i+1,fmtD(o.pickup_date),fmtC(o.total),o.order_num,o.weight];if(hasAddr){r.push(o.customer_address||'');r.push(o.customer_apt||'')}r.push(o.extras_formatted||'');r.push(o.notes||'');return r});var head=hasAddr?[['#','Date','Amount','Order #','Wt','Address','Apt','Extras','Notes']]:[['#','Date','Amount','Order #','Weight','Extras','Notes']];var colStyles=hasAddr?{0:{cellWidth:10},1:{cellWidth:16},2:{cellWidth:18},3:{cellWidth:16},4:{cellWidth:12},5:{cellWidth:42},6:{cellWidth:14},7:{cellWidth:28},8:{cellWidth:26}}:{0:{cellWidth:14},1:{cellWidth:22},2:{cellWidth:22},3:{cellWidth:22},4:{cellWidth:18},5:{cellWidth:44},6:{cellWidth:44}};doc.autoTable({startY:35,head:head,body:rows,columnStyles:colStyles,styles:{fontSize:fontTierFor(cleanerName)==='xl'?15:((rows.length<=27&&!hasAddr)||fontTierFor(cleanerName)==='big'?10:(hasAddr?6:7)),cellPadding:fontTierFor(cleanerName)==='xl'?4.5:((rows.length<=27&&!hasAddr)||fontTierFor(cleanerName)==='big'?3:1),textColor:[0,0,0],lineColor:[200,200,200],lineWidth:0.1,overflow:'linebreak'},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold',lineWidth:0.5,lineColor:[0,0,0]},alternateRowStyles:{fillColor:[255,255,255]},bodyStyles:{fillColor:[255,255,255]},margin:{top:10,bottom:8},didDrawPage:function(){if(!isFirstPage){doc.setFontSize(9);doc.setFont(undefined,'normal');doc.text(cleanerName+' (cont.)',14,12)}isFirstPage=false}});let fy=doc.lastAutoTable.finalY;doc.setFontSize(11);if(inv.congestionZone&&inv.congestionSurcharge>0){doc.text('Congestion Charge = '+fmtC(inv.congestionSurcharge)+' ('+inv.congestionDays+' days)',14,fy+8);fy+=6}fy+=2;doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(inv.total),14,fy+8);doc.setFont(undefined,'normal');doc.setFontSize(11);doc.setFont(undefined,'italic');doc.text('Thank you for your business!',14,fy+18);doc.save(cleanerName.replace(/\s/g,'_')+'_'+inv.start+'_to_'+inv.end+'.pdf')};
 
   const exportExcel=()=>{if(!inv)return;var hasAddr=inv.cleaner.has_addresses;const rows=inv.orders.map((o,i)=>{var r={'#':i+1,Date:fmtD(o.pickup_date),Amount:o.total,'Order #':o.order_num,Weight:o.weight};if(hasAddr){r['Address']=o.customer_address||'';r['Apt #']=o.customer_apt||''}r['Extras']=o.extras_formatted||'';r['Notes']=o.notes||'';return r});rows.push({});if(inv.congestionZone&&inv.congestionSurcharge>0){rows.push({'#':'',Date:'Congestion Charge ('+inv.congestionDays+' days)',Amount:inv.congestionSurcharge})}rows.push({'#':'',Date:'Total Due',Amount:inv.total});const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,invoiceName(inv.cleaner.name).substring(0,30));XLSX.writeFile(wb,'invoice_'+invoiceName(inv.cleaner.name).replace(/\s/g,'_')+'_'+inv.start+'.xlsx')};
 
-  const exportAllPDF=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{const res=await api.get('/reports/invoices-all?start_date='+start+'&end_date='+end);const{jsPDF}=window.jspdf;const doc=new jsPDF();let first=true;let invNum=1;const weekNum=Math.ceil((new Date(start).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});const excludeNames=['Lincoln Plaza','Harlem','Laundry Day','Morris'];const filteredInvoices=res.invoices.filter(inv=>!excludeNames.some(ex=>inv.cleaner.name.toLowerCase().includes(ex.toLowerCase())));for(const i of filteredInvoices){if(!first)doc.addPage();first=false;const invoiceId=10000+(weekNum*100)+invNum;invNum++;const startPage=doc.internal.getNumberOfPages();doc.setFontSize(8);doc.text((settings.companyName||'WEBSTER AVE LAUNDROMAT')+' \u2022 '+(settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456'),14,12);doc.text('Store: '+(settings.storePhone||'929-263-1560')+' \u2022 Manager: '+(settings.managerPhone||'347-632-2024'),14,16);doc.setFontSize(9);doc.text('Invoice #: '+invoiceId,160,12);doc.setFontSize(16);doc.setFont(undefined,'bold');doc.text(invoiceName(i.cleaner.name),14,26);doc.setFont(undefined,'normal');doc.setFontSize(9);doc.text('Period: '+fmtD(start)+' - '+fmtD(end),14,31);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(i.grandTotal),150,26);doc.setFont(undefined,'normal');const cleanerName=invoiceName(i.cleaner.name);var allHasAddr=i.cleaner.has_addresses;const rows=i.orders.map((o,j)=>{var r=[j+1,fmtD(o.pickup_date),fmtC(o.total),o.order_num,o.weight];if(allHasAddr){r.push(o.customer_address||'');r.push(o.customer_apt||'')}r.push(o.extras_formatted||'');r.push(o.notes||'');return r});var allHead=allHasAddr?[['#','Date','Amount','Order #','Wt','Address','Apt','Extras','Notes']]:[['#','Date','Amount','Order #','Weight','Extras','Notes']];var allColStyles=allHasAddr?{0:{cellWidth:10},1:{cellWidth:16},2:{cellWidth:18},3:{cellWidth:16},4:{cellWidth:12},5:{cellWidth:42},6:{cellWidth:14},7:{cellWidth:28},8:{cellWidth:26}}:{0:{cellWidth:14},1:{cellWidth:22},2:{cellWidth:22},3:{cellWidth:22},4:{cellWidth:18},5:{cellWidth:44},6:{cellWidth:44}};doc.autoTable({startY:35,head:allHead,body:rows,columnStyles:allColStyles,styles:{fontSize:fontTierFor(cleanerName)==='xl'?15:(rows.length<=27||fontTierFor(cleanerName)==='big'?10:7),cellPadding:fontTierFor(cleanerName)==='xl'?4.5:(rows.length<=27||fontTierFor(cleanerName)==='big'?3:1),textColor:[0,0,0],lineColor:[200,200,200],lineWidth:0.1,overflow:'linebreak'},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold',lineWidth:0.5,lineColor:[0,0,0]},alternateRowStyles:{fillColor:[255,255,255]},bodyStyles:{fillColor:[255,255,255]},margin:{top:10,bottom:8},didDrawPage:function(data){if(doc.internal.getNumberOfPages()>startPage){doc.setFontSize(9);doc.setFont(undefined,'normal');doc.text(cleanerName+' (cont.)',14,12)}}});let fy=doc.lastAutoTable.finalY;doc.setFontSize(11);if(i.congestionZone&&i.congestionSurcharge>0){doc.text('Congestion Charge = '+fmtC(i.congestionSurcharge)+' ('+i.congestionDays+' days)',14,fy+8);fy+=6}fy+=2;doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(i.grandTotal),14,fy+8);doc.setFont(undefined,'normal');doc.setFontSize(11);doc.setFont(undefined,'italic');doc.text('Thank you for your business!',14,fy+18)}doc.save('All_Invoices_'+start+'_to_'+end+'.pdf')}catch(e){alert(e.message)}setLd(false)};
+  const exportAllPDF=async()=>{if(!start||!end){alert('Select dates');return}setLd(true);try{const res=await api.get('/reports/invoices-all?start_date='+start+'&end_date='+end);const{jsPDF}=window.jspdf;const doc=new jsPDF();let first=true;let invNum=1;const weekNum=Math.ceil((new Date(start).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});const excludeNames=['Lincoln Plaza','Harlem','Laundry Day','Morris'];const filteredInvoices=res.invoices.filter(inv=>!excludeNames.some(ex=>inv.cleaner.name.toLowerCase().includes(ex.toLowerCase())));for(const i of filteredInvoices){if(!first)doc.addPage();first=false;const invoiceId=i.invoice_no||null;invNum++;const startPage=doc.internal.getNumberOfPages();doc.setFontSize(8);doc.text((settings.companyName||'WEBSTER AVE LAUNDROMAT')+' \u2022 '+(settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456'),14,12);doc.text('Store: '+(settings.storePhone||'929-263-1560')+' \u2022 Manager: '+(settings.managerPhone||'347-632-2024'),14,16);doc.setFontSize(9);if(invoiceId)doc.text('Invoice #: '+invoiceId,160,12);doc.setFontSize(16);doc.setFont(undefined,'bold');doc.text(invoiceName(i.cleaner.name),14,26);doc.setFont(undefined,'normal');doc.setFontSize(9);doc.text('Period: '+fmtD(start)+' - '+fmtD(end),14,31);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(i.grandTotal),150,26);doc.setFont(undefined,'normal');const cleanerName=invoiceName(i.cleaner.name);var allHasAddr=i.cleaner.has_addresses;const rows=i.orders.map((o,j)=>{var r=[j+1,fmtD(o.pickup_date),fmtC(o.total),o.order_num,o.weight];if(allHasAddr){r.push(o.customer_address||'');r.push(o.customer_apt||'')}r.push(o.extras_formatted||'');r.push(o.notes||'');return r});var allHead=allHasAddr?[['#','Date','Amount','Order #','Wt','Address','Apt','Extras','Notes']]:[['#','Date','Amount','Order #','Weight','Extras','Notes']];var allColStyles=allHasAddr?{0:{cellWidth:10},1:{cellWidth:16},2:{cellWidth:18},3:{cellWidth:16},4:{cellWidth:12},5:{cellWidth:42},6:{cellWidth:14},7:{cellWidth:28},8:{cellWidth:26}}:{0:{cellWidth:14},1:{cellWidth:22},2:{cellWidth:22},3:{cellWidth:22},4:{cellWidth:18},5:{cellWidth:44},6:{cellWidth:44}};doc.autoTable({startY:35,head:allHead,body:rows,columnStyles:allColStyles,styles:{fontSize:fontTierFor(cleanerName)==='xl'?15:(rows.length<=27||fontTierFor(cleanerName)==='big'?10:7),cellPadding:fontTierFor(cleanerName)==='xl'?4.5:(rows.length<=27||fontTierFor(cleanerName)==='big'?3:1),textColor:[0,0,0],lineColor:[200,200,200],lineWidth:0.1,overflow:'linebreak'},headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:'bold',lineWidth:0.5,lineColor:[0,0,0]},alternateRowStyles:{fillColor:[255,255,255]},bodyStyles:{fillColor:[255,255,255]},margin:{top:10,bottom:8},didDrawPage:function(data){if(doc.internal.getNumberOfPages()>startPage){doc.setFontSize(9);doc.setFont(undefined,'normal');doc.text(cleanerName+' (cont.)',14,12)}}});let fy=doc.lastAutoTable.finalY;doc.setFontSize(11);if(i.congestionZone&&i.congestionSurcharge>0){doc.text('Congestion Charge = '+fmtC(i.congestionSurcharge)+' ('+i.congestionDays+' days)',14,fy+8);fy+=6}fy+=2;doc.setFontSize(12);doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(i.grandTotal),14,fy+8);doc.setFont(undefined,'normal');doc.setFontSize(11);doc.setFont(undefined,'italic');doc.text('Thank you for your business!',14,fy+18)}doc.save('All_Invoices_'+start+'_to_'+end+'.pdf')}catch(e){alert(e.message)}setLd(false)};
 
   return React.createElement('div',null,
     React.createElement('h2',null,t.generateInvoice),
@@ -1975,6 +2064,8 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
   const[paySearch,setPaySearch]=useState('');
   const[showUnpaidOnly,setShowUnpaidOnly]=useState(false);
   const[expanded,setExpanded]=useState({});
+  // Weeks whose stored amount no longer matches what their orders add up to.
+  const[drift,setDrift]=useState(null);
   // Open/closed state of the Balance by Cleaner panel, remembered per browser.
   const[balOpen,setBalOpen]=useState(function(){try{return localStorage.getItem('kp_balance_open')!=='0'}catch(e){return true}});
   const fmtC=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1987,7 +2078,20 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
   const load=async(cycle)=>{var bc=cycle||payView;setLd(true);try{
     const path=bc==='monthly'?'/invoice-tracking/monthly-rollup':'/invoice-tracking?billing_cycle=weekly';
     const[tracking,sum]=await Promise.all([api.get(path),api.get('/invoice-tracking/summary')]);
-    setData(Array.isArray(tracking)?tracking:[]);setSummary(sum)}catch(e){console.error(e);notify&&notify('Could not load payments: '+e.message)}setLd(false)};
+    setData(Array.isArray(tracking)?tracking:[]);setSummary(sum);
+    // Non-blocking: if this fails the payments screen still works.
+    api.get('/invoice-tracking/drift').then(setDrift).catch(function(){setDrift(null)});
+  }catch(e){console.error(e);notify&&notify('Could not load payments: '+e.message)}setLd(false)};
+
+  // Re-stamp one stored invoice with what its orders now total.
+  const resync=async(d)=>{
+    if(!confirm('Update the recorded amount for '+d.cleaner_name+', week of '+fmtD(d.week_start)+'?\n\n'
+      +'Invoiced:  '+fmtC(d.stored_amount)+'\n'
+      +'Orders now total: '+fmtC(d.live_amount)+'\n\n'
+      +'Only do this if you have NOT already given the cleaner the printed invoice for this week. '
+      +'If they already have it, that document is what they owe — bill the difference on the next one instead.'))return;
+    try{await api.post('/invoice-tracking/'+d.id+'/resync',{});await load();notify&&notify('Updated to '+fmtC(d.live_amount))}
+    catch(e){alert(e.message)}};
   useEffect(()=>{load()},[]);
   const switchView=(v)=>{setPayView(v);setStart('');setEnd('');setExpanded({});load(v)};
   
@@ -2057,8 +2161,10 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
   // A rolled-up month is not a database row, so it can never be PUT or DELETEd by id.
   // Paying one means paying the weekly invoices inside it, in a single transaction.
   const markMonth=async(inv,body)=>{
+    // month_end matters: a rolling 4-week cycle crosses month boundaries, so the
+    // server must select weeks by the period's real start..end, not by calendar month.
     try{var r=await api.post('/invoice-tracking/mark-month-paid',Object.assign({
-        cleaner_id:inv.cleaner_id,month_start:inv.week_start},body||{}));
+        cleaner_id:inv.cleaner_id,month_start:inv.week_start,month_end:inv.week_end},body||{}));
       await load();setEditing(null);
       notify&&notify(r.weeks_updated+' weekly invoice'+(r.weeks_updated===1?'':'s')+' updated for '+inv.cleaner_name)
     }catch(e){alert(e.message)}};
@@ -2116,12 +2222,15 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
     try{setLd(true);const wkStart=inv.week_start.split('T')[0];const wkEnd=inv.week_end.split('T')[0];
     const d=await api.get('/reports/invoice?cleaner_id='+inv.cleaner_id+'&start_date='+wkStart+'&end_date='+wkEnd);
     const cleaner=cleaners.find(c=>c.id===inv.cleaner_id);
-    const weekNum=Math.ceil((new Date(wkStart).getTime()-new Date(new Date().getFullYear(),0,1).getTime())/604800000);
-    const clnIdx=cleaners.findIndex(c=>c.id===inv.cleaner_id)+1;
+
     // force_weekly is set when opening ONE week nested inside an expanded month,
     // so it gets a plain weekly invoice rather than a month-style breakdown.
     const asMonth=payView==='monthly'&&!inv.force_weekly;
-    const invoiceId=asMonth?20000+(new Date(wkStart).getMonth()+1)*100+clnIdx:10000+(weekNum*100)+clnIdx;
+    // The stored number is the invoice's identity. The old calculation is kept only
+    // as a fallback label for invoices generated before numbering existed - those
+    // are shown as 'not numbered' rather than a figure that changes on you.
+    const storedNo=inv.invoice_no||null;
+    const invoiceId=storedNo||null;
     // Group orders by week for monthly view
     var weeklyBreakdown=null;
     if(asMonth&&d.orders&&d.orders.length>0){
@@ -2144,7 +2253,7 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
     const cleanerName=viewInv.displayName||invoiceName(viewInv.cleaner.name);let isFirstPage=true;
     doc.setFontSize(8);doc.text((settings.companyName||'WEBSTER AVE LAUNDROMAT')+' \u2022 '+(settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456'),14,12);
     doc.text('Store: '+(settings.storePhone||'929-263-1560')+' \u2022 Manager: '+(settings.managerPhone||'347-632-2024'),14,16);
-    doc.setFontSize(9);doc.text('Invoice #: '+viewInv.invoiceId,160,12);
+    doc.setFontSize(9);if(viewInv.invoiceId)doc.text('Invoice #: '+viewInv.invoiceId,160,12);
     doc.setFontSize(16);doc.setFont(undefined,'bold');doc.text(cleanerName,14,26);
     doc.setFont(undefined,'normal');doc.setFontSize(9);doc.text('Period: '+fmtD(viewInv.start)+' - '+fmtD(viewInv.end),14,31);
     doc.setFont(undefined,'bold');doc.text('Total Due: '+fmtC(viewInv.total),150,26);doc.setFont(undefined,'normal');
@@ -2219,6 +2328,36 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
           }).map(function(c){return React.createElement('option',{key:c.id,value:c.id},c.name+(c.settles_monthly&&(c.billing_cycle||'weekly')==='weekly'?' (pays monthly)':''))})),
         React.createElement('button',{onClick:function(){var sel=document.getElementById('genCleanerId');generateWeek(sel?sel.value:'')},disabled:ld,style:{...S.btn,flex:1,opacity:ld?0.6:1}},ld?t.loading:'Generate from Orders'))),
     
+    // DRIFT BANNER
+    // The amount here is a snapshot taken when "Generate from Orders" was run. The
+    // printed invoice recalculates from the orders every time it is opened. If an
+    // order was re-weighed, added or deleted afterwards the two disagree - which is
+    // exactly the "balance does not match the document" problem. Say so, with both
+    // figures, instead of letting them quietly differ.
+    drift&&drift.count>0&&React.createElement('div',{style:{...S.card,marginBottom:'20px',border:'1px solid #f59e0b',background:'rgba(245,158,11,0.06)'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px',marginBottom:'8px'}},
+        React.createElement('span',{style:{color:'#fbbf24',fontWeight:'bold',fontSize:'15px'}},
+          '⚠ '+drift.count+(drift.count===1?' invoice no longer matches its orders':' invoices no longer match their orders')),
+        React.createElement('span',{style:{fontSize:'13px',color:drift.net_difference>=0?'#4ade80':'#f87171',fontWeight:'bold'}},
+          (drift.net_difference>=0?'+':'')+fmtC(drift.net_difference)+' net')),
+      React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',marginBottom:'10px',lineHeight:'1.6'}},
+        'These weeks had orders changed after the invoice was generated, so the balance below differs from the printed invoice. The figure on record is kept — it is what the cleaner was handed. Update one only if that invoice has not gone out yet.'),
+      React.createElement('div',{style:{maxHeight:'220px',overflowY:'auto'}},
+        (drift.rows||[]).map(function(d,i){
+          var diff=parseFloat(d.difference);
+          return React.createElement('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px',padding:'7px 0',borderBottom:'1px solid #334155',fontSize:'13px'}},
+            React.createElement('span',{style:{color:'#e2e8f0'}},
+              React.createElement('b',null,d.cleaner_name),' — ',fmtD(d.week_start),
+              d.status!=='unpaid'?React.createElement('span',{style:{marginLeft:'6px',fontSize:'11px',color:'#4ade80'}},'('+d.status+')'):null),
+            React.createElement('span',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}},
+              React.createElement('span',{style:{color:'#94a3b8'}},
+                'invoiced ',React.createElement('b',{style:{color:'#e2e8f0'}},fmtC(d.stored_amount)),
+                ' → orders now ',React.createElement('b',{style:{color:'#e2e8f0'}},fmtC(d.live_amount)),
+                React.createElement('b',{style:{marginLeft:'6px',color:diff>=0?'#4ade80':'#f87171'}},(diff>=0?'+':'')+fmtC(diff))),
+              isAdmin?React.createElement('button',{onClick:function(){resync(d)},
+                style:{padding:'4px 10px',borderRadius:'6px',border:'1px solid #f59e0b',background:'transparent',color:'#fbbf24',cursor:'pointer',fontSize:'11px',fontWeight:'bold',whiteSpace:'nowrap'}},'Update'):null));
+        }))),
+
     // BALANCE BY CLEANER
     // Obeys the same filter box as the invoices below, so searching one cleaner shows
     // one row instead of all 24. Collapsible, height-capped so it can never push the
@@ -2275,7 +2414,7 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
     
     Object.keys(groupedByWeek).sort().reverse().map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
       React.createElement('h3',{style:{marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}},
-        React.createElement('span',null,(function(){var wkRecs=data.filter(function(d){return d.week_start&&d.week_start.split('T')[0]===week});var wkEndDate=wkRecs.length>0&&wkRecs[0].week_end?wkRecs[0].week_end.split('T')[0]:null;return(payView==='monthly'?'Month: ':'Week: ')+fmtD(week)+(wkEndDate?' - '+fmtD(wkEndDate):'')})()),
+        React.createElement('span',null,(function(){var wkRecs=data.filter(function(d){return d.week_start&&d.week_start.split('T')[0]===week});var wkEndDate=wkRecs.length>0&&wkRecs[0].week_end?wkRecs[0].week_end.split('T')[0]:null;var rec0=wkRecs[0]||{};var lbl=payView!=='monthly'?'Week: ':(rec0.is_rollup?((rec0.cycle_weeks&&rec0.cycle_weeks>0)?(rec0.cycle_weeks+'-week period: '):'Period: '):'Month: ');return lbl+fmtD(week)+(wkEndDate?' – '+fmtD(wkEndDate):'')})()),
         (function(){var wkInvs=data.filter(function(d){if(!d.week_start||d.week_start.split('T')[0]!==week)return false;if(paySearch&&!(d.cleaner_name||'').toLowerCase().includes(paySearch.toLowerCase()))return false;return true});var wkTotal=wkInvs.reduce(function(s,d){return s+parseFloat(d.invoice_amount||0)},0);var wkPaid=wkInvs.reduce(function(s,d){return s+parseFloat(d.amount_paid||0)},0);
           var wkUnpaid=wkInvs.reduce(function(s,d){return s+rowBalance(d)},0);
           return React.createElement('span',{style:{fontSize:'14px',fontWeight:'normal'}},
@@ -2371,7 +2510,7 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
             React.createElement('div',{style:{fontSize:'12px',color:'#666'}},settings.companyName||'WEBSTER AVE LAUNDROMAT'),
             React.createElement('div',{style:{fontSize:'12px',color:'#666'}},settings.companyAddress||'1363 WEBSTER AVE, NEW YORK, NY 10456')),
           React.createElement('div',{style:{textAlign:'right'}},
-            React.createElement('div',{style:{fontSize:'14px',fontWeight:'bold'}},'Invoice #'+viewInv.invoiceId),
+            React.createElement('div',{style:{fontSize:'14px',fontWeight:'bold'}},viewInv.invoiceId?('Invoice #'+viewInv.invoiceId):React.createElement('span',{style:{color:'#999',fontWeight:'normal',fontSize:'12px'}},'Not numbered \u2014 generated before invoice numbering')),
             React.createElement('button',{onClick:()=>setViewInv(null),style:{marginTop:'8px',padding:'4px 12px',border:'1px solid #ccc',borderRadius:'4px',cursor:'pointer'}},'✕ Close'))),
         React.createElement('div',{style:{padding:'20px'}},
           React.createElement('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'16px'}},
