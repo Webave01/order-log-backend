@@ -274,6 +274,13 @@ async function initDB() {
       --                  falls back to that cleaner's earliest invoiced Monday.
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS cycle_weeks INTEGER DEFAULT 4;
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS cycle_anchor DATE;
+      -- Delivery charge: a flat fee per STOP, counted as distinct pickup days in the
+      -- invoice period - the same basis as the congestion surcharge. OFF by default
+      -- and switched on per cleaner, so nothing changes for anyone until it is enabled.
+      -- A 30 lb pickup costs the same to drive to as a 300 lb one, so this is what
+      -- stops small stops being carried by the large ones.
+      ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS delivery_charge BOOLEAN DEFAULT false;
+      ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS delivery_rate DECIMAL(10,2) DEFAULT 0;
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS ticket_format TEXT;
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_name VARCHAR(255);
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_address VARCHAR(255);
@@ -1252,11 +1259,11 @@ app.get('/api/cleaners', authenticate, async (req, res) => {
 });
 
 app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, delivery_charge, delivery_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *',
-      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', settles_monthly || false, (cycle_weeks === undefined || cycle_weeks === null || cycle_weeks === '') ? 4 : parseInt(cycle_weeks), cycle_anchor || null, ticket_format || null, dba_name || null, dba_address || null, dba_phone || null]
+      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, delivery_charge, delivery_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *',
+      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, delivery_charge || false, parseFloat(delivery_rate) || 0, has_addresses || false, billing_cycle || 'weekly', settles_monthly || false, (cycle_weeks === undefined || cycle_weeks === null || cycle_weeks === '') ? 4 : parseInt(cycle_weeks), cycle_anchor || null, ticket_format || null, dba_name || null, dba_address || null, dba_phone || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -1266,11 +1273,11 @@ app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res
 
 app.put('/api/cleaners/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { id } = req.params;
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, delivery_charge, delivery_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone } = req.body;
   try {
     const result = await pool.query(
-      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, has_addresses=$8, billing_cycle=$9, settles_monthly=$10, cycle_weeks=$11, cycle_anchor=$12, ticket_format=$13, dba_name=$14, dba_address=$15, dba_phone=$16 WHERE id=$17 RETURNING *',
-      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, has_addresses || false, billing_cycle || 'weekly', settles_monthly || false, (cycle_weeks === undefined || cycle_weeks === null || cycle_weeks === '') ? 4 : parseInt(cycle_weeks), cycle_anchor || null, ticket_format || null, dba_name || null, dba_address || null, dba_phone || null, id]
+      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, delivery_charge=$8, delivery_rate=$9, has_addresses=$10, billing_cycle=$11, settles_monthly=$12, cycle_weeks=$13, cycle_anchor=$14, ticket_format=$15, dba_name=$16, dba_address=$17, dba_phone=$18 WHERE id=$19 RETURNING *',
+      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, delivery_charge || false, parseFloat(delivery_rate) || 0, has_addresses || false, billing_cycle || 'weekly', settles_monthly || false, (cycle_weeks === undefined || cycle_weeks === null || cycle_weeks === '') ? 4 : parseInt(cycle_weeks), cycle_anchor || null, ticket_format || null, dba_name || null, dba_address || null, dba_phone || null, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Cleaner not found' });
     res.json(result.rows[0]);
@@ -1672,7 +1679,18 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
       congestionSurcharge = congestionDays * parseFloat(cleaner.congestion_rate || 5);
     }
 
-    const grandTotal = ordersTotal + congestionSurcharge;
+    // DELIVERY: one fee per STOP - a stop being a distinct pickup day in this period.
+    // Same basis as congestion. This block is duplicated at every place that totals an
+    // invoice; if you change it here, change it in all of them or the printed invoice
+    // and the Payments balance will disagree.
+    let deliveryCharge = 0;
+    let deliveryStops = 0;
+    if (cleaner && cleaner.delivery_charge) {
+      deliveryStops = uniquePickupDates.size;
+      deliveryCharge = deliveryStops * parseFloat(cleaner.delivery_rate || 0);
+    }
+
+    const grandTotal = ordersTotal + congestionSurcharge + deliveryCharge;
 
     // The permanent invoice number, if this period has been generated in Payments.
     // Looked up, never calculated - so Payments, the Invoices tab and the PDF all
@@ -1693,6 +1711,10 @@ app.get('/api/reports/invoice', authenticate, requirePerm('invoices'), async (re
       congestionRate: parseFloat(cleaner?.congestion_rate || 5),
       congestionDays,
       congestionSurcharge,
+      deliveryEnabled: cleaner?.delivery_charge || false,
+      deliveryRate: parseFloat(cleaner?.delivery_rate || 0),
+      deliveryStops,
+      deliveryCharge,
       grandTotal,
       invoice_no: invoiceNo,
       sequenceWarnings
@@ -1783,7 +1805,15 @@ app.get('/api/reports/invoices-all', authenticate, requirePerm('invoices'), asyn
         congestionSurcharge = congestionDays * parseFloat(cleaner.congestion_rate || 5);
       }
 
-      const grandTotal = ordersTotal + congestionSurcharge;
+      // Same delivery rule as the single-invoice endpoint above.
+      let deliveryCharge = 0;
+      let deliveryStops = 0;
+      if (cleaner.delivery_charge) {
+        deliveryStops = uniquePickupDates.size;
+        deliveryCharge = deliveryStops * parseFloat(cleaner.delivery_rate || 0);
+      }
+
+      const grandTotal = ordersTotal + congestionSurcharge + deliveryCharge;
 
       invoices.push({
         cleaner,
@@ -1793,6 +1823,10 @@ app.get('/api/reports/invoices-all', authenticate, requirePerm('invoices'), asyn
         congestionRate: parseFloat(cleaner.congestion_rate || 5),
         congestionDays,
         congestionSurcharge,
+        deliveryEnabled: cleaner.delivery_charge || false,
+        deliveryRate: parseFloat(cleaner.delivery_rate || 0),
+        deliveryStops,
+        deliveryCharge,
         grandTotal
       });
     }
@@ -2005,7 +2039,10 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
       cleanerStats[cleaner.id].weight += parseFloat(o.weight);
       cleanerStats[cleaner.id].amount += orderTotal;
 
-      if (cleaner.congestion_zone && o.pickup_date) {
+      // Track distinct pickup days for ANY cleaner carrying a per-stop charge. This
+      // tested congestion_zone alone, so a cleaner with only a delivery charge was
+      // never counted and their delivery revenue read as zero in reports.
+      if ((cleaner.congestion_zone || cleaner.delivery_charge) && o.pickup_date) {
         if (!cleanerPickupDates[cleaner.id]) cleanerPickupDates[cleaner.id] = new Set();
         cleanerPickupDates[cleaner.id].add(o.pickup_date.toISOString().split('T')[0]);
       }
@@ -2032,14 +2069,20 @@ app.get('/api/reports/daily-stats', authenticate, requirePerm('reports'), async 
     }
 
     let totalCongestion = 0;
+    let totalDelivery = 0;
     for (const cleanerId in cleanerPickupDates) {
       const cleaner = cleanerMap[cleanerId];
       const days = cleanerPickupDates[cleanerId].size;
-      const charge = days * parseFloat(cleaner.congestion_rate || 5);
+      const charge = cleaner.congestion_zone ? days * parseFloat(cleaner.congestion_rate || 5) : 0;
       totalCongestion += charge;
+      // Delivery revenue, reported separately so its contribution is visible.
+      const delCharge = cleaner.delivery_charge ? days * parseFloat(cleaner.delivery_rate || 0) : 0;
+      totalDelivery += delCharge;
       if (cleanerStats[cleanerId]) {
         cleanerStats[cleanerId].congestion_days = days;
         cleanerStats[cleanerId].congestion_charge = charge;
+        cleanerStats[cleanerId].delivery_stops = cleaner.delivery_charge ? days : 0;
+        cleanerStats[cleanerId].delivery_charge = delCharge;
       }
     }
 
@@ -2222,6 +2265,9 @@ app.post('/api/invoice-tracking/generate-week', authenticate, requirePerm('invoi
       if (cleaner.congestion_zone) {
         const congestionDays = uniquePickupDates.size;
         total += congestionDays * parseFloat(cleaner.congestion_rate || 5);
+      }
+      if (cleaner.delivery_charge) {
+        total += uniquePickupDates.size * parseFloat(cleaner.delivery_rate || 0);
       }
 
       // Reuse the number this cleaner/week already had; only a genuinely new invoice
@@ -2500,7 +2546,10 @@ app.get('/api/invoice-tracking/drift', authenticate, requirePerm('invoices'), as
                ), 0) AS orders_total,
                COUNT(o.id) AS order_count,
                COUNT(DISTINCT o.pickup_date) FILTER (WHERE c.congestion_zone) AS cong_days,
-               MAX(c.congestion_rate) AS cong_rate
+               MAX(c.congestion_rate) AS cong_rate,
+               -- Delivery mirrors congestion: one fee per distinct pickup day.
+               COUNT(DISTINCT o.pickup_date) FILTER (WHERE c.delivery_charge) AS del_stops,
+               MAX(c.delivery_rate) AS del_rate
         FROM invoice_tracking it
         JOIN cleaners c ON c.id = it.cleaner_id
         LEFT JOIN orders o
@@ -2516,17 +2565,17 @@ app.get('/api/invoice-tracking/drift', authenticate, requirePerm('invoices'), as
              TO_CHAR(it.week_end,'YYYY-MM-DD')   AS week_end,
              it.status, it.amount_paid,
              ROUND(it.invoice_amount, 2)                                   AS stored_amount,
-             ROUND(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0), 2) AS live_amount,
-             ROUND(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0) - it.invoice_amount, 2) AS difference
+             ROUND(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0) + COALESCE(live.del_stops,0) * COALESCE(live.del_rate,0), 2) AS live_amount,
+             ROUND(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0) + COALESCE(live.del_stops,0) * COALESCE(live.del_rate,0) - it.invoice_amount, 2) AS difference
       FROM invoice_tracking it
       JOIN cleaners c ON c.id = it.cleaner_id
       JOIN live ON live.id = it.id
-      WHERE ABS(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0) - it.invoice_amount) > 0.01
+      WHERE ABS(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0) + COALESCE(live.del_stops,0) * COALESCE(live.del_rate,0) - it.invoice_amount) > 0.01
         -- CRITICAL: orders are purged after 90 days. A week whose orders are gone
         -- recomputes to $0, which is not drift - it is missing source data. Reporting
         -- it would invite a re-sync that wipes a real receivable to zero.
         AND live.order_count > 0
-      ORDER BY ABS(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0) - it.invoice_amount) DESC
+      ORDER BY ABS(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0) + COALESCE(live.del_stops,0) * COALESCE(live.del_rate,0) - it.invoice_amount) DESC
       LIMIT 500`, params);
 
     const total = rows.rows.reduce((s, r) => s + parseFloat(r.difference || 0), 0);
@@ -2584,6 +2633,7 @@ app.post('/api/invoice-tracking/:id/resync', authenticate, requirePerm('invoices
       if (o.pickup_date) days.add(o.pickup_date.toISOString().split('T')[0]);
     }
     if (c.congestion_zone) total += days.size * parseFloat(c.congestion_rate || 5);
+    if (c.delivery_charge) total += days.size * parseFloat(c.delivery_rate || 0);
 
     const upd = await pool.query(
       'UPDATE invoice_tracking SET invoice_amount = $1 WHERE id = $2 RETURNING id, invoice_amount',
