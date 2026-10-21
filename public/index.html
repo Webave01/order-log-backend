@@ -1471,22 +1471,40 @@ function RoutesPanel({isAdmin,notify}){
         {n:9,addr:'894 2nd Ave, 10017',name:'Columbia'},
         {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
     'east-first':{title:'EAST - First Trip',time:'7:30 AM - 11:30 AM',color:'#10b981',
-      stops:[{n:1,addr:'1604 1st Ave & 83rd St',name:'Smile Cleaners',cross:'83rd St'},
+      stops:[
+        {n:1,addr:'1604 1st Ave & 83rd St',name:'Smile Cleaners',cross:'83rd St'},
         {n:2,addr:'309 E 83rd St & 1st Ave',name:'Golden Star',cross:'1st Ave'},
         {n:3,addr:'334 E 65th St',name:'Frank',cross:'1st & 2nd Ave'},
         {n:4,addr:'1173 2nd Ave',name:'Symphony',cross:'2nd Ave'},
-        {n:5,addr:'1476 York Ave',name:'Potisman',cross:'78th St',note:'Last stop - FDR North at 79th St'},
+        {n:5,addr:'1476 York Ave',name:'Potisman',cross:'78th St',note:'LAST STOP before the Tremont drop'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx NY',note:'DROP BAGS, then head back out to Lincoln Plaza'},
+        {n:6,addr:'30 W 63rd St, 10023',name:'Lincoln Plaza Valet',cross:'Central Park / 9th Ave'},
+        {n:7,addr:'180 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
+        {n:8,addr:'160 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
+        {n:9,addr:'140 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
+        {n:10,addr:'285 Amsterdam Ave',name:'Oxford/73st',cross:'73rd St'},
+        {n:11,addr:'2644 Broadway Ave',name:'Oxford/101 St',cross:'101st St'},
+        {n:12,addr:'366 W 118th St',name:'Harlem',cross:'Manhattan Ave'},
+        {n:13,addr:'354 St. Nicholas Ave',name:'SkyBlue',cross:'128th St'},
+        {n:14,addr:'3656 Broadway, 10031',name:'Nordic',cross:'Broadway 151st St'},
         {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
     'east-last':{title:'EAST - Last Trip',time:'12:00 PM - 5:00 PM',color:'#10b981',
-      stops:[{n:1,addr:'30 W 63rd St, 10023',name:'Lincoln Plaza Valet',cross:'Central Park / 9th Ave'},
-        {n:2,addr:'180 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
-        {n:3,addr:'160 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
-        {n:4,addr:'140 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
-        {n:5,addr:'285 Amsterdam Ave',name:'Oxford/73st',cross:'73rd St'},
-        {n:6,addr:'2644 Broadway Ave',name:'Oxford/101 St',cross:'101st St'},
-        {n:7,addr:'366 W 118th St',name:'Harlem',cross:'Manhattan Ave'},
-        {n:8,addr:'354 St. Nicholas Ave',name:'SkyBlue',cross:'128th St'},
-        {n:9,addr:'3656 Broadway, 10031',name:'Nordic',cross:'Broadway 151st St'},
+      stops:[
+        {n:1,addr:'1604 1st Ave & 83rd St',name:'Smile Cleaners',cross:'83rd St'},
+        {n:2,addr:'309 E 83rd St & 1st Ave',name:'Golden Star',cross:'1st Ave'},
+        {n:3,addr:'334 E 65th St',name:'Frank',cross:'1st & 2nd Ave'},
+        {n:4,addr:'1173 2nd Ave',name:'Symphony',cross:'2nd Ave'},
+        {n:5,addr:'1476 York Ave',name:'Potisman',cross:'78th St',note:'LAST STOP before the Tremont drop'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx NY',note:'DROP BAGS, then head back out to Lincoln Plaza'},
+        {n:6,addr:'30 W 63rd St, 10023',name:'Lincoln Plaza Valet',cross:'Central Park / 9th Ave'},
+        {n:7,addr:'180 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
+        {n:8,addr:'160 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
+        {n:9,addr:'140 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
+        {n:10,addr:'285 Amsterdam Ave',name:'Oxford/73st',cross:'73rd St'},
+        {n:11,addr:'2644 Broadway Ave',name:'Oxford/101 St',cross:'101st St'},
+        {n:12,addr:'366 W 118th St',name:'Harlem',cross:'Manhattan Ave'},
+        {n:13,addr:'354 St. Nicholas Ave',name:'SkyBlue',cross:'128th St'},
+        {n:14,addr:'3656 Broadway, 10031',name:'Nordic',cross:'Broadway 151st St'},
         {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
     'schools':{title:'SCHOOLS - Life Skills Preschool',time:'Pickup Fri or Sat / Delivery Mon',color:'#8b5cf6',
       stops:[{n:1,addr:'25 Westchester Square, Bronx NY 10461',name:'Life Skills Preschool',note:'Pickup bin on curb. LOCK CODE: 6892'},
@@ -1540,34 +1558,50 @@ function RoutesPanel({isAdmin,notify}){
                 label:isBase?'Base':(s.name&&String(s.name).trim()?String(s.name).trim():('Stop '+s.n))});
     });
     if(pts.length===0)return [];
-    var legs=[],chunk=9,i=0;
-    while(i<pts.length){
-      var slice=pts.slice(i,i+chunk);
-      var origin=i===0?BASE_ADDR:pts[i-1].addr;
-      var dest=slice[slice.length-1];
-      var mid=slice.slice(0,-1);
-      var u='https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(origin)+'&destination='+encodeURIComponent(dest.addr);
-      if(mid.length>0)u+='&waypoints='+mid.map(function(x){return encodeURIComponent(x.addr)}).join('%7C');
-      var nums=slice.filter(function(x){return x.n!=null}).map(function(x){return x.n});
-      legs.push({url:u,first:nums.length?nums[0]:null,last:nums.length?nums[nums.length-1]:null,
-                 endName:dest.isBase?'Base':dest.label,startFrom:i===0?'Base':pts[i-1].label,
-                 returnOnly:false,count:slice.length});
-      i+=chunk;
-    }
-    // Only add a separate run back to base when the route does not already end
-    // there. Without this check the last button was Tremont -> Tremont: a live
-    // link that opens a zero-mile route and tells the driver nothing.
-    var tail=pts[pts.length-1];
-    if(!tail.isBase){
-      legs.push({url:'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(tail.addr)+'&destination='+encodeURIComponent(BASE_ADDR),
-                 first:null,last:null,endName:'Base',startFrom:tail.label,returnOnly:true,count:1});
-    }
+    // A route can come back to Tremont partway through to drop bags and then go
+    // out again. Break the links at every one of those returns: the driver is
+    // physically stopping there, so that is where one navigation session ends
+    // and the next begins. Chunking blind every 9 stops split the run in the
+    // wrong place and sent him past the plant without telling him to stop.
+    var segs=[],cur=[];
+    pts.forEach(function(x){ cur.push(x); if(x.isBase){ segs.push(cur); cur=[] } });
+    if(cur.length)segs.push(cur);
+
+    var legs=[],chunk=9;
+    segs.forEach(function(seg,si){
+      var endsAtBase=seg[seg.length-1].isBase;
+      var i=0;
+      while(i<seg.length){
+        var slice=seg.slice(i,i+chunk);
+        // every segment starts from Tremont, because the one before it ended there
+        var origin=i===0?BASE_ADDR:seg[i-1].addr;
+        var dest=slice[slice.length-1];
+        var mid=slice.slice(0,-1);
+        var u='https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(origin)+'&destination='+encodeURIComponent(dest.addr);
+        if(mid.length>0)u+='&waypoints='+mid.map(function(x){return encodeURIComponent(x.addr)}).join('%7C');
+        var nums=slice.filter(function(x){return x.n!=null}).map(function(x){return x.n});
+        var lastOfSeg=(i+chunk>=seg.length);
+        legs.push({url:u,first:nums.length?nums[0]:null,last:nums.length?nums[nums.length-1]:null,
+                   endName:dest.isBase?'Base':dest.label,
+                   startFrom:i===0?'Base':seg[i-1].label,
+                   dropHere:dest.isBase&&lastOfSeg&&endsAtBase&&si<segs.length-1,
+                   returnOnly:false,count:slice.length});
+        i+=chunk;
+      }
+      // close the final segment if it does not already end at Tremont
+      if(!endsAtBase&&si===segs.length-1){
+        var tail=seg[seg.length-1];
+        legs.push({url:'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(tail.addr)+'&destination='+encodeURIComponent(BASE_ADDR),
+                   first:null,last:null,endName:'Base',startFrom:tail.label,dropHere:false,returnOnly:true,count:1});
+      }
+    });
     return legs;
   };
   const legIsReturn=(lg)=>lg.returnOnly||lg.first==null;
   const legLabel=(lg)=>legIsReturn(lg)?'\u21ba Back to Base':
     (lg.first===lg.last?('Stop '+lg.first):('Stops '+lg.first+'\u2013'+lg.last));
-  const legSub=(lg)=>legIsReturn(lg)?('from '+lg.startFrom):('\u2192 '+lg.endName);
+  const legSub=(lg)=>legIsReturn(lg)?('from '+lg.startFrom):
+    (lg.dropHere?'\u2192 Tremont, drop bags':('\u2192 '+lg.endName));
 
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}},
@@ -1581,7 +1615,7 @@ function RoutesPanel({isAdmin,notify}){
       React.createElement('select',{value:sel,onChange:function(e){setSel(e.target.value);setEditMode(false)},style:{...S.inp,width:'100%',padding:'14px',fontSize:'16px',fontWeight:'bold'}},
         React.createElement('option',{value:''},'-- Choose your route --'),
         Object.keys(routes).filter(function(k){return k.charAt(0)!=='_'}).map(function(k){return React.createElement('option',{key:k,value:k},routes[k].title)}))),
-    !r&&React.createElement('div',{style:{...S.card,textAlign:'center',padding:'40px',color:'#94a3b8'}},'Select a route above'),
+    !r&&React.createElement('div',{style:{...S.card,textAlign:'center',padding:'40px',color:'#94a3b8'}},'Select a route above. Admins get an Edit Route button once a route is picked.'),
     r&&React.createElement('div',null,
       React.createElement('div',{style:{...S.card,marginBottom:'12px',borderLeft:'4px solid '+r.color}},
         editMode?React.createElement('div',{style:{display:'grid',gap:'8px'}},
