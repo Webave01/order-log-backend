@@ -345,7 +345,7 @@ function App(){
       view==='reports'&&hasPerm('reports')&&React.createElement(Reports,{t}),
       view==='errors'&&hasPerm('errors')&&React.createElement(Errors,{cleaners,extras,cleanerExtras,settings,notify,loadData,calcTotal,t}),
       view==='schedule'&&React.createElement(Schedule,{isAdmin,notify,t,user}),
-      view==='routes'&&React.createElement(RoutesPanel,{isAdmin,notify}),
+      view==='routes'&&React.createElement(RoutesPanel,{isAdmin,notify,cleaners}),
       view==='vehicle'&&React.createElement(VehicleLog,{isAdmin,user,notify}),
       view==='settings'&&hasPerm('settings')&&React.createElement(Settings,{settings,setSettings,notify,lang,setLang,loadData,isAdmin,t})));
 }
@@ -1448,76 +1448,119 @@ function Reports({t}){
     React.createElement(TrendsPanel,{t:t}));
 }
 
-function RoutesPanel({isAdmin,notify}){
+// ---- address quality, shared by the Routes panel and the Cleaners form -------
+// Every defect below actually shipped. "1604 1st Ave & 83rd St" and
+// "309 E 83rd St & 1st Ave" are one corner written twice, so Google dropped both
+// pins on the same spot and the driver saw two identical stops.
+function addrCheck(raw){
+  var a=String(raw||'').trim();
+  if(!a)return {level:'bad',msg:'No address. Nothing to navigate to.'};
+  if(a.indexOf('&')>-1)
+    return {level:'bad',msg:'Two places in one line. Put the building address here; the cross street goes in its own box.'};
+  if(!/,\s*(NY|New York|Bronx|Brooklyn|Queens|Staten Island|Whitestone)\b/i.test(a))
+    return {level:'bad',msg:'No city or state. Add ", New York, NY" (or ", Bronx, NY") or Maps can pick the wrong borough.'};
+  if(/\bBroadway\s+Ave\b/i.test(a))
+    return {level:'warn',msg:'Manhattan has no "Broadway Ave" - it is just Broadway.'};
+  if(!/\d/.test(a))
+    return {level:'warn',msg:'No building number. Maps will guess a point on the street.'};
+  return {level:'ok',msg:'Looks geocodable.'};
+}
+function addrColor(lvl){return lvl==='bad'?'#ef4444':(lvl==='warn'?'#f59e0b':'#10b981')}
+function addrText(lvl){return lvl==='bad'?'#fca5a5':(lvl==='warn'?'#fcd34d':'#86efac')}
+
+function RoutesPanel({isAdmin,notify,cleaners}){
   const[sel,setSel]=useState('');const[editMode,setEditMode]=useState(false);
   const[routes,setRoutes]=useState(null);const[saving,setSaving]=useState(false);const[banner,setBanner]=useState('DO NOT TAKE RFK BRIDGE TOLL');
 
   const DEFAULTS={
     'west-first':{title:'WEST - First Trip',time:'Leave by 7:45 AM',color:'#3b82f6',
-      stops:[{n:1,addr:'360 W 43rd St, 10036',name:'Oxford/43st'},{n:2,addr:'608 10th Ave & 44th St, 10036',name:'Omni'},
-        {n:3,addr:'347 W 44th St, 10036',name:'Yuri Cleaners'},{n:4,addr:'324 W 49th St, 10019',name:'M&M / 49th'},
-        {n:5,addr:'461 W 49th St, 10019',name:'New Cleaner / 49th'},{n:6,addr:'311 W 54th St, 10019',name:'Seed'},
-        {n:7,addr:'301 W 57th St, 10019',name:'Central Park',note:'WAIT FOR ALL BAGS'},
-        {n:8,addr:'1395 6th Ave, 10019',name:'Carnegie',note:'Cross to EAST Side'},
-        {n:9,addr:'894 2nd Ave, 10017',name:'Columbia',note:'via FDR'},
-        {n:10,addr:'435 East 86th St, 10028',name:'Morris',note:'Pickup by 11:00-11:30 AM'},
-        {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
+      stops:[{n:1,addr:'360 W 43rd St, New York, NY 10036',name:'Oxford/43st'},{n:2,addr:'608 10th Ave, New York, NY 10036',name:'Omni',cross:'44th St'},
+        {n:3,addr:'347 W 44th St, New York, NY 10036',name:'Yuri Cleaners'},{n:4,addr:'324 W 49th St, New York, NY 10019',name:'M&M / 49th'},
+        {n:5,addr:'461 W 49th St, New York, NY 10019',name:'New Cleaner / 49th'},{n:6,addr:'311 W 54th St, New York, NY 10019',name:'Seed'},
+        {n:7,addr:'301 W 57th St, New York, NY 10019',name:'Central Park',note:'WAIT FOR ALL BAGS'},
+        {n:8,addr:'1395 6th Ave, New York, NY 10019',name:'Carnegie',note:'Cross to EAST Side'},
+        {n:9,addr:'894 2nd Ave, New York, NY 10017',name:'Columbia',note:'via FDR'},
+        {n:10,addr:'435 E 86th St, New York, NY 10028',name:'Morris',note:'Pickup by 11:00-11:30 AM'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx, NY 10453'}]},
     'west-last':{title:'WEST - Last Trip',time:'Leave by 3:30 PM LATEST',color:'#3b82f6',
-      stops:[{n:1,addr:'301 W 57th St, 10019',name:'Central Park'},{n:2,addr:'311 W 54th St, 10019',name:'Seed'},
-        {n:3,addr:'360 W 43rd St, 10036',name:'Oxford/43st'},{n:4,addr:'608 10th Ave & 44th St, 10036',name:'Omni'},
-        {n:5,addr:'347 W 44th St, 10036',name:'Yuri Cleaners'},{n:6,addr:'324 W 49th St, 10019',name:'M&M / 49th'},
-        {n:7,addr:'461 W 49th St, 10019',name:'New Cleaner / 49th'},
-        {n:8,addr:'1395 6th Ave, 10019',name:'Carnegie',note:'Cross to EAST Side'},
-        {n:9,addr:'894 2nd Ave, 10017',name:'Columbia'},
-        {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
+      stops:[{n:1,addr:'301 W 57th St, New York, NY 10019',name:'Central Park'},{n:2,addr:'311 W 54th St, New York, NY 10019',name:'Seed'},
+        {n:3,addr:'360 W 43rd St, New York, NY 10036',name:'Oxford/43st'},{n:4,addr:'608 10th Ave, New York, NY 10036',name:'Omni',cross:'44th St'},
+        {n:5,addr:'347 W 44th St, New York, NY 10036',name:'Yuri Cleaners'},{n:6,addr:'324 W 49th St, New York, NY 10019',name:'M&M / 49th'},
+        {n:7,addr:'461 W 49th St, New York, NY 10019',name:'New Cleaner / 49th'},
+        {n:8,addr:'1395 6th Ave, New York, NY 10019',name:'Carnegie',note:'Cross to EAST Side'},
+        {n:9,addr:'894 2nd Ave, New York, NY 10017',name:'Columbia'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx, NY 10453'}]},
     'east-first':{title:'EAST - First Trip',time:'7:30 AM - 11:30 AM',color:'#10b981',
       stops:[
-        {n:1,addr:'1604 1st Ave & 83rd St',name:'Smile Cleaners',cross:'83rd St'},
-        {n:2,addr:'309 E 83rd St & 1st Ave',name:'Golden Star',cross:'1st Ave'},
-        {n:3,addr:'334 E 65th St',name:'Frank',cross:'1st & 2nd Ave'},
-        {n:4,addr:'1173 2nd Ave',name:'Symphony',cross:'2nd Ave'},
-        {n:5,addr:'1476 York Ave',name:'Potisman',cross:'78th St',note:'LAST STOP before the Tremont drop'},
-        {type:'return',addr:'113 E Tremont Ave, Bronx NY',note:'DROP BAGS, then head back out to Lincoln Plaza'},
-        {n:6,addr:'30 W 63rd St, 10023',name:'Lincoln Plaza Valet',cross:'Central Park / 9th Ave'},
-        {n:7,addr:'180 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
-        {n:8,addr:'160 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
-        {n:9,addr:'140 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
-        {n:10,addr:'285 Amsterdam Ave',name:'Oxford/73st',cross:'73rd St'},
-        {n:11,addr:'2644 Broadway Ave',name:'Oxford/101 St',cross:'101st St'},
-        {n:12,addr:'366 W 118th St',name:'Harlem',cross:'Manhattan Ave'},
-        {n:13,addr:'354 St. Nicholas Ave',name:'SkyBlue',cross:'128th St'},
-        {n:14,addr:'3656 Broadway, 10031',name:'Nordic',cross:'Broadway 151st St'},
-        {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
+        {n:1,addr:'1604 1st Ave, New York, NY',name:'Smile Cleaners',cross:'83rd St'},
+        {n:2,addr:'309 E 83rd St, New York, NY',name:'Golden Star',cross:'1st Ave'},
+        {n:3,addr:'334 E 65th St, New York, NY',name:'Frank',cross:'1st & 2nd Ave'},
+        {n:4,addr:'1173 2nd Ave, New York, NY',name:'Symphony',cross:'2nd Ave'},
+        {n:5,addr:'1476 York Ave, New York, NY',name:'Potisman',cross:'78th St',note:'LAST STOP before the Tremont drop'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx, NY 10453',note:'DROP BAGS, then head back out to Lincoln Plaza'},
+        {n:6,addr:'30 W 63rd St, New York, NY 10023',name:'Lincoln Plaza Valet',cross:'Central Park / 9th Ave'},
+        {n:7,addr:'180 Riverside Blvd, New York, NY',name:'Vale Palace',cross:'Riverside'},
+        {n:8,addr:'160 Riverside Blvd, New York, NY',name:'Vale Palace',cross:'Riverside'},
+        {n:9,addr:'140 Riverside Blvd, New York, NY',name:'Vale Palace',cross:'Riverside'},
+        {n:10,addr:'285 Amsterdam Ave, New York, NY',name:'Oxford/73st',cross:'73rd St'},
+        {n:11,addr:'2644 Broadway, New York, NY',name:'Oxford/101 St',cross:'101st St'},
+        {n:12,addr:'366 W 118th St, New York, NY',name:'Harlem',cross:'Manhattan Ave'},
+        {n:13,addr:'354 St. Nicholas Ave, New York, NY',name:'SkyBlue',cross:'128th St'},
+        {n:14,addr:'3656 Broadway, New York, NY 10031',name:'Nordic',cross:'Broadway 151st St'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx, NY 10453'}]},
     'east-last':{title:'EAST - Last Trip',time:'12:00 PM - 5:00 PM',color:'#10b981',
       stops:[
-        {n:1,addr:'1604 1st Ave & 83rd St',name:'Smile Cleaners',cross:'83rd St'},
-        {n:2,addr:'309 E 83rd St & 1st Ave',name:'Golden Star',cross:'1st Ave'},
-        {n:3,addr:'334 E 65th St',name:'Frank',cross:'1st & 2nd Ave'},
-        {n:4,addr:'1173 2nd Ave',name:'Symphony',cross:'2nd Ave'},
-        {n:5,addr:'1476 York Ave',name:'Potisman',cross:'78th St',note:'LAST STOP before the Tremont drop'},
-        {type:'return',addr:'113 E Tremont Ave, Bronx NY',note:'DROP BAGS, then head back out to Lincoln Plaza'},
-        {n:6,addr:'30 W 63rd St, 10023',name:'Lincoln Plaza Valet',cross:'Central Park / 9th Ave'},
-        {n:7,addr:'180 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
-        {n:8,addr:'160 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
-        {n:9,addr:'140 Riverside Blvd',name:'Vale Palace',cross:'Riverside'},
-        {n:10,addr:'285 Amsterdam Ave',name:'Oxford/73st',cross:'73rd St'},
-        {n:11,addr:'2644 Broadway Ave',name:'Oxford/101 St',cross:'101st St'},
-        {n:12,addr:'366 W 118th St',name:'Harlem',cross:'Manhattan Ave'},
-        {n:13,addr:'354 St. Nicholas Ave',name:'SkyBlue',cross:'128th St'},
-        {n:14,addr:'3656 Broadway, 10031',name:'Nordic',cross:'Broadway 151st St'},
-        {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
+        {n:1,addr:'1604 1st Ave, New York, NY',name:'Smile Cleaners',cross:'83rd St'},
+        {n:2,addr:'309 E 83rd St, New York, NY',name:'Golden Star',cross:'1st Ave'},
+        {n:3,addr:'334 E 65th St, New York, NY',name:'Frank',cross:'1st & 2nd Ave'},
+        {n:4,addr:'1173 2nd Ave, New York, NY',name:'Symphony',cross:'2nd Ave'},
+        {n:5,addr:'1476 York Ave, New York, NY',name:'Potisman',cross:'78th St',note:'LAST STOP before the Tremont drop'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx, NY 10453',note:'DROP BAGS, then head back out to Lincoln Plaza'},
+        {n:6,addr:'30 W 63rd St, New York, NY 10023',name:'Lincoln Plaza Valet',cross:'Central Park / 9th Ave'},
+        {n:7,addr:'180 Riverside Blvd, New York, NY',name:'Vale Palace',cross:'Riverside'},
+        {n:8,addr:'160 Riverside Blvd, New York, NY',name:'Vale Palace',cross:'Riverside'},
+        {n:9,addr:'140 Riverside Blvd, New York, NY',name:'Vale Palace',cross:'Riverside'},
+        {n:10,addr:'285 Amsterdam Ave, New York, NY',name:'Oxford/73st',cross:'73rd St'},
+        {n:11,addr:'2644 Broadway, New York, NY',name:'Oxford/101 St',cross:'101st St'},
+        {n:12,addr:'366 W 118th St, New York, NY',name:'Harlem',cross:'Manhattan Ave'},
+        {n:13,addr:'354 St. Nicholas Ave, New York, NY',name:'SkyBlue',cross:'128th St'},
+        {n:14,addr:'3656 Broadway, New York, NY 10031',name:'Nordic',cross:'Broadway 151st St'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx, NY 10453'}]},
     'schools':{title:'SCHOOLS - Life Skills Preschool',time:'Pickup Fri or Sat / Delivery Mon',color:'#8b5cf6',
-      stops:[{n:1,addr:'25 Westchester Square, Bronx NY 10461',name:'Life Skills Preschool',note:'Pickup bin on curb. LOCK CODE: 6892'},
-        {n:2,addr:'816 Clarence Ave, Bronx NY 10456',name:'Life Skills Preschool',note:'Pickup in REAR of building'},
-        {n:3,addr:'240 Parsons Blvd, Whitestone NY 11357',name:'Life Skills Preschool',note:'Pickup in bin'},
-        {type:'return',addr:'113 E Tremont Ave, Bronx NY'}]},
+      stops:[{n:1,addr:'25 Westchester Square, Bronx, NY 10461',name:'Life Skills Preschool',note:'Pickup bin on curb. LOCK CODE: 6892'},
+        {n:2,addr:'816 Clarence Ave, Bronx, NY 10456',name:'Life Skills Preschool',note:'Pickup in REAR of building'},
+        {n:3,addr:'240 Parsons Blvd, Whitestone, NY 11357',name:'Life Skills Preschool',note:'Pickup in bin'},
+        {type:'return',addr:'113 E Tremont Ave, Bronx, NY 10453'}]},
     'sleep':{title:'SLEEP CENTER',time:'',color:'#f59e0b',
-      stops:[{n:1,addr:'3427 Buckner Blvd, Bronx NY 10461',name:'Sleep Center'},{type:'return',addr:'113 E Tremont Ave, Bronx NY'}]}
+      stops:[{n:1,addr:'3427 Buckner Blvd, Bronx, NY 10461',name:'Sleep Center'},{type:'return',addr:'113 E Tremont Ave, Bronx, NY 10453'}]}
   };
 
   useEffect(function(){api.get('/driver-routes').then(function(r){if(r&&r._banner!==undefined)setBanner(r._banner);setRoutes(r||DEFAULTS)}).catch(function(){setRoutes(DEFAULTS)})},[]);
 
-  const save=async()=>{setSaving(true);try{var payload={...routes,_banner:banner};await api.post('/driver-routes',payload);notify('Routes saved');setEditMode(false)}catch(e){alert(e.message)}setSaving(false)};
+  const save=async()=>{
+    // Catch the geocoding defects before they reach a driver's phone, across every
+    // route, not just the one on screen.
+    var bad=[];
+    Object.keys(routes||{}).forEach(function(k){
+      var rt=routes[k]; if(!rt||!rt.stops)return;
+      var dups=dupAddrs(rt.stops);
+      rt.stops.forEach(function(st,i){
+        if(st.type==='return')return;
+        var ck=addrCheck(st.addr);
+        if(dups[i])bad.push((rt.title||k)+' #'+(st.n||i+1)+' '+(st.name||'')+': same address as stop '+dups[i]);
+        else if(ck.level==='bad')bad.push((rt.title||k)+' #'+(st.n||i+1)+' '+(st.name||'')+': '+ck.msg);
+      });
+    });
+    if(bad.length){
+      if(!confirm(bad.length+' address problem'+(bad.length===1?'':'s')+' that will misroute a driver:\n\n'+
+                  bad.slice(0,10).join('\n')+(bad.length>10?('\n...and '+(bad.length-10)+' more'):'')+
+                  '\n\nSave anyway?'))return;
+    }
+    setSaving(true);
+    try{var payload={...routes,_banner:banner};await api.post('/driver-routes',payload);notify('Routes saved');setEditMode(false)}
+    catch(e){alert(e.message)}
+    setSaving(false);
+  };
   const resetDefaults=()=>{
     if(sel&&DEFAULTS[sel]){
       if(!confirm('Reset "'+(DEFAULTS[sel].title||sel)+'" to its built-in stop list?\n\nOther routes are not touched. Nothing is saved until you press Save Changes.'))return;
@@ -1536,7 +1579,7 @@ function RoutesPanel({isAdmin,notify}){
     r[sel]={...r[sel],stops:st};setRoutes(r)};
   const addStop=()=>{var r={...routes};var st=[...r[sel].stops,{n:r[sel].stops.length+1,name:'',addr:'',cross:'',note:''}];
     r[sel]={...r[sel],stops:st};setRoutes(r)};
-  const addReturn=()=>{var r={...routes};var st=[...r[sel].stops,{type:'return',addr:'113 E Tremont Ave, Bronx NY',note:''}];
+  const addReturn=()=>{var r={...routes};var st=[...r[sel].stops,{type:'return',addr:'113 E Tremont Ave, Bronx, NY 10453',note:''}];
     st=st.map(function(s,i){return s.type==='return'?s:{...s,n:st.slice(0,i).filter(function(x){return x.type!=='return'}).length+1}});
     r[sel]={...r[sel],stops:st};setRoutes(r)};
   const updRoute=(field,val)=>{var r={...routes};r[sel]={...r[sel],[field]:val};setRoutes(r)};
@@ -1544,9 +1587,97 @@ function RoutesPanel({isAdmin,notify}){
   if(!routes)return React.createElement('div',{style:{padding:'20px',color:'#94a3b8'}},'Loading routes...');
   var r=sel?routes[sel]:null;
   const mapUrl=(addr)=>'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(addr);
-  const BASE_ADDR='113 E Tremont Ave, Bronx NY 10453';
+  const BASE_ADDR='113 E Tremont Ave, Bronx, NY 10453';
   // Google Maps supports origin + destination + max 8 intermediate waypoints.
   // Split the route into legs of 9 stops so every link actually loads.
+  const dupAddrs=(stops)=>{
+    var seen={},dups={};
+    (stops||[]).forEach(function(s,i){
+      var k=String(s.addr||'').trim().toLowerCase();
+      if(!k)return;
+      if(seen[k]!==undefined&&!s.type)dups[i]=seen[k]+1; else seen[k]=i;
+    });
+    return dups;
+  };
+  const cleanerOpts=(cleaners||[]).filter(function(c){return c.address&&String(c.address).trim()})
+    .slice().sort(function(x,y){return String(x.name).localeCompare(String(y.name))});
+  const pickCleaner=(idx,cid)=>{
+    var c=cleanerOpts.filter(function(x){return String(x.id)===String(cid)})[0];
+    if(!c)return;
+    var r={...routes};
+    r[sel]={...r[sel],stops:r[sel].stops.map(function(s,i){
+      return i===idx?{...s,name:c.name,addr:String(c.address).trim()}:s})};
+    setRoutes(r);
+  };
+  const printRoute=()=>{
+   try{
+    if(!r){alert('Pick a route first.');return}
+    if(!window.jspdf||!window.jspdf.jsPDF||window.jspdf.__stub){alert('The PDF tool did not finish downloading. Move to a better signal, reload, and try again.');return}
+    var jsPDF=window.jspdf.jsPDF;
+    var doc;
+    try{ doc=new jsPDF({unit:'pt',format:'letter'}); if(!doc||!doc.internal||!doc.internal.pageSize)throw new Error('no page'); }
+    catch(e){ alert('The PDF tool did not load properly. Reload the page and try again.'); return }
+    var W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight();
+    var M=40, y=0, page=1;
+    var stamp=new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+    function header(){
+      y=M;
+      doc.setFont('helvetica','bold'); doc.setFontSize(22);
+      doc.text(String(r.title||sel),M,y); y+=24;
+      if(r.time){doc.setFontSize(15); doc.setFont('helvetica','normal'); doc.text(String(r.time),M,y); y+=20}
+      if(banner){
+        doc.setFillColor(255,235,235); doc.setDrawColor(200,0,0); doc.setLineWidth(1.5);
+        doc.rect(M,y-2,W-M*2,30,'FD');
+        doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(170,0,0);
+        doc.text(String(banner).toUpperCase(),M+10,y+18); doc.setTextColor(0,0,0); y+=42;
+      }
+      doc.setFont('helvetica','bold'); doc.setFontSize(14);
+      doc.text('START: '+BASE_ADDR,M,y); y+=10;
+      doc.setDrawColor(0); doc.setLineWidth(1); doc.line(M,y,W-M,y); y+=20;
+    }
+    function footer(){
+      doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120);
+      doc.text('Printed '+stamp+'   -   page '+page,M,H-22);
+      doc.setTextColor(0,0,0);
+    }
+    function room(h){ if(y+h>H-46){ footer(); doc.addPage(); page++; header(); } }
+    header();
+    (r.stops||[]).forEach(function(st){
+      var isRet=st.type==='return';
+      var lines=doc.splitTextToSize(String(st.addr||BASE_ADDR),W-M*2-56);
+      var noteLines=st.note?doc.splitTextToSize(String(st.note),W-M*2-56):[];
+      var h=(isRet?30:28)+lines.length*19+(noteLines.length?noteLines.length*17+8:0)+16;
+      room(h);
+      if(isRet){
+        doc.setFillColor(255,245,205); doc.setDrawColor(200,150,0); doc.setLineWidth(1.5);
+        doc.rect(M,y,W-M*2,h-10,'FD');
+        doc.setFont('helvetica','bold'); doc.setFontSize(17);
+        doc.text('RETURN TO BASE',M+14,y+24);
+        doc.setFontSize(15); doc.setFont('helvetica','normal');
+        doc.text(lines,M+14,y+46);
+      } else {
+        doc.setFont('helvetica','bold'); doc.setFontSize(26);
+        doc.text(String(st.n||''),M,y+26);
+        doc.setFontSize(19);
+        doc.text(String(st.name||''),M+46,y+22);
+        doc.setFont('helvetica','normal'); doc.setFontSize(16);
+        doc.text(lines,M+46,y+44);
+      }
+      var ny=y+(isRet?64:44+lines.length*19);
+      if(noteLines.length){
+        doc.setFillColor(255,240,170); doc.rect(M+46,ny-12,W-M*2-56,noteLines.length*17+10,'F');
+        doc.setFont('helvetica','bold'); doc.setFontSize(13);
+        doc.text(noteLines,M+52,ny+2);
+        doc.setFont('helvetica','normal');
+      }
+      y+=h;
+      doc.setDrawColor(215); doc.setLineWidth(0.6); doc.line(M,y-9,W-M,y-9);
+    });
+    footer();
+    try{ doc.save(String(r.title||sel).replace(/[^A-Za-z0-9]+/g,'_')+'_route.pdf'); }
+    catch(e){ alert('Could not save the PDF: '+(e&&e.message?e.message:'unknown error')); }
+   }catch(err){ alert('Could not build the route sheet: '+(err&&err.message?err.message:'unknown error')); }
+  };
   const buildLegs=(stops)=>{
     // Carry each stop's own number and name through, so a link can say which
     // stops it actually covers instead of an opaque "Part 2".
@@ -1610,6 +1741,7 @@ function RoutesPanel({isAdmin,notify}){
         editMode&&React.createElement('button',{onClick:resetDefaults,style:{...S.inp,cursor:'pointer',padding:'8px 12px',fontSize:'12px',color:'#f87171'}},'Reset Defaults'),
         editMode&&React.createElement('button',{onClick:save,disabled:saving,style:{...S.btn,background:'#10b981',padding:'8px 14px',fontSize:'13px'}},saving?'Saving...':'Save Changes'),
         React.createElement('button',{onClick:function(){setEditMode(!editMode)},style:{...S.btn,background:editMode?'#64748b':'#8b5cf6',padding:'8px 14px',fontSize:'13px'}},editMode?'Done':'Edit Route'))),
+      sel&&!editMode&&React.createElement('button',{onClick:printRoute,style:{...S.btn,background:'#0f766e',padding:'12px 16px',fontSize:'16px',width:'100%',marginBottom:'12px'}},'\ud83d\udda8 Print this route (PDF)'),
     React.createElement('div',{style:{marginBottom:'20px'}},
       React.createElement('label',{style:{...S.lbl,marginBottom:'6px',display:'block'}},'Select Route'),
       React.createElement('select',{value:sel,onChange:function(e){setSel(e.target.value);setEditMode(false)},style:{...S.inp,width:'100%',padding:'14px',fontSize:'16px',fontWeight:'bold'}},
@@ -1641,7 +1773,7 @@ function RoutesPanel({isAdmin,notify}){
       React.createElement('div',{style:{marginBottom:'12px',padding:'16px',background:'rgba(239,68,68,0.15)',border:'2px solid #ef4444',borderRadius:'8px',textAlign:'center'}},
         editMode?React.createElement('input',{value:banner,onChange:function(e){setBanner(e.target.value)},style:{...S.inp,width:'100%',textAlign:'center',fontSize:'16px',fontWeight:'bold',color:'#fca5a5',borderColor:'#ef4444'},placeholder:'Warning banner text'}):
         React.createElement('div',{style:{fontSize:'18px',fontWeight:'bold',color:'#fca5a5',letterSpacing:'0.5px'}},'\u26a0\ufe0f '+banner)),
-      React.createElement('div',{style:{padding:'10px',background:'rgba(59,130,246,0.1)',border:'1px solid #3b82f6',borderRadius:'8px',marginBottom:'10px',textAlign:'center'}},React.createElement('div',{style:{fontSize:'16px',fontWeight:'bold',color:'#60a5fa'}},'START: 113 E Tremont Ave, Bronx NY')),
+      React.createElement('div',{style:{padding:'10px',background:'rgba(59,130,246,0.1)',border:'1px solid #3b82f6',borderRadius:'8px',marginBottom:'10px',textAlign:'center'}},React.createElement('div',{style:{fontSize:'20px',fontWeight:'bold',color:'#60a5fa',lineHeight:'1.3'}},'START: '+BASE_ADDR)),
       r.stops.map(function(s,idx){return React.createElement('div',{key:idx,style:{...S.card,marginBottom:'6px',borderLeft:s.type==='return'?'4px solid #f59e0b':'3px solid '+r.color,background:s.type==='return'?'rgba(245,158,11,0.08)':undefined}},
         editMode?React.createElement('div',{style:{display:'flex',gap:'8px',alignItems:'flex-start'}},
           React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:'2px'}},
@@ -1649,27 +1781,36 @@ function RoutesPanel({isAdmin,notify}){
             React.createElement('div',{style:{textAlign:'center',fontSize:'13px',fontWeight:'bold',color:r.color}},s.n),
             React.createElement('button',{onClick:function(){moveStop(idx,1)},disabled:idx===r.stops.length-1,style:{padding:'2px 8px',borderRadius:'4px',border:'1px solid #475569',background:'transparent',color:idx===r.stops.length-1?'#334155':'#94a3b8',cursor:idx===r.stops.length-1?'default':'pointer',fontSize:'12px'}},'\u25bc')),
           React.createElement('div',{style:{flex:1,display:'grid',gap:'4px'}},
+            React.createElement('select',{value:'',onChange:function(e){if(e.target.value)pickCleaner(idx,e.target.value)},style:{...S.inp,padding:'6px',fontSize:'12px',color:'#93c5fd'}},
+              React.createElement('option',{value:''},'\u2b07 Fill from Cleaners tab...'),
+              cleanerOpts.map(function(c){return React.createElement('option',{key:c.id,value:c.id},c.name+' \u2014 '+c.address)})),
             React.createElement('input',{value:s.name||'',onChange:function(e){updStop(idx,'name',e.target.value)},style:{...S.inp,padding:'6px',fontWeight:'bold'},placeholder:'Cleaner name'}),
-            React.createElement('input',{value:s.addr||'',onChange:function(e){updStop(idx,'addr',e.target.value)},style:{...S.inp,padding:'6px',fontSize:'13px'},placeholder:'Address'}),
+            React.createElement('input',{value:s.addr||'',onChange:function(e){updStop(idx,'addr',e.target.value)},style:{...S.inp,padding:'6px',fontSize:'13px',borderColor:addrCheck(s.addr).level==='bad'?'#ef4444':(addrCheck(s.addr).level==='warn'?'#f59e0b':'#10b981')},placeholder:'Address'}),
+            (function(){var ck=addrCheck(s.addr);var dup=dupAddrs(r.stops)[idx];
+              var col=ck.level==='bad'?'#fca5a5':(ck.level==='warn'?'#fcd34d':'#86efac');
+              var txt=dup?('Same address as stop '+dup+'. Two pins will land on one spot.'):ck.msg;
+              if(dup)col='#fca5a5';
+              return React.createElement('div',{style:{fontSize:'11px',color:col,lineHeight:'1.3'}},
+                (ck.level==='ok'&&!dup?'\u2713 ':'\u26a0 ')+txt)})(),
             React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'4px'}},
               React.createElement('input',{value:s.cross||'',onChange:function(e){updStop(idx,'cross',e.target.value)},style:{...S.inp,padding:'6px',fontSize:'12px'},placeholder:'Cross street'}),
               React.createElement('input',{value:s.note||'',onChange:function(e){updStop(idx,'note',e.target.value)},style:{...S.inp,padding:'6px',fontSize:'12px'},placeholder:'Special note'}))),
           React.createElement('button',{onClick:function(){delStop(idx)},style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:'18px',padding:'4px'}},'\u2715')):
         (s.type==='return'?
-          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',justifyContent:'center',padding:'6px'}},
+          React.createElement('div',{style:{padding:'6px'}},
             React.createElement('div',{style:{textAlign:'center'}},
-              React.createElement('div',{style:{fontSize:'20px',fontWeight:'bold',color:'#fbbf24',letterSpacing:'0.5px'}},'↺ RETURN TO BASE'),
-              React.createElement('div',{style:{fontSize:'15px',color:'#e2e8f0',fontWeight:'bold',marginTop:'4px'}},s.addr||'113 E Tremont Ave, Bronx NY'),
-              s.note&&React.createElement('div',{style:{fontSize:'13px',color:'#fbbf24',marginTop:'4px'}},s.note)),
-            React.createElement('a',{href:mapUrl(s.addr||'113 E Tremont Ave, Bronx NY'),target:'_blank',style:{padding:'10px 16px',borderRadius:'6px',background:'#f59e0b',color:'#000',textDecoration:'none',fontSize:'13px',fontWeight:'bold',whiteSpace:'nowrap'}},'Navigate')):
-        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
-          React.createElement('div',{style:{minWidth:'32px',height:'32px',borderRadius:'50%',background:r.color,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'bold',fontSize:'14px'}},s.n),
-          React.createElement('div',{style:{flex:1}},
-            React.createElement('div',{style:{fontWeight:'bold',fontSize:'15px',color:'#e2e8f0'}},s.name),
-            React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8'}},s.addr),
-            s.cross&&React.createElement('div',{style:{fontSize:'12px',color:'#64748b'}},'Cross: '+s.cross),
-            s.note&&React.createElement('div',{style:{fontSize:'12px',color:'#fbbf24',fontWeight:'bold',marginTop:'4px'}},s.note)),
-          React.createElement('a',{href:mapUrl(s.addr),target:'_blank',style:{padding:'8px 12px',borderRadius:'6px',border:'1px solid '+r.color,color:r.color,textDecoration:'none',fontSize:'12px',fontWeight:'bold',whiteSpace:'nowrap'}},'Navigate'))))}),
+              React.createElement('div',{style:{fontSize:'26px',fontWeight:'bold',color:'#fbbf24',letterSpacing:'0.5px'}},'\u21ba RETURN TO BASE'),
+              React.createElement('div',{style:{fontSize:'19px',color:'#fff',fontWeight:'bold',marginTop:'6px',lineHeight:'1.3'}},s.addr||BASE_ADDR),
+              s.note&&React.createElement('div',{style:{fontSize:'17px',color:'#000',background:'#fbbf24',fontWeight:'bold',marginTop:'8px',padding:'6px 9px',borderRadius:'6px',lineHeight:'1.25'}},s.note)),
+            React.createElement('a',{href:mapUrl(s.addr||BASE_ADDR),target:'_blank',style:{display:'block',marginTop:'10px',padding:'15px',borderRadius:'8px',background:'#f59e0b',color:'#000',textDecoration:'none',fontSize:'18px',fontWeight:'bold',textAlign:'center',whiteSpace:'nowrap'}},'Navigate')):
+        React.createElement('div',null,
+          React.createElement('div',{style:{display:'flex',alignItems:'flex-start',gap:'14px'}},
+            React.createElement('div',{style:{minWidth:'46px',height:'46px',borderRadius:'50%',background:r.color,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'bold',fontSize:'22px',flex:'none'}},s.n),
+            React.createElement('div',{style:{flex:1,minWidth:0}},
+              React.createElement('div',{style:{fontWeight:'bold',fontSize:'23px',color:'#fff',lineHeight:'1.2'}},s.name),
+              React.createElement('div',{style:{fontSize:'20px',color:'#e2e8f0',lineHeight:'1.35',marginTop:'4px'}},s.addr))),
+          s.note&&React.createElement('div',{style:{fontSize:'17px',color:'#000',background:'#fbbf24',fontWeight:'bold',marginTop:'9px',padding:'8px 10px',borderRadius:'6px',lineHeight:'1.25'}},s.note),
+          React.createElement('a',{href:mapUrl(s.addr),target:'_blank',style:{display:'block',marginTop:'10px',padding:'15px',borderRadius:'8px',background:r.color,color:'#fff',textDecoration:'none',fontSize:'18px',fontWeight:'bold',textAlign:'center'}},'Navigate'))))}),
       editMode&&React.createElement('div',{style:{display:'flex',gap:'8px',marginTop:'8px'}},React.createElement('button',{onClick:addStop,style:{...S.btn,flex:1,background:'#334155'}},'+ Add Stop'),React.createElement('button',{onClick:addReturn,style:{...S.btn,flex:1,background:'#f59e0b',color:'#000'}},'\u21ba + Add Return to Base')),
       ));
 }
@@ -2005,10 +2146,17 @@ function TrendsPanel({t}){
 function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
   const[show,setShow]=useState(false);const[ed,setEd]=useState(null);const[f,setF]=useState({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,delivery_charge:false,delivery_rate:0,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,cycle_weeks:4,cycle_anchor:'',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''});const[showPrices,setShowPrices]=useState(null);const[showDba,setShowDba]=useState(false);
   const[showAddrs,setShowAddrs]=useState(null);const[addrList,setAddrList]=useState([]);const[newAddr,setNewAddr]=useState('');const[newApt,setNewApt]=useState('');const[editAddr,setEditAddr]=useState(null);
-  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,delivery_charge:false,delivery_rate:0,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,cycle_weeks:4,cycle_anchor:'',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
+  const save=async e=>{e.preventDefault();if(!f.name||!f.rate){alert('Fill fields');return}
+    if(f.address&&String(f.address).trim()){
+      var ck=addrCheck(f.address);
+      if(ck.level==='bad'&&!confirm('This pickup address will misroute a driver:\n\n'+f.address+'\n\n'+ck.msg+'\n\nSave anyway?'))return;
+    }
+    try{if(ed)await api.put('/cleaners/'+ed.id,f);else await api.post('/cleaners',f);notify(ed?'Updated':'Added');await loadData();setShow(false);setEd(null);setShowDba(false);setF({name:'',address:'',rate:'',route:'east',min_weight:10,congestion_zone:false,congestion_rate:5,delivery_charge:false,delivery_rate:0,has_addresses:false,billing_cycle:'weekly',settles_monthly:false,cycle_weeks:4,cycle_anchor:'',ticket_format:'',dba_name:'',dba_address:'',dba_phone:''})}catch(e){alert(e.message)}};
   const del=async id=>{if(!confirm(t.delete+'?'))return;try{await api.del('/cleaners/'+id);notify('Deleted');await loadData()}catch(e){alert(e.message)}};
   const loadAddrs=async(cid)=>{try{const a=await api.get('/cleaner-addresses/'+cid);setAddrList(a)}catch(e){setAddrList([])}};
-  const addAddr=async()=>{if(!newAddr.trim()){alert('Enter address');return}try{await api.post('/cleaner-addresses',{cleaner_id:showAddrs.id,address:newAddr.trim(),apt:newApt.trim()});setNewAddr('');setNewApt('');loadAddrs(showAddrs.id);notify('Address added')}catch(e){alert(e.message)}};
+  const addAddr=async()=>{if(!newAddr.trim()){alert('Enter address');return}
+    var ak=addrCheck(newAddr);
+    if(ak.level==='bad'&&!confirm('This address will misroute a driver:\n\n'+newAddr+'\n\n'+ak.msg+'\n\nAdd anyway?'))return;try{await api.post('/cleaner-addresses',{cleaner_id:showAddrs.id,address:newAddr.trim(),apt:newApt.trim()});setNewAddr('');setNewApt('');loadAddrs(showAddrs.id);notify('Address added')}catch(e){alert(e.message)}};
   const delAddr=async(id)=>{if(!confirm('Delete this address?'))return;try{await api.del('/cleaner-addresses/'+id);loadAddrs(showAddrs.id);notify('Deleted')}catch(e){alert(e.message)}};
   const saveAddr=async()=>{if(!editAddr)return;try{await api.put('/cleaner-addresses/'+editAddr.id,{address:editAddr.address,apt:editAddr.apt});setEditAddr(null);loadAddrs(showAddrs.id);notify('Updated')}catch(e){alert(e.message)}};
 
@@ -2034,6 +2182,15 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
           React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.name+' *'),React.createElement('input',{value:f.name,onChange:e=>setF({...f,name:e.target.value}),style:S.inp})),
           React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.rateLb+' *'),React.createElement('input',{type:'number',step:'0.01',value:f.rate,onChange:e=>setF({...f,rate:parseFloat(e.target.value)}),style:S.inp})),
           React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.minWeight),React.createElement('input',{type:'number',value:f.min_weight,onChange:e=>setF({...f,min_weight:parseFloat(e.target.value)||10}),style:S.inp})),
+          React.createElement('div',{style:{marginBottom:'12px'}},
+            React.createElement('label',{style:S.lbl},'Pickup Address (used by Driver Routes)'),
+            React.createElement('input',{value:f.address||'',onChange:e=>setF({...f,address:e.target.value}),
+              style:{...S.inp,borderColor:f.address?addrColor(addrCheck(f.address).level):'#334155'},
+              placeholder:'e.g. 1604 1st Ave, New York, NY 10028'}),
+            f.address?React.createElement('div',{style:{fontSize:'11px',marginTop:'4px',lineHeight:'1.35',color:addrText(addrCheck(f.address).level)}},
+              (addrCheck(f.address).level==='ok'?'\u2713 ':'\u26a0 ')+addrCheck(f.address).msg)
+              :React.createElement('div',{style:{fontSize:'11px',marginTop:'4px',color:'#94a3b8'}},
+                'Building number, street, city, state. Leave cross streets out - they belong on the route stop.')),
           React.createElement('div',{style:{marginBottom:'12px'}},React.createElement('label',{style:S.lbl},t.route),React.createElement('select',{value:f.route,onChange:e=>setF({...f,route:e.target.value}),style:S.inp},React.createElement('option',{value:'east'},t.eastSide),React.createElement('option',{value:'west'},t.westSide))),
           React.createElement('div',{style:{marginBottom:'12px',padding:'12px',background:'#0f172a',borderRadius:'8px',border:'1px solid #334155'}},
             React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'8px'}},
