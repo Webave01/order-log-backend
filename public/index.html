@@ -1540,20 +1540,23 @@ function RoutesPanel({isAdmin,notify,cleaners}){
   const save=async()=>{
     // Catch the geocoding defects before they reach a driver's phone, across every
     // route, not just the one on screen.
+    // Only warn about the route being edited. Warning about every route meant
+    // editing EAST popped a modal listing WEST's problems on every single save,
+    // which trains people to hit OK without reading.
     var bad=[];
-    Object.keys(routes||{}).forEach(function(k){
-      var rt=routes[k]; if(!rt||!rt.stops)return;
+    var rt=routes&&routes[sel];
+    if(rt&&rt.stops){
       var dups=dupAddrs(rt.stops);
       rt.stops.forEach(function(st,i){
         if(st.type==='return')return;
         var ck=addrCheck(st.addr);
-        if(dups[i])bad.push((rt.title||k)+' #'+(st.n||i+1)+' '+(st.name||'')+': same address as stop '+dups[i]);
-        else if(ck.level==='bad')bad.push((rt.title||k)+' #'+(st.n||i+1)+' '+(st.name||'')+': '+ck.msg);
+        if(dups[i])bad.push('#'+(st.n||i+1)+' '+(st.name||'')+': same address as stop '+dups[i]);
+        else if(ck.level==='bad')bad.push('#'+(st.n||i+1)+' '+(st.name||'')+': '+ck.msg);
       });
-    });
+    }
     if(bad.length){
-      if(!confirm(bad.length+' address problem'+(bad.length===1?'':'s')+' that will misroute a driver:\n\n'+
-                  bad.slice(0,10).join('\n')+(bad.length>10?('\n...and '+(bad.length-10)+' more'):'')+
+      if(!confirm(bad.length+' address problem'+(bad.length===1?'':'s')+' in '+((rt&&rt.title)||sel)+':\n\n'+
+                  bad.slice(0,8).join('\n')+(bad.length>8?('\n...and '+(bad.length-8)+' more'):'')+
                   '\n\nSave anyway?'))return;
     }
     setSaving(true);
@@ -1685,8 +1688,9 @@ function RoutesPanel({isAdmin,notify,cleaners}){
     stops.forEach(function(s){
       if(!s.addr||!String(s.addr).trim())return;
       var isBase=s.type==='return';
+      var nm=s.name&&String(s.name).trim()?String(s.name).trim():'';
       pts.push({addr:String(s.addr).trim(),n:isBase?null:s.n,isBase:isBase,
-                label:isBase?'Base':(s.name&&String(s.name).trim()?String(s.name).trim():('Stop '+s.n))});
+                label:isBase?(nm||'Base'):(nm||('Stop '+s.n))});
     });
     if(pts.length===0)return [];
     // A route can come back to Tremont partway through to drop bags and then go
@@ -1698,32 +1702,34 @@ function RoutesPanel({isAdmin,notify,cleaners}){
     pts.forEach(function(x){ cur.push(x); if(x.isBase){ segs.push(cur); cur=[] } });
     if(cur.length)segs.push(cur);
 
+    // No origin in the URL on purpose: Google Maps then starts from the phone's
+    // current location. A driver lost in Manhattan, or picking a route back up
+    // after lunch, must not be routed from Tremont. Nothing is lost by dropping
+    // the old origin - it was always a stop the previous leg had already covered.
     var legs=[],chunk=9;
     segs.forEach(function(seg,si){
       var endsAtBase=seg[seg.length-1].isBase;
       var i=0;
       while(i<seg.length){
         var slice=seg.slice(i,i+chunk);
-        // every segment starts from Tremont, because the one before it ended there
-        var origin=i===0?BASE_ADDR:seg[i-1].addr;
         var dest=slice[slice.length-1];
         var mid=slice.slice(0,-1);
-        var u='https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(origin)+'&destination='+encodeURIComponent(dest.addr);
+        var u='https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(dest.addr);
         if(mid.length>0)u+='&waypoints='+mid.map(function(x){return encodeURIComponent(x.addr)}).join('%7C');
         var nums=slice.filter(function(x){return x.n!=null}).map(function(x){return x.n});
         var lastOfSeg=(i+chunk>=seg.length);
         legs.push({url:u,first:nums.length?nums[0]:null,last:nums.length?nums[nums.length-1]:null,
-                   endName:dest.isBase?'Base':dest.label,
-                   startFrom:i===0?'Base':seg[i-1].label,
+                   endName:dest.label,
+                   startFrom:'your location',
                    dropHere:dest.isBase&&lastOfSeg&&endsAtBase&&si<segs.length-1,
                    returnOnly:false,count:slice.length});
         i+=chunk;
       }
-      // close the final segment if it does not already end at Tremont
+      // close the final segment if it does not already end at a base stop
       if(!endsAtBase&&si===segs.length-1){
         var tail=seg[seg.length-1];
-        legs.push({url:'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(tail.addr)+'&destination='+encodeURIComponent(BASE_ADDR),
-                   first:null,last:null,endName:'Base',startFrom:tail.label,dropHere:false,returnOnly:true,count:1});
+        legs.push({url:'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(BASE_ADDR),
+                   first:null,last:null,endName:'Base',startFrom:'your location',dropHere:false,returnOnly:true,count:1});
       }
     });
     return legs;
@@ -1731,8 +1737,8 @@ function RoutesPanel({isAdmin,notify,cleaners}){
   const legIsReturn=(lg)=>lg.returnOnly||lg.first==null;
   const legLabel=(lg)=>legIsReturn(lg)?'\u21ba Back to Base':
     (lg.first===lg.last?('Stop '+lg.first):('Stops '+lg.first+'\u2013'+lg.last));
-  const legSub=(lg)=>legIsReturn(lg)?('from '+lg.startFrom):
-    (lg.dropHere?'\u2192 Tremont, drop bags':('\u2192 '+lg.endName));
+  const legSub=(lg)=>legIsReturn(lg)?'':
+    (lg.dropHere?('\u2192 '+lg.endName+', drop bags'):('\u2192 '+lg.endName));
 
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}},
@@ -1741,6 +1747,19 @@ function RoutesPanel({isAdmin,notify,cleaners}){
         editMode&&React.createElement('button',{onClick:resetDefaults,style:{...S.inp,cursor:'pointer',padding:'8px 12px',fontSize:'12px',color:'#f87171'}},'Reset Defaults'),
         editMode&&React.createElement('button',{onClick:save,disabled:saving,style:{...S.btn,background:'#10b981',padding:'8px 14px',fontSize:'13px'}},saving?'Saving...':'Save Changes'),
         React.createElement('button',{onClick:function(){setEditMode(!editMode)},style:{...S.btn,background:editMode?'#64748b':'#8b5cf6',padding:'8px 14px',fontSize:'13px'}},editMode?'Done':'Edit Route'))),
+      sel&&!editMode&&React.createElement('div',{style:{fontSize:'13px',color:'#94a3b8',marginBottom:'10px',textAlign:'center',lineHeight:'1.4'}},
+        '\ud83d\udccd Every map link starts from where you are right now, not from Tremont.'),
+      editMode&&(function(){
+        var others=0;
+        Object.keys(routes||{}).forEach(function(k){
+          if(k===sel)return;
+          var rt=routes[k]; if(!rt||!rt.stops)return;
+          rt.stops.forEach(function(st){ if(st.type!=='return'&&addrCheck(st.addr).level==='bad')others++ });
+        });
+        if(!others)return null;
+        return React.createElement('div',{style:{padding:'10px 12px',marginBottom:'10px',borderRadius:'8px',background:'rgba(245,158,11,0.12)',border:'1px solid #f59e0b',color:'#fcd34d',fontSize:'13px',lineHeight:'1.4'}},
+          others+' address problem'+(others===1?'':'s')+' in OTHER routes. Open each one and press Reset Defaults to pull in the corrected list, then Save Changes.');
+      })(),
       sel&&!editMode&&React.createElement('button',{onClick:printRoute,style:{...S.btn,background:'#0f766e',padding:'12px 16px',fontSize:'16px',width:'100%',marginBottom:'12px'}},'\ud83d\udda8 Print this route (PDF)'),
     React.createElement('div',{style:{marginBottom:'20px'}},
       React.createElement('label',{style:{...S.lbl,marginBottom:'6px',display:'block'}},'Select Route'),
@@ -1767,7 +1786,7 @@ function RoutesPanel({isAdmin,notify,cleaners}){
               if(legIsReturn(lg)){st.background='#f59e0b';st.color='#000'}
               return React.createElement('a',{key:li,href:lg.url,target:'_blank',rel:'noopener',style:st},
                 React.createElement('div',{style:{fontWeight:'bold',fontSize:'13px'}},legLabel(lg)),
-                React.createElement('div',{style:{fontSize:'10px',opacity:0.85,fontWeight:'normal'}},legSub(lg)));
+                legSub(lg)?React.createElement('div',{style:{fontSize:'10px',opacity:0.85,fontWeight:'normal'}},legSub(lg)):null);
             })))),
       
       React.createElement('div',{style:{marginBottom:'12px',padding:'16px',background:'rgba(239,68,68,0.15)',border:'2px solid #ef4444',borderRadius:'8px',textAlign:'center'}},
@@ -1799,7 +1818,7 @@ function RoutesPanel({isAdmin,notify,cleaners}){
         (s.type==='return'?
           React.createElement('div',{style:{padding:'6px'}},
             React.createElement('div',{style:{textAlign:'center'}},
-              React.createElement('div',{style:{fontSize:'26px',fontWeight:'bold',color:'#fbbf24',letterSpacing:'0.5px'}},'\u21ba RETURN TO BASE'),
+              React.createElement('div',{style:{fontSize:'26px',fontWeight:'bold',color:'#fbbf24',letterSpacing:'0.5px'}},'\u21ba '+((s.name&&String(s.name).trim())?String(s.name).trim().toUpperCase():'RETURN TO BASE')),
               React.createElement('div',{style:{fontSize:'19px',color:'#fff',fontWeight:'bold',marginTop:'6px',lineHeight:'1.3'}},s.addr||BASE_ADDR),
               s.note&&React.createElement('div',{style:{fontSize:'17px',color:'#000',background:'#fbbf24',fontWeight:'bold',marginTop:'8px',padding:'6px 9px',borderRadius:'6px',lineHeight:'1.25'}},s.note)),
             React.createElement('a',{href:mapUrl(s.addr||BASE_ADDR),target:'_blank',style:{display:'block',marginTop:'10px',padding:'15px',borderRadius:'8px',background:'#f59e0b',color:'#000',textDecoration:'none',fontSize:'18px',fontWeight:'bold',textAlign:'center',whiteSpace:'nowrap'}},'Navigate')):
