@@ -285,9 +285,26 @@ async function initDB() {
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_name VARCHAR(255);
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_address VARCHAR(255);
       ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS dba_phone VARCHAR(50);
+      ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS print_invoice BOOLEAN;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_address VARCHAR(255);
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_apt VARCHAR(50);
     `);
+
+    // Who lands in the weekly "All PDF" batch. This used to be a hardcoded list of
+    // names in the frontend, which meant changing it took a code deploy and a
+    // renamed cleaner silently started printing again.
+    // The column is deliberately NULLable: a NULL marks a row this backfill has not
+    // seen yet, so the two statements below run exactly once and never undo a
+    // checkbox the admin has since changed.
+    await pool.query(`
+      UPDATE cleaners SET print_invoice = false
+      WHERE print_invoice IS NULL AND (
+        name ILIKE '%lincoln plaza%' OR name ILIKE '%harlem%' OR
+        name ILIKE '%laundry day%'  OR name ILIKE '%morris%'  OR
+        name ILIKE '%omni%');
+    `);
+    await pool.query(`UPDATE cleaners SET print_invoice = true WHERE print_invoice IS NULL;`);
+    await pool.query(`ALTER TABLE cleaners ALTER COLUMN print_invoice SET DEFAULT true;`);
 
     // Cleaner addresses table
     await client.query(`
@@ -1259,11 +1276,11 @@ app.get('/api/cleaners', authenticate, async (req, res) => {
 });
 
 app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res) => {
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, delivery_charge, delivery_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, delivery_charge, delivery_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone, print_invoice } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, delivery_charge, delivery_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *',
-      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, delivery_charge || false, parseFloat(delivery_rate) || 0, has_addresses || false, billing_cycle || 'weekly', settles_monthly || false, (cycle_weeks === undefined || cycle_weeks === null || cycle_weeks === '') ? 4 : parseInt(cycle_weeks), cycle_anchor || null, ticket_format || null, dba_name || null, dba_address || null, dba_phone || null]
+      'INSERT INTO cleaners (name, address, rate, route, min_weight, congestion_zone, congestion_rate, delivery_charge, delivery_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone, print_invoice) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *',
+      [name, address, rate, route || 'east', min_weight || 10, congestion_zone || false, congestion_rate || 5.00, delivery_charge || false, parseFloat(delivery_rate) || 0, has_addresses || false, billing_cycle || 'weekly', settles_monthly || false, (cycle_weeks === undefined || cycle_weeks === null || cycle_weeks === '') ? 4 : parseInt(cycle_weeks), cycle_anchor || null, ticket_format || null, dba_name || null, dba_address || null, dba_phone || null, print_invoice === false ? false : true]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -1273,11 +1290,11 @@ app.post('/api/cleaners', authenticate, requirePerm('cleaners'), async (req, res
 
 app.put('/api/cleaners/:id', authenticate, requirePerm('cleaners'), async (req, res) => {
   const { id } = req.params;
-  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, delivery_charge, delivery_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone } = req.body;
+  const { name, address, rate, route, min_weight, congestion_zone, congestion_rate, delivery_charge, delivery_rate, has_addresses, billing_cycle, settles_monthly, cycle_weeks, cycle_anchor, ticket_format, dba_name, dba_address, dba_phone, print_invoice } = req.body;
   try {
     const result = await pool.query(
-      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, delivery_charge=$8, delivery_rate=$9, has_addresses=$10, billing_cycle=$11, settles_monthly=$12, cycle_weeks=$13, cycle_anchor=$14, ticket_format=$15, dba_name=$16, dba_address=$17, dba_phone=$18 WHERE id=$19 RETURNING *',
-      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, delivery_charge || false, parseFloat(delivery_rate) || 0, has_addresses || false, billing_cycle || 'weekly', settles_monthly || false, (cycle_weeks === undefined || cycle_weeks === null || cycle_weeks === '') ? 4 : parseInt(cycle_weeks), cycle_anchor || null, ticket_format || null, dba_name || null, dba_address || null, dba_phone || null, id]
+      'UPDATE cleaners SET name=$1, address=$2, rate=$3, route=$4, min_weight=$5, congestion_zone=$6, congestion_rate=$7, delivery_charge=$8, delivery_rate=$9, has_addresses=$10, billing_cycle=$11, settles_monthly=$12, cycle_weeks=$13, cycle_anchor=$14, ticket_format=$15, dba_name=$16, dba_address=$17, dba_phone=$18, print_invoice=$19 WHERE id=$20 RETURNING *',
+      [name, address, rate, route, min_weight, congestion_zone || false, congestion_rate || 5.00, delivery_charge || false, parseFloat(delivery_rate) || 0, has_addresses || false, billing_cycle || 'weekly', settles_monthly || false, (cycle_weeks === undefined || cycle_weeks === null || cycle_weeks === '') ? 4 : parseInt(cycle_weeks), cycle_anchor || null, ticket_format || null, dba_name || null, dba_address || null, dba_phone || null, print_invoice === false ? false : true, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Cleaner not found' });
     res.json(result.rows[0]);
@@ -2523,6 +2540,8 @@ app.get('/api/invoice-tracking/drift', authenticate, requirePerm('invoices'), as
     const params = [];
     let sinceFilter = '';
     if (since) { params.push(since); sinceFilter = ' AND it.week_start >= $' + params.length; }
+    params.push(ORDER_RETENTION_DAYS);
+    const retParam = '$' + params.length;
 
     // Recompute each stored weekly invoice straight from the orders it covers, using
     // the same rules as generate-week: min weight, same-day multiplier, per-cleaner
@@ -2571,10 +2590,15 @@ app.get('/api/invoice-tracking/drift', authenticate, requirePerm('invoices'), as
       JOIN cleaners c ON c.id = it.cleaner_id
       JOIN live ON live.id = it.id
       WHERE ABS(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0) + COALESCE(live.del_stops,0) * COALESCE(live.del_rate,0) - it.invoice_amount) > 0.01
-        -- CRITICAL: orders are purged after 90 days. A week whose orders are gone
-        -- recomputes to $0, which is not drift - it is missing source data. Reporting
-        -- it would invite a re-sync that wipes a real receivable to zero.
+        -- CRITICAL: orders are purged after ORDER_RETENTION_DAYS. order_count > 0 only
+        -- catches a week that lost ALL its orders. Retention deletes day by day, so a
+        -- week sitting ON the cliff keeps some days and loses others, recomputes LOW,
+        -- and was being reported as drift on invoices that are correct and already paid.
+        -- Pressing Update on one of those would overwrite a real receivable with a
+        -- figure derived from half a week of data. Only weeks whose every day is still
+        -- inside the retention window can be recomputed at all.
         AND live.order_count > 0
+        AND it.week_start >= CURRENT_DATE - (INTERVAL '1 day' * ${retParam}::int)
       ORDER BY ABS(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0) + COALESCE(live.del_stops,0) * COALESCE(live.del_rate,0) - it.invoice_amount) DESC
       LIMIT 500`, params);
 
@@ -2855,9 +2879,15 @@ app.get('/api/export-database', authenticate, adminOnly, async (req, res) => {
 });
 
 // Auto-delete old orders (90 days)
+// Orders are purged after this many days. The drift check MUST use the same number:
+// a week that straddles the cliff has some of its days already deleted, so recomputing
+// it from the surviving orders yields a number that is too low through no fault of the
+// invoice. See the guard in /invoice-tracking/drift.
+const ORDER_RETENTION_DAYS = 90;
+
 async function cleanupOldOrders() {
   try {
-    const result = await pool.query("DELETE FROM orders WHERE pickup_date < CURRENT_DATE - INTERVAL '90 days'");
+    const result = await pool.query("DELETE FROM orders WHERE pickup_date < CURRENT_DATE - INTERVAL '1 day' * $1", [ORDER_RETENTION_DAYS]);
     if (result.rowCount > 0) console.log('Cleaned up', result.rowCount, 'old orders');
   } catch (err) {
     console.error('Cleanup error:', err);
