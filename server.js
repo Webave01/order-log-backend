@@ -2599,11 +2599,28 @@ app.get('/api/invoice-tracking/drift', authenticate, requirePerm('invoices'), as
         -- inside the retention window can be recomputed at all.
         AND live.order_count > 0
         AND it.week_start >= CURRENT_DATE - (INTERVAL '1 day' * ${retParam}::int)
+        -- A paid invoice is closed business. It is never rebilled, so a difference on
+        -- it is information nobody acts on - and the Update button beside it would
+        -- overwrite a settled figure. Unpaid weeks only.
+        AND it.status = 'unpaid'
       ORDER BY ABS(live.orders_total + COALESCE(live.cong_days,0) * COALESCE(live.cong_rate,0) + COALESCE(live.del_stops,0) * COALESCE(live.del_rate,0) - it.invoice_amount) DESC
       LIMIT 500`, params);
 
     const total = rows.rows.reduce((s, r) => s + parseFloat(r.difference || 0), 0);
-    res.json({ count: rows.rows.length, net_difference: Math.round(total * 100) / 100, rows: rows.rows });
+    // A cleaner whose every week drifts the same direction almost certainly had a
+    // RATE or price change, not edited orders: the recompute always prices orders at
+    // today's rate, so raising a rate retroactively "drifts" all of their history.
+    const byCleaner = {};
+    rows.rows.forEach(r => {
+      const k = r.cleaner_name;
+      if (!byCleaner[k]) byCleaner[k] = { n: 0, pos: 0, neg: 0 };
+      byCleaner[k].n++;
+      if (parseFloat(r.difference) > 0) byCleaner[k].pos++; else byCleaner[k].neg++;
+    });
+    const rateSuspects = Object.keys(byCleaner).filter(k =>
+      byCleaner[k].n >= 3 && (byCleaner[k].pos === 0 || byCleaner[k].neg === 0));
+    res.json({ count: rows.rows.length, net_difference: Math.round(total * 100) / 100,
+               rows: rows.rows, rate_suspects: rateSuspects });
   } catch (err) {
     console.error('Drift check error:', err);
     res.status(500).json({ error: err.message });
@@ -2813,6 +2830,17 @@ app.get('/api/invoice-tracking/mismatched', authenticate, adminOnly, async (req,
         AND COALESCE(c.settles_monthly,false) = false
         AND COALESCE(it.billing_cycle,'weekly') = 'weekly'
         AND it.status != 'paid'
+        -- A weekly row is only a DUPLICATE if a monthly invoice actually covers the
+        -- same dates. Without this, flipping a cleaner to 'monthly' by mistake put
+        -- their live unpaid weeks one click from deletion - the flags said "monthly"
+        -- while the money still sat in weekly rows. Prove the duplicate exists.
+        AND EXISTS (
+          SELECT 1 FROM invoice_tracking m
+          WHERE m.cleaner_id = it.cleaner_id
+            AND COALESCE(m.billing_cycle,'weekly') = 'monthly'
+            AND m.week_start <= it.week_start
+            AND m.week_end   >= it.week_end
+        )
       ORDER BY c.name, it.week_start`);
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
