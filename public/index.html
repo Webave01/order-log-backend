@@ -2253,9 +2253,9 @@ function Cleaners({cleaners,extras,cleanerExtras,notify,loadData,t}){
           f.billing_cycle==='weekly'&&React.createElement('div',{style:{marginTop:'10px',padding:'10px',borderRadius:'8px',border:'1px solid '+(f.settles_monthly?'#f59e0b':'#475569'),background:f.settles_monthly?'rgba(245,158,11,0.05)':'transparent'}},
             React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
               React.createElement('input',{type:'checkbox',id:'settlesMonthly',checked:!!f.settles_monthly,onChange:function(e){setF({...f,settles_monthly:e.target.checked})},style:{width:'20px',height:'20px'}}),
-              React.createElement('label',{htmlFor:'settlesMonthly',style:{color:f.settles_monthly?'#fbbf24':'#94a3b8',fontWeight:'bold',cursor:'pointer',fontSize:'13px'}},'Pays once a month (off the weekly invoices)')),
+              React.createElement('label',{htmlFor:'settlesMonthly',style:{color:f.settles_monthly?'#fbbf24':'#94a3b8',fontWeight:'bold',cursor:'pointer',fontSize:'13px'}},'Group their weeks into 4-week blocks on the Monthly tab')),
             React.createElement('div',{style:{marginTop:'6px',fontSize:'11px',color:'#64748b',lineHeight:'1.5'}},
-              'Tick this for a cleaner who pays in batches but calculates the amount from the weekly invoices you hand them — Golden Star, for example. You keep invoicing weekly; the Monthly tab groups those weeks so you can settle a whole batch in one click.'),
+              'LEAVE THIS OFF for a cleaner who simply pays off the weekly invoices you hand them — Golden Star, for example. All it does is group their weeks into made-up 4-week blocks on the Monthly tab, and those blocks will not line up with the batch they actually paid. To reconcile a batch cheque, use the Check a Payment tab instead: it lists every week with a running total and matches the cheque against it, with no month or period involved. Tick this only if you genuinely want the period grouping on screen.'),
             // A rolling 4-week cycle is NOT a calendar month: a month holds 4 or 5
             // Mondays, so the two drift apart. 4 weeks = 13 cycles a year.
             f.settles_monthly&&React.createElement('div',{style:{marginTop:'10px',paddingTop:'10px',borderTop:'1px solid #334155'}},
@@ -2454,6 +2454,9 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
   // owes you money. Keep anything with a balance, keep a few recent closed ones for
   // reference, and put the rest behind a toggle.
   const[showAllPeriods,setShowAllPeriods]=useState(false);
+  // Closed by default. Troy invoices, they pay, and anything missed goes on the NEXT
+  // invoice - he never rebills. So this is reference material, not a to-do list.
+  const[driftOpen,setDriftOpen]=useState(function(){try{return localStorage.getItem('kp_drift_open')==='1'}catch(e){return false}});
   const[paySearch,setPaySearch]=useState('');
   const[showUnpaidOnly,setShowUnpaidOnly]=useState(false);
   const[expanded,setExpanded]=useState({});
@@ -2860,6 +2863,21 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
             React.createElement('span',{style:{color:'#94a3b8'}},open.length+' week'+(open.length===1?'':'s')+' outstanding  '),
             React.createElement('span',{style:{color:'#ef4444',fontWeight:'bold',fontSize:'19px'}},fmtC(openTot)))),
         (function(){
+          // Plain answer to “did they pay me, and through when”, without reading a table.
+          var paidTot=done.reduce(function(t,d){return t+Number(d.amount_paid||0)},0);
+          var lastPaid=done.map(function(d){return d.paid_date?String(d.paid_date).split('T')[0]:''}).filter(Boolean).sort().pop();
+          var oldestOpen=open.length?open[0]:null;
+          var newestPaidWk=done.length?done.map(function(d){return String(d.week_start).split('T')[0]}).sort().pop():null;
+          return React.createElement('div',{style:{marginTop:'8px',padding:'11px 13px',borderRadius:'8px',background:'#0f172a',border:'1px solid #334155',fontSize:'14px',lineHeight:'1.6'}},
+            React.createElement('div',null,React.createElement('b',{style:{color:'#4ade80'}},'Recorded as paid: '),
+              done.length?(fmtC(paidTot)+' across '+done.length+' week'+(done.length===1?'':'s')+(newestPaidWk?(', latest week covered '+fmtD(newestPaidWk)):'')+(lastPaid?('. Last payment entered '+fmtD(lastPaid)+'.'):'.')):
+                'nothing. No payment has ever been entered for this cleaner.'),
+            React.createElement('div',{style:{marginTop:'4px'}},React.createElement('b',{style:{color:'#f87171'}},'Still open: '),
+              open.length?(fmtC(openTot)+' across '+open.length+' week'+(open.length===1?'':'s')+', oldest '+fmtD(oldestOpen.week_start)+'.'):'nothing.'),
+            (!done.length&&open.length)?React.createElement('div',{style:{marginTop:'7px',color:'#fcd34d'}},
+              'If you have in fact been paid for some of these weeks, those checks were never entered here. Tick the weeks each check covered and press the green button — the app only knows what has been recorded.'):null);
+        })(),
+        (function(){
           // A row spanning more than ~10 days is a MONTH-long invoice, not a week.
           // If a cleaner was ever generated on the Monthly tab, their weekly amounts
           // do not exist to be shown - saying "nothing outstanding" would be a lie.
@@ -2931,15 +2949,19 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
     // figures, instead of letting them quietly differ.
     drift&&drift.count>0&&React.createElement('div',{style:{...S.card,marginBottom:'20px',border:'1px solid #f59e0b',background:'rgba(245,158,11,0.06)'}},
       React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px',marginBottom:'8px'}},
-        React.createElement('span',{style:{color:'#fbbf24',fontWeight:'bold',fontSize:'15px'}},
-          '⚠ '+drift.count+(drift.count===1?' invoice no longer matches its orders':' invoices no longer match their orders')),
+        React.createElement('button',{onClick:function(){var nx=!driftOpen;setDriftOpen(nx);try{localStorage.setItem('kp_drift_open',nx?'1':'0')}catch(e){}},
+          style:{background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:0,textAlign:'left',color:'#fbbf24',fontWeight:'bold',fontSize:'15px'}},
+          (driftOpen?'▼ ':'▸ ')+drift.count+(drift.count===1?' unpaid invoice does not match its orders':' unpaid invoices do not match their orders')+(driftOpen?'':'  (tap to look)')),
         React.createElement('span',{style:{fontSize:'13px',color:drift.net_difference>=0?'#4ade80':'#f87171',fontWeight:'bold'}},
           (drift.net_difference>=0?'+':'')+fmtC(drift.net_difference)+' net')),
-      React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',marginBottom:'10px',lineHeight:'1.6'}},
-        React.createElement('div',null,React.createElement('b',null,'What this is: '),'a week where someone changed an order AFTER the invoice was generated — a re-weigh, a deleted order, or an extra added from a photo. The invoice on record is not changed; it is still the figure the cleaner was handed.'),
-        React.createElement('div',{style:{marginTop:'7px'}},React.createElement('b',null,'Paid or unpaid: '),'both show, and every row says which. A row marked ',React.createElement('span',{style:{color:'#4ade80'}},'(paid)'),' is for information only — that money is settled, leave it alone. Press Update only on an UNPAID week whose invoice has not gone out yet.'),
-        React.createElement('div',{style:{marginTop:'7px',color:'#64748b'}},'Only weeks inside the last 90 days can appear here. Orders older than that are deleted, so an older invoice has nothing left to re-check against.')),
-      React.createElement('div',{style:{maxHeight:'220px',overflowY:'auto'}},
+      driftOpen&&React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',marginBottom:'10px',lineHeight:'1.6'}},
+        React.createElement('div',null,React.createElement('b',null,'What this is: '),'an UNPAID week whose stored invoice no longer equals what its orders price out at today. Paid weeks are never listed — they are closed business.'),
+        (drift.rate_suspects&&drift.rate_suspects.length)?React.createElement('div',{style:{marginTop:'8px',padding:'10px 12px',borderRadius:'6px',background:'rgba(239,68,68,0.12)',border:'1px solid #ef4444',color:'#fca5a5',lineHeight:'1.5'}},
+          React.createElement('b',null,'Probably a rate change, not edited orders: '),
+          drift.rate_suspects.join(', ')+(drift.rate_suspects.length===1?' has ':' have ')+'every week drifting the same direction. This screen always re-prices old orders at the cleaner\u2019s CURRENT rate, so raising a rate makes all of their past invoices look wrong. Nobody touched those orders. Leave them alone.')
+          :null,
+        React.createElement('div',{style:{marginTop:'7px',color:'#64748b'}},'Only unpaid weeks inside the last 90 days appear. Press Update only if that invoice has NOT gone out yet — it rewrites the figure on record.')),
+      driftOpen&&React.createElement('div',{style:{maxHeight:'220px',overflowY:'auto'}},
         (drift.rows||[]).map(function(d,i){
           var diff=parseFloat(d.difference);
           return React.createElement('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px',padding:'7px 0',borderBottom:'1px solid #334155',fontSize:'13px'}},
