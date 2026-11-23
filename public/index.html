@@ -2450,6 +2450,10 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
   const[stmtSel,setStmtSel]=useState({});
   const[stmtMsg,setStmtMsg]=useState('');
   const[stmtPaidOpen,setStmtPaidOpen]=useState(false);
+  // Fully-settled periods from months ago are noise on a screen you open to see who
+  // owes you money. Keep anything with a balance, keep a few recent closed ones for
+  // reference, and put the rest behind a toggle.
+  const[showAllPeriods,setShowAllPeriods]=useState(false);
   const[paySearch,setPaySearch]=useState('');
   const[showUnpaidOnly,setShowUnpaidOnly]=useState(false);
   const[expanded,setExpanded]=useState({});
@@ -2740,6 +2744,7 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
     return true;
   });
   const groupedByWeek={};filteredData.forEach(d=>{const wk=d.week_start?d.week_start.split('T')[0]:'unknown';if(!groupedByWeek[wk])groupedByWeek[wk]=[];groupedByWeek[wk].push(d)});
+
   
   const unpaidTotal=filteredData.filter(d=>d.status==='unpaid').reduce((sum,d)=>sum+parseFloat(d.invoice_amount)-parseFloat(d.amount_paid||0),0);
   const rowBalance=function(d){
@@ -2750,6 +2755,25 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
     return parseFloat(d.invoice_amount||0)-parseFloat(d.amount_paid||0);
   };
   const cleanerUnpaid={};filteredData.forEach(d=>{const b=rowBalance(d);if(b>0){const key=d.cleaner_name;if(!cleanerUnpaid[key])cleanerUnpaid[key]=0;cleanerUnpaid[key]+=b}});
+
+  // MUST stay below rowBalance: this runs during render, and a const referenced before
+  // its own initialisation throws at runtime even though the name resolves fine.
+  const allPeriods=Object.keys(groupedByWeek).sort().reverse();
+  const periodOwes=function(wk){return (groupedByWeek[wk]||[]).reduce(function(t,d){return t+rowBalance(d)},0)>0.004};
+  // Anything still owed always shows, however old. Settled history older than this
+  // many days is hidden behind a toggle - seeing April and May paid-in-full on a
+  // screen you opened to find out who owes you money is just noise.
+  const CLOSED_DAYS=60;
+  const visiblePeriods=(function(){
+    if(showAllPeriods)return allPeriods;
+    var cut=new Date(); cut.setDate(cut.getDate()-CLOSED_DAYS);
+    var cutStr=cut.toISOString().split('T')[0];
+    return allPeriods.filter(function(wk){
+      if(periodOwes(wk))return true;
+      return wk>=cutStr;   // ISO dates compare correctly as strings
+    });
+  })();
+  const hiddenPeriods=allPeriods.length-visiblePeriods.length;
 
   return React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px',flexWrap:'wrap',gap:'12px'}},
@@ -2813,6 +2837,13 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
           }).map(function(c){return React.createElement('option',{key:c.id,value:c.id},c.name+(c.settles_monthly&&(c.billing_cycle||'weekly')==='weekly'?' (pays monthly)':''))})),
         React.createElement('button',{onClick:function(){var sel=document.getElementById('genCleanerId');generateWeek(sel?sel.value:'')},disabled:ld,style:{...S.btn,flex:1,opacity:ld?0.6:1}},ld?t.loading:'Generate from Orders'))),
 
+    payView!=='statement'&&hiddenPeriods>0&&React.createElement('div',{style:{textAlign:'center',marginBottom:'16px'}},
+      React.createElement('button',{onClick:function(){setShowAllPeriods(true)},
+        style:{...S.inp,cursor:'pointer',padding:'12px 18px',color:'#94a3b8',width:'auto'}},
+        'Show '+hiddenPeriods+' older '+(payView==='monthly'?'period':'week')+(hiddenPeriods===1?'':'s')+' (all paid in full)')),
+    payView!=='statement'&&showAllPeriods&&React.createElement('div',{style:{textAlign:'center',marginBottom:'16px'}},
+      React.createElement('button',{onClick:function(){setShowAllPeriods(false)},
+        style:{...S.inp,cursor:'pointer',padding:'12px 18px',color:'#94a3b8',width:'auto'}},'Hide the settled history')),
     payView==='statement'&&stmtCleaner&&(function(){
       var open=stmtOpen(), done=stmtDone();
       var openTot=open.reduce(function(t,d){return t+stmtBal(d)},0);
@@ -2828,10 +2859,25 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
           React.createElement('div',{style:{fontSize:'15px'}},
             React.createElement('span',{style:{color:'#94a3b8'}},open.length+' week'+(open.length===1?'':'s')+' outstanding  '),
             React.createElement('span',{style:{color:'#ef4444',fontWeight:'bold',fontSize:'19px'}},fmtC(openTot)))),
+        (function(){
+          // A row spanning more than ~10 days is a MONTH-long invoice, not a week.
+          // If a cleaner was ever generated on the Monthly tab, their weekly amounts
+          // do not exist to be shown - saying "nothing outstanding" would be a lie.
+          var longs=stmtRows().filter(function(d){
+            try{var a=new Date(String(d.week_start).split('T')[0]+'T12:00:00'),b2=new Date(String(d.week_end).split('T')[0]+'T12:00:00');
+              return (b2-a)/86400000>10}catch(e){return false}});
+          if(!longs.length)return null;
+          return React.createElement('div',{style:{margin:'10px 0 4px',padding:'12px 14px',borderRadius:'8px',lineHeight:'1.5',fontSize:'14px',
+            background:'rgba(239,68,68,0.12)',border:'1px solid #ef4444',color:'#fca5a5'}},
+            React.createElement('b',null,longs.length+' of these invoices cover a whole month, not a week.'),
+            ' They were generated on the Monthly tab, so there are no weekly amounts behind them to show. To bill this cleaner by the week, generate their invoices from the Weekly tab instead - then every week appears here on its own line.');
+        })(),
         stmtMsg&&React.createElement('div',{style:{margin:'10px 0 4px',padding:'11px 13px',borderRadius:'8px',lineHeight:'1.45',fontSize:'14px',
           background:stmtMsg.charAt(0)==='\u2713'?'rgba(16,185,129,0.12)':'rgba(245,158,11,0.12)',
           border:'1px solid '+(stmtMsg.charAt(0)==='\u2713'?'#10b981':'#f59e0b'),
           color:stmtMsg.charAt(0)==='\u2713'?'#86efac':'#fcd34d'}},stmtMsg),
+        stmtRows().length===0?React.createElement('div',{style:{padding:'18px 4px',color:'#fcd34d',lineHeight:'1.5'}},
+          '\u26a0 No invoices on record for this cleaner at all. Nothing has been generated yet - use Generate from Orders on the Weekly tab.'):
         open.length===0?React.createElement('div',{style:{padding:'22px 4px',color:'#94a3b8'}},'Nothing outstanding. Every invoice for this cleaner is paid.'):
         React.createElement('div',{style:{overflowX:'auto',marginTop:'10px'}},
           React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'560px'}},
@@ -2890,7 +2936,9 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
         React.createElement('span',{style:{fontSize:'13px',color:drift.net_difference>=0?'#4ade80':'#f87171',fontWeight:'bold'}},
           (drift.net_difference>=0?'+':'')+fmtC(drift.net_difference)+' net')),
       React.createElement('div',{style:{fontSize:'12px',color:'#94a3b8',marginBottom:'10px',lineHeight:'1.6'}},
-        'These weeks had orders changed after the invoice was generated, so the balance below differs from the printed invoice. The figure on record is kept — it is what the cleaner was handed. Update one only if that invoice has not gone out yet.'),
+        React.createElement('div',null,React.createElement('b',null,'What this is: '),'a week where someone changed an order AFTER the invoice was generated — a re-weigh, a deleted order, or an extra added from a photo. The invoice on record is not changed; it is still the figure the cleaner was handed.'),
+        React.createElement('div',{style:{marginTop:'7px'}},React.createElement('b',null,'Paid or unpaid: '),'both show, and every row says which. A row marked ',React.createElement('span',{style:{color:'#4ade80'}},'(paid)'),' is for information only — that money is settled, leave it alone. Press Update only on an UNPAID week whose invoice has not gone out yet.'),
+        React.createElement('div',{style:{marginTop:'7px',color:'#64748b'}},'Only weeks inside the last 90 days can appear here. Orders older than that are deleted, so an older invoice has nothing left to re-check against.')),
       React.createElement('div',{style:{maxHeight:'220px',overflowY:'auto'}},
         (drift.rows||[]).map(function(d,i){
           var diff=parseFloat(d.difference);
@@ -2961,7 +3009,7 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
                 React.createElement('td',{style:{padding:'10px',textAlign:'right',color:(cleanerUnpaid[c.cleaner_name]||0)>0?'#ef4444':'#4ade80',fontWeight:'bold'}},fmtC(cleanerUnpaid[c.cleaner_name]||0))))))));
     })(),
     
-    payView!=='statement'&&Object.keys(groupedByWeek).sort().reverse().map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
+    payView!=='statement'&&visiblePeriods.map(week=>React.createElement('div',{key:week,style:{...S.card,marginBottom:'16px'}},
       React.createElement('h3',{style:{marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}},
         React.createElement('span',null,(function(){var wkRecs=data.filter(function(d){return d.week_start&&d.week_start.split('T')[0]===week});var wkEndDate=wkRecs.length>0&&wkRecs[0].week_end?wkRecs[0].week_end.split('T')[0]:null;var rec0=wkRecs[0]||{};var lbl=payView!=='monthly'?'Week: ':(rec0.is_rollup?((rec0.cycle_weeks&&rec0.cycle_weeks>0)?(rec0.cycle_weeks+'-week period: '):'Period: '):'Month: ');return lbl+fmtD(week)+(wkEndDate?' – '+fmtD(wkEndDate):'')})()),
         (function(){var wkInvs=data.filter(function(d){if(!d.week_start||d.week_start.split('T')[0]!==week)return false;if(paySearch&&!(d.cleaner_name||'').toLowerCase().includes(paySearch.toLowerCase()))return false;return true});var wkTotal=wkInvs.reduce(function(s,d){return s+parseFloat(d.invoice_amount||0)},0);var wkPaid=wkInvs.reduce(function(s,d){return s+parseFloat(d.amount_paid||0)},0);
@@ -2998,7 +3046,10 @@ function Payments({cleaners,settings,t,isAdmin,notify}){
                 React.createElement('button',{onClick:function(){setEditing(null);},style:{...S.cancel,padding:'4px 8px',fontSize:'12px'}},'X')));
           }
           // A rolled-up month shows a chevron and the week count, and expands to its weeks.
-          const isUp=!!inv.is_rollup, isOpen=!!expanded[inv.id];
+          // Open by default. The weekly amounts behind a rolled-up month are the
+          // whole point of the row; hiding them behind a 14px chevron meant nobody
+          // found them. expanded[id]===false is an explicit collapse by the user.
+          const isUp=!!inv.is_rollup, isOpen=(expanded[inv.id]===undefined?true:!!expanded[inv.id]);
           const nameCell=isUp?React.createElement('td',{style:{padding:'8px'}},
               React.createElement('span',{onClick:function(){setExpanded(Object.assign({},expanded,{[inv.id]:!isOpen}))},
                 style:{cursor:'pointer',userSelect:'none'},title:'Show the weekly invoices in this month'},
